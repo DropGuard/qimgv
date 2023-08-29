@@ -487,6 +487,7 @@ void MW::mouseDoubleClickEvent(QMouseEvent *event) {
     QMouseEvent *fakePressEvent = new QMouseEvent(
         QEvent::MouseButtonPress,
         event->pos(),
+        event->globalPosition(),
         event->button(),
         event->buttons(),
         event->modifiers()
@@ -973,7 +974,7 @@ void MW::adaptToWindowState() {
         if(showInfoBarFullscreen)
             infoBarFullscreen->showWhenReady();
         else
-            infoBarFullscreen->hide();    
+            infoBarFullscreen->hide();
 
         auto pos = settings->panelPosition();
         if(!settings->panelEnabled() || pos == PANEL_BOTTOM || pos == PANEL_LEFT)

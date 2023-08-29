@@ -60,7 +60,7 @@ void RenameOverlay::recalculateGeometry() {
 void RenameOverlay::selectName() {
     int end = ui->fileName->text().lastIndexOf(".");
     if(end < 0)
-        end = ui->fileName->text().size();
+        end = ui->fileName->text().length();
     ui->fileName->setSelection(0, end);
 }
 
