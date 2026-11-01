@@ -3,6 +3,9 @@
 #include "enginebridge.h"
 #include "qimgv_engine.h"
 
+#include <QLoggingCategory>
+Q_LOGGING_CATEGORY(lcWatchPerf, "qimgv.perf.watch", QtInfoMsg)
+
 #include <QTimer>
 #include <QtEndian>
 #include <chrono>
@@ -459,7 +462,7 @@ bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
     FSEntry FSEntry(filePath, fileName, stdEntry.file_size(), stdEntry.last_write_time(), stdEntry.is_directory());
     insert_sorted(fileEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     if(!directoryPath().isEmpty()) {
-        qDebug() << "fileIns" << filePath << directoryPath();
+        qCDebug(lcWatchPerf) << "fileIns" << filePath << directoryPath();
         emit fileAdded(filePath);
         // keep the engine listing in sync (the filter doesn't match this file)
         EngineBridge::instance().includePath(filePath);
@@ -474,7 +477,7 @@ void DirectoryManager::removeFileEntry(const QString &filePath) {
         return;
     int index = indexOfFile(filePath);
     fileEntryVec.erase(fileEntryVec.begin() + index);
-    qDebug() << "fileRem" << filePath;
+    qCDebug(lcWatchPerf) << "fileRem" << filePath;
     emit fileRemoved(filePath, index);
     if(!mEngineWatching)
         scheduleRescan();
@@ -487,7 +490,7 @@ void DirectoryManager::updateFileEntry(const QString &filePath) {
     int index = indexOfFile(filePath);
     if(fileEntryVec.at(index).modifyTime != newEntry.modifyTime)
         fileEntryVec.at(index) = newEntry;
-    qDebug() << "fileMod" << filePath;
+    qCDebug(lcWatchPerf) << "fileMod" << filePath;
     emit fileModified(filePath);
     if(!mEngineWatching)
         scheduleRescan();
@@ -519,7 +522,7 @@ void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString
     std::filesystem::directory_entry stdEntry(toStdString(newFilePath));
     FSEntry FSEntry(newFilePath, newFileName, stdEntry.file_size(), stdEntry.last_write_time(), stdEntry.is_directory());
     insert_sorted(fileEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
-    qDebug() << "fileRen" << oldFilePath << newFilePath;
+    qCDebug(lcWatchPerf) << "fileRen" << oldFilePath << newFilePath;
     emit fileRenamed(oldFilePath, oldIndex, newFilePath, indexOfFile(newFilePath));
     if(!mEngineWatching)
         scheduleRescan();
@@ -537,7 +540,7 @@ bool DirectoryManager::insertDirEntry(const QString &dirPath) {
     FSEntry.path = dirPath;
     FSEntry.isDirectory = true;
     insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
-    qDebug() << "dirIns" << dirPath;
+    qCDebug(lcWatchPerf) << "dirIns" << dirPath;
     emit dirAdded(dirPath);
     if(!mEngineWatching)
         scheduleRescan();
@@ -549,7 +552,7 @@ void DirectoryManager::removeDirEntry(const QString &dirPath) {
         return;
     int index = indexOfDir(dirPath);
     dirEntryVec.erase(dirEntryVec.begin() + index);
-    qDebug() << "dirRem" << dirPath;
+    qCDebug(lcWatchPerf) << "dirRem" << dirPath;
     emit dirRemoved(dirPath, index);
     if(!mEngineWatching)
         scheduleRescan();
@@ -570,7 +573,7 @@ void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &
     FSEntry.path = newDirPath;
     FSEntry.isDirectory = true;
     insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
-    qDebug() << "dirRen" << oldDirPath << newDirPath;
+    qCDebug(lcWatchPerf) << "dirRen" << oldDirPath << newDirPath;
     emit dirRenamed(oldDirPath, oldIndex, newDirPath, indexOfDir(newDirPath));
     if(!mEngineWatching)
         scheduleRescan();
