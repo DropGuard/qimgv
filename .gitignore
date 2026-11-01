@@ -19,3 +19,5 @@ release/
 *.user
 ui_settingsdialog.h
 Makefile
+
+engine/target/

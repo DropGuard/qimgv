@@ -1,0 +1,173 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+use slotmap::{Key, KeyData, SlotMap};
+
+use crate::sort::SortMode;
+
+slotmap::new_key_type! {
+    /// Generational handle to an entry. Stays valid (and keeps identifying the
+    /// same entry) across re-sorts; becomes invalid once the entry is removed
+    /// or the directory is replaced.
+    pub struct EntryKey;
+}
+
+#[derive(Debug, Clone)]
+pub struct EntryData {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub mtime: SystemTime,
+}
+
+#[derive(Debug)]
+pub struct EntryRef<'a> {
+    pub handle: EntryKey,
+    pub data: &'a EntryData,
+}
+
+/// The single source of truth for the current directory. Mutation happens on
+/// the engine loop thread; the FFI layer reads it through the shared
+/// `Arc<RwLock<_>>` on the UI thread.
+#[derive(Debug)]
+pub struct DirectoryState {
+    dir: Option<PathBuf>,
+    entries: SlotMap<EntryKey, EntryData>,
+    file_order: Vec<EntryKey>,
+    dir_order: Vec<EntryKey>,
+    file_pos: HashMap<EntryKey, u32>,
+    dir_pos: HashMap<EntryKey, u32>,
+    sort: SortMode,
+}
+
+impl DirectoryState {
+    pub fn new(sort: SortMode) -> Self {
+        Self {
+            dir: None,
+            entries: SlotMap::with_key(),
+            file_order: Vec::new(),
+            dir_order: Vec::new(),
+            file_pos: HashMap::new(),
+            dir_pos: HashMap::new(),
+            sort,
+        }
+    }
+
+    pub fn dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
+    }
+
+    pub fn sort(&self) -> SortMode {
+        self.sort
+    }
+
+    /// Replaces the whole listing. Old handles stop resolving (generation bump
+    /// + position maps rebuilt); new handles are assigned here.
+    pub fn replace_all(&mut self, dir: PathBuf, files: Vec<EntryData>, dirs: Vec<EntryData>) {
+        self.dir = Some(dir);
+        self.entries.clear();
+        self.file_order = files
+            .into_iter()
+            .map(|e| self.entries.insert(e))
+            .collect();
+        self.dir_order = dirs.into_iter().map(|e| self.entries.insert(e)).collect();
+        self.reorder();
+    }
+
+    pub fn resort(&mut self, sort: SortMode) {
+        self.sort = sort;
+        self.reorder();
+    }
+
+    fn reorder(&mut self) {
+        let mode = self.sort;
+        {
+            let (file_order, dir_order, entries) =
+                (&mut self.file_order, &mut self.dir_order, &self.entries);
+            file_order.sort_by(|&a, &b| mode.compare(&entries[a], &entries[b]));
+            dir_order.sort_by(|&a, &b| mode.compare(&entries[a], &entries[b]));
+        }
+        self.file_pos = self
+            .file_order
+            .iter()
+            .enumerate()
+            .map(|(i, &k)| (k, i as u32))
+            .collect();
+        self.dir_pos = self
+            .dir_order
+            .iter()
+            .enumerate()
+            .map(|(i, &k)| (k, i as u32))
+            .collect();
+    }
+
+    pub fn file_count(&self) -> usize {
+        self.file_order.len()
+    }
+
+    pub fn dir_count(&self) -> usize {
+        self.dir_order.len()
+    }
+
+    pub fn file_at(&self, index: usize) -> Option<EntryRef<'_>> {
+        let &key = self.file_order.get(index)?;
+        Some(EntryRef {
+            handle: key,
+            data: self.entries.get(key)?,
+        })
+    }
+
+    pub fn dir_at(&self, index: usize) -> Option<EntryRef<'_>> {
+        let &key = self.dir_order.get(index)?;
+        Some(EntryRef {
+            handle: key,
+            data: self.entries.get(key)?,
+        })
+    }
+
+    pub fn index_of_file(&self, handle: EntryKey) -> Option<u32> {
+        self.file_pos.get(&handle).copied()
+    }
+
+    pub fn index_of_dir(&self, handle: EntryKey) -> Option<u32> {
+        self.dir_pos.get(&handle).copied()
+    }
+
+    pub fn next_file(&self, handle: EntryKey) -> Option<EntryKey> {
+        let i = *self.file_pos.get(&handle)? as usize;
+        self.file_order.get(i + 1).copied()
+    }
+
+    pub fn prev_file(&self, handle: EntryKey) -> Option<EntryKey> {
+        let i = *self.file_pos.get(&handle)? as usize;
+        if i == 0 { None } else { self.file_order.get(i - 1).copied() }
+    }
+
+    pub fn next_dir(&self, handle: EntryKey) -> Option<EntryKey> {
+        let i = *self.dir_pos.get(&handle)? as usize;
+        self.dir_order.get(i + 1).copied()
+    }
+
+    pub fn prev_dir(&self, handle: EntryKey) -> Option<EntryKey> {
+        let i = *self.dir_pos.get(&handle)? as usize;
+        if i == 0 { None } else { self.dir_order.get(i - 1).copied() }
+    }
+}
+
+// --- FFI helpers: stable bit representation for opaque handles --------------
+
+pub fn key_to_ffi(key: EntryKey) -> u64 {
+    key.data().as_ffi()
+}
+
+/// Decodes a handle from the FFI boundary. Only rejects the canonical
+/// all-zero null handle; garbage bit patterns decode fine and are then
+/// rejected naturally by the position maps when looked up.
+pub fn key_from_ffi(bits: u64) -> Option<EntryKey> {
+    if bits == 0 {
+        return None;
+    }
+    Some(EntryKey::from(KeyData::from_ffi(bits)))
+}

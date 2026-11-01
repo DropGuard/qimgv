@@ -1,0 +1,17 @@
+[package]
+name = "qimgv-engine-ffi"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0"
+description = "C ABI shell around qimgv-engine"
+
+[lib]
+# rlib exists only so `cargo test` can link the integration tests;
+# corrosion picks the staticlib for the C++ build.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+qimgv-engine = { path = "../qimgv-engine" }
+
+[dev-dependencies]
+tempfile = { workspace = true }

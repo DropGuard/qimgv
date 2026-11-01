@@ -1,0 +1,16 @@
+[package]
+name = "qimgv-engine"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0"
+description = "UI-agnostic directory model / scheduler core for qimgv"
+
+[dependencies]
+crossbeam-channel = { workspace = true }
+slotmap = { workspace = true }
+natord = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
