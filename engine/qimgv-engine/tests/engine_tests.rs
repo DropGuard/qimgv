@@ -49,7 +49,7 @@ fn open_dir_lists_filtered_files() {
     std::fs::write(dir.path().join(".hidden.jpg"), b"x").unwrap(); // hidden
     std::fs::create_dir(dir.path().join("subdir")).unwrap();
 
-    engine.send(Command::OpenDir { path: dir.path().to_owned(), sort: None }).unwrap();
+    engine.send(Command::OpenDir { path: dir.path().to_owned(), sort: None, epoch: engine.next_epoch() }).unwrap();
     notify_rx.recv_timeout(Duration::from_secs(5)).expect("no notify");
 
     let ev = engine.try_event().expect("no event");
@@ -72,7 +72,7 @@ fn open_failed_event_on_missing_dir() {
     );
 
     let missing = std::env::temp_dir().join("qimgv-engine-test-does-not-exist-42");
-    engine.send(Command::OpenDir { path: missing.clone(), sort: None }).unwrap();
+    engine.send(Command::OpenDir { path: missing.clone(), sort: None, epoch: engine.next_epoch() }).unwrap();
     notify_rx.recv_timeout(Duration::from_secs(5)).expect("no notify");
 
     match engine.try_event().expect("no event") {
@@ -96,13 +96,13 @@ fn rapid_open_dir_keeps_only_latest() {
     let dir_a = make_dir_with("jpg", 1);
     let dir_b = make_dir_with("jpg", 3);
 
-    engine.send(Command::OpenDir { path: dir_a.path().to_owned(), sort: None }).unwrap();
-    engine.send(Command::OpenDir { path: dir_b.path().to_owned(), sort: None }).unwrap();
+    engine.send(Command::OpenDir { path: dir_a.path().to_owned(), sort: None, epoch: engine.next_epoch() }).unwrap();
+    engine.send(Command::OpenDir { path: dir_b.path().to_owned(), sort: None, epoch: engine.next_epoch() }).unwrap();
 
     wait_for(&engine, |st| st.dir() == Some(dir_b.path()) && st.file_count() == 3);
     // drain whatever events accumulated; none may reference dir_a's listing
     while let Some(ev) = engine.try_event() {
-        if let Event::DirListed { dir } = ev {
+        if let Event::DirListed { dir, .. } = ev {
             assert_eq!(dir, dir_b.path());
         }
     }
@@ -119,7 +119,7 @@ fn set_sort_reorders_and_notifies() {
     );
 
     let dir = make_dir_with("jpg", 4);
-    engine.send(Command::OpenDir { path: dir.path().to_owned(), sort: None }).unwrap();
+    engine.send(Command::OpenDir { path: dir.path().to_owned(), sort: None, epoch: engine.next_epoch() }).unwrap();
     wait_for(&engine, |st| st.file_count() == 4);
 
     engine.send(Command::SetSort(SortMode::NameDesc)).unwrap();

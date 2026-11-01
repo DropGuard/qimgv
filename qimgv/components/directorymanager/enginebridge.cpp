@@ -78,7 +78,11 @@ bool EngineBridge::openDir(const QString &path, int sortMode, bool showHidden) {
     // sort rides with OpenDir (atomic in the engine) — a separate setSort
     // would emit a stale resort event for the previous directory's state
     const QByteArray utf8 = path.toUtf8();
-    return qimgv_engine_open_dir(engine, utf8.constData(), sortMode) == QIMGV_OK;
+    uint32_t epoch = 0;
+    const int rc = qimgv_engine_open_dir(engine, utf8.constData(), sortMode, &epoch);
+    if (rc == QIMGV_OK)
+        sessionEpoch = epoch; // events from older sessions are stale
+    return rc == QIMGV_OK;
 }
 
 void EngineBridge::setSort(int sortMode) {
@@ -103,6 +107,22 @@ int EngineBridge::dirCount() const {
         return 0;
     const int n = qimgv_engine_dir_count(engine);
     return n < 0 ? 0 : n;
+}
+
+bool EngineBridge::supportsWatching() {
+    return qimgv_engine_supports_watching() != 0;
+}
+
+bool EngineBridge::includePath(const QString &path) {
+    if (!engine)
+        return false;
+    const QByteArray utf8 = path.toUtf8();
+    return qimgv_engine_include_path(engine, utf8.constData()) == QIMGV_OK;
+}
+
+void EngineBridge::stopWatch() {
+    if (engine)
+        qimgv_engine_stop_watch(engine);
 }
 
 bool EngineBridge::entryAt(int index, bool dirs, EngineEntry &out) const {
@@ -133,16 +153,21 @@ void EngineBridge::drainEvents() {
         return;
     for (;;) {
         qimgv_event ev{};
+        qimgv_mutation mut{};
         char buf[4096];
-        const int r = qimgv_engine_take_event(engine, &ev, buf, sizeof(buf));
+        const int r = qimgv_engine_take_event(engine, &ev, buf, sizeof(buf), &mut);
         if (r <= 0) {
             if (r < 0)
                 qWarning() << "[EngineBridge] take_event failed:" << qimgv_last_error();
             break;
         }
+        if (sessionEpoch != 0 && ev.epoch != 0 && ev.epoch < sessionEpoch)
+            continue; // event from an older session (dead receiver) — drop
         const QString dir = QString::fromUtf8(buf);
         if (ev.kind == QIMGV_EVENT_DIR_LISTED) {
             emit dirListed(dir);
+        } else if (ev.kind == QIMGV_EVENT_DIR_MUTATED) {
+            emit dirMutated(mut.kind, dir, mut.is_dir != 0, mut.size, mut.mtime_ms);
         } else if (ev.kind == QIMGV_EVENT_OPEN_FAILED) {
             qWarning() << "[EngineBridge] open failed:" << dir << "code" << ev.code
                        << (qimgv_last_error() ? qimgv_last_error() : "");

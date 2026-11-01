@@ -33,9 +33,10 @@ fn wait_flag(flag: &AtomicBool, timeout: Duration) -> bool {
 fn take_event(engine: *mut QimgvEngine, timeout: Duration) -> Option<(c_int, c_int, String)> {
     let deadline = Instant::now() + timeout;
     loop {
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 512];
-        let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len()) };
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m) };
         if r > 0 {
             let dir = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned();
             return Some((ev.kind, ev.code, dir));
@@ -79,9 +80,10 @@ fn fresh_engine_state_and_free() {
     unsafe {
         assert_eq!(qimgv_engine_file_count(engine), 0);
         assert_eq!(qimgv_engine_dir_count(engine), 0);
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 64];
-        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len()), 0);
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m), 0);
         qimgv_engine_free(engine);
     }
 }
@@ -92,7 +94,7 @@ fn argument_validation_and_last_error() {
     let engine = new_engine(None, false, &flag);
     assert!(!engine.is_null());
     unsafe {
-        assert_eq!(qimgv_engine_open_dir(engine, std::ptr::null(), 0), QIMGV_ERR_INVALID);
+        assert_eq!(qimgv_engine_open_dir(engine, std::ptr::null(), 0, std::ptr::null_mut()), QIMGV_ERR_INVALID);
         assert_eq!(qimgv_engine_set_sort(engine, 99), QIMGV_ERR_BAD_SORT);
 
         // no directory opened yet → any index is out of range
@@ -125,7 +127,7 @@ fn bad_utf8_path_rejected() {
     let bad = b"\xff\xfe\x00";
     unsafe {
         assert_eq!(
-            qimgv_engine_open_dir(engine, bad.as_ptr() as *const c_char, 0),
+            qimgv_engine_open_dir(engine, bad.as_ptr() as *const c_char, 0, std::ptr::null_mut()),
             QIMGV_ERR_BAD_UTF8
         );
         qimgv_engine_free(engine);
@@ -143,7 +145,7 @@ fn open_dir_event_queries_and_truncation() {
     assert!(!engine.is_null());
 
     let path_c = CString::new(dir.path().to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr(), 0) }, QIMGV_OK);
+    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr(), 0, std::ptr::null_mut()) }, QIMGV_OK);
 
     assert!(wait_flag(&flag, Duration::from_secs(5)), "notify not fired");
     let (kind, code, ev_dir) =
@@ -184,9 +186,10 @@ fn open_dir_event_queries_and_truncation() {
         );
 
         // the single DirListed event was already drained
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 64];
-        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len()), 0);
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m), 0);
 
         qimgv_engine_free(engine);
     }
@@ -246,7 +249,7 @@ fn extension_filter_via_ffi() {
     assert!(!engine.is_null());
 
     let path_c = CString::new(dir.path().to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr(), 0) }, QIMGV_OK);
+    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr(), 0, std::ptr::null_mut()) }, QIMGV_OK);
     take_event(engine, Duration::from_secs(5)).expect("no DirListed event");
 
     unsafe {

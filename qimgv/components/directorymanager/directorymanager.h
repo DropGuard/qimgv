@@ -109,6 +109,7 @@ private:
     SortingMode mAppliedSort;
     QTimer *rescanTimer = nullptr;
     bool mResyncing = false;
+    bool mEngineWatching = false;
     QHash<QString, QPair<quint64, qint64>> mPrevFileMeta; // engine size/mtime per path
 
     void scheduleRescan();
@@ -146,6 +147,7 @@ private slots:
     void onFileRenamedExternal(QString oldFileName, QString newFileName);
     void onEngineDirListed(QString dirPath);
     void onEngineOpenFailed(QString dirPath, int code);
+    void onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs);
 
 signals:
     void loaded(const QString &path);

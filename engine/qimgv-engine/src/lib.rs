@@ -10,8 +10,12 @@ pub mod meta;
 pub mod model;
 pub mod scan;
 pub mod sort;
+#[cfg(target_os = "linux")]
+pub mod watcher;
 
-pub use engine::{Command, Engine, EngineConfig, Event, Notify};
+pub use engine::{
+    Command, Engine, EngineConfig, Event, Notify, WatchChangeKind,
+};
 pub use error::EngineError;
 pub use filter::NameFilter;
 pub use meta::{ImageFormat, MetaInfo};

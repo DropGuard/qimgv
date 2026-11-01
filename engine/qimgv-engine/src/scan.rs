@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use std::time::UNIX_EPOCH;
@@ -12,6 +12,9 @@ use crate::model::EntryData;
 pub struct ScanOptions {
     pub show_hidden: Arc<AtomicBool>,
     pub filter: NameFilter,
+    /// Paths force-included by the app (mime fallback) — scanned even when
+    /// the extension filter doesn't match.
+    pub overrides: Arc<std::sync::Mutex<std::collections::HashSet<PathBuf>>>,
 }
 
 #[derive(Debug, Default)]
@@ -79,27 +82,35 @@ pub fn scan_directory(path: &Path, opts: &ScanOptions) -> Result<ScanOutput, Eng
             }
         }
 
-        let full_path = entry.path().to_string_lossy().into_owned();
+        let full_path = entry.path();
+        let full_str = full_path.to_string_lossy().into_owned();
+
+        let allowed = opts.filter.matches(&name)
+            || opts
+                .overrides
+                .lock()
+                .map(|o| o.contains(&full_path))
+                .unwrap_or(false);
 
         if file_type.is_dir() {
             out.dirs.push(EntryData {
                 name,
-                path: full_path,
+                path: full_str,
                 is_dir: true,
                 size: 0,
                 mtime: UNIX_EPOCH,
             });
-        } else if opts.filter.matches(&name) {
+        } else if allowed {
             let meta = match entry.metadata() {
                 Ok(m) => m,
                 Err(source) => {
-                    log::warn!("scan: stat {full_path}: {source}");
+                    log::warn!("scan: stat {full_str}: {source}");
                     continue;
                 }
             };
             out.files.push(EntryData {
                 name,
-                path: full_path,
+                path: full_str,
                 is_dir: false,
                 size: meta.len(),
                 mtime: meta.modified().unwrap_or(UNIX_EPOCH),

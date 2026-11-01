@@ -38,9 +38,14 @@ public:
     int dirCount() const;
     bool entryAt(int index, bool dirs, EngineEntry &out) const;
 
+    static bool supportsWatching();
+    bool includePath(const QString &path);
+    void stopWatch();
+
 signals:
     void dirListed(const QString &dirPath);
     void openFailed(const QString &dirPath, int statusCode);
+    void dirMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs);
 
 private:
     EngineBridge();
@@ -53,4 +58,5 @@ private:
     qimgv_engine *engine = nullptr;
     int eventFd = -1;
     QSocketNotifier *notifier = nullptr;
+    quint32 sessionEpoch = 0;
 };

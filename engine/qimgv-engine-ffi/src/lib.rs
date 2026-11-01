@@ -37,6 +37,12 @@ pub const QIMGV_ERR_BAD_UTF8: c_int = 8;
 pub const QIMGV_EVENT_NONE: c_int = 0;
 pub const QIMGV_EVENT_DIR_LISTED: c_int = 1;
 pub const QIMGV_EVENT_OPEN_FAILED: c_int = 2;
+pub const QIMGV_EVENT_DIR_MUTATED: c_int = 3;
+
+// --- mutation kinds (qimgv_mutation.kind) -----------------------------------
+pub const QIMGV_MUT_ADDED: c_int = 1;
+pub const QIMGV_MUT_MODIFIED: c_int = 2;
+pub const QIMGV_MUT_REMOVED: c_int = 3;
 
 // --- image formats (mirror meta::ImageFormat) -------------------------------
 pub const QIMGV_FMT_UNKNOWN: c_int = 0;
@@ -85,6 +91,9 @@ pub struct QimgvEntryMeta {
 pub struct QimgvEvent {
     pub kind: c_int,
     pub code: c_int,
+    /// Session the event belongs to; open_dir hands out the session id and
+    /// consumers drop events from older sessions.
+    pub epoch: u32,
 }
 
 #[repr(C)]
@@ -94,6 +103,14 @@ pub struct QimgvProbeResult {
     pub orientation: c_int, // EXIF 1..=8; 1 = normal/unknown
     pub width: c_int,       // 0 = unknown
     pub height: c_int,
+}
+
+#[repr(C)]
+pub struct QimgvMutation {
+    pub kind: c_int, // QIMGV_MUT_*
+    pub is_dir: c_int,
+    pub size: u64,
+    pub mtime_ms: i64,
 }
 
 /// Raw pointers are not Send; the notify callback ships one to engine threads.
@@ -247,6 +264,7 @@ pub unsafe extern "C" fn qimgv_engine_open_dir(
     engine: *mut QimgvEngine,
     path: *const c_char,
     sort_mode: c_int,
+    epoch_out: *mut u32,
 ) -> c_int {
     let attempt = || -> Result<c_int, c_int> {
         let path = read_path(path)?;
@@ -256,9 +274,15 @@ pub unsafe extern "C" fn qimgv_engine_open_dir(
             Some(SortMode::try_from(sort_mode).map_err(|_| QIMGV_ERR_BAD_SORT)?)
         };
         with_engine(engine, |e| {
-            e.send(Command::OpenDir { path, sort })
-                .map(|_| QIMGV_OK)
-                .map_err(|e| map_engine_error(&e))
+            let epoch = e.next_epoch();
+            e.send(Command::OpenDir { path, sort, epoch })
+                .map(|_| {
+                    if !epoch_out.is_null() {
+                        unsafe { *epoch_out = epoch as u32 };
+                    }
+                    QIMGV_OK
+                })
+                .map_err(|er| map_engine_error(&er))
         })
     };
     match catch_unwind(AssertUnwindSafe(attempt)) {
@@ -526,16 +550,73 @@ pub unsafe extern "C" fn qimgv_engine_probe(path: *const c_char, out: *mut Qimgv
     }
 }
 
+// --- watcher ----------------------------------------------------------------
+
+/// Force-includes a path in the current listing (app-side mime fallback);
+/// persists across rescans until the file disappears. Returns OK even if the
+/// file is gone — the state simply won't change.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_include_path(engine: *mut QimgvEngine, path: *const c_char) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        let path = read_path(path)?;
+        with_engine(engine, |e| {
+            e.send(Command::IncludePath(path))
+                .map(|_| QIMGV_OK)
+                .map_err(|e| map_engine_error(&e))
+        })
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => {
+            set_last_error_by_code(code);
+            code
+        }
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_include_path");
+            QIMGV_ERR_PANIC
+        }
+    }
+}
+
+/// Stops watching the current directory (after a listing reset).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_stop_watch(engine: *mut QimgvEngine) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        with_engine(engine, |e| {
+            e.send(Command::StopWatch)
+                .map(|_| QIMGV_OK)
+                .map_err(|e| map_engine_error(&e))
+        })
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => code,
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_stop_watch");
+            QIMGV_ERR_PANIC
+        }
+    }
+}
+
+/// 1 when the engine ships its own inotify watcher (Linux); 0 means the
+/// caller keeps using its platform watcher and the mutation events never fire.
+#[unsafe(no_mangle)]
+pub extern "C" fn qimgv_engine_supports_watching() -> c_int {
+    if Engine::supports_watching() { 1 } else { 0 }
+}
+
 // --- events -----------------------------------------------------------------
 
 /// Returns 1 if an event was written to `out`, 0 if none is pending, negative
-/// on error. `dir_buf` receives the event's directory path.
+/// on error. `dir_buf` receives the event's directory path (for mutations:
+/// the changed entry's full path); `mutation` is filled for DIR_MUTATED.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn qimgv_engine_take_event(
     engine: *mut QimgvEngine,
     out: *mut QimgvEvent,
     dir_buf: *mut c_char,
     dir_cap: usize,
+    mutation: *mut QimgvMutation,
 ) -> c_int {
     if engine.is_null() || out.is_null() {
         set_last_error("invalid argument");
@@ -544,19 +625,41 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
     let r = catch_unwind(AssertUnwindSafe(|| {
         with_engine(engine, |e| match e.try_event() {
             None => Ok(0),
-            Some(Event::DirListed { dir }) => {
+            Some(Event::DirListed { dir, epoch }) => {
                 write_str(dir_buf, dir_cap, &dir.to_string_lossy())?;
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_LISTED, code: QIMGV_OK };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_LISTED, code: QIMGV_OK, epoch: epoch as u32 };
                 }
                 Ok(1)
             }
-            Some(Event::OpenFailed { dir, error }) => {
+            Some(Event::OpenFailed { dir, error, epoch }) => {
                 write_str(dir_buf, dir_cap, &dir.to_string_lossy())?;
                 let code = map_engine_error(&error);
                 set_last_error(&error.to_string());
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_OPEN_FAILED, code };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_OPEN_FAILED, code, epoch: epoch as u32 };
+                }
+                Ok(1)
+            }
+            Some(Event::Mutated { kind, path, name: _, is_dir, size, mtime_ms, epoch }) => {
+                write_str(dir_buf, dir_cap, &path)?;
+                let mkind = match kind {
+                    qimgv_engine::WatchChangeKind::Added => QIMGV_MUT_ADDED,
+                    qimgv_engine::WatchChangeKind::Modified => QIMGV_MUT_MODIFIED,
+                    qimgv_engine::WatchChangeKind::Removed => QIMGV_MUT_REMOVED,
+                };
+                if !mutation.is_null() {
+                    unsafe {
+                        *mutation = QimgvMutation {
+                            kind: mkind,
+                            is_dir: is_dir as c_int,
+                            size,
+                            mtime_ms,
+                        };
+                    }
+                }
+                unsafe {
+                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_MUTATED, code: QIMGV_OK, epoch: epoch as u32 };
                 }
                 Ok(1)
             }

@@ -1,6 +1,7 @@
 #include "directorymanager.h"
 
 #include "enginebridge.h"
+#include "qimgv_engine.h"
 
 #include <QTimer>
 #include <chrono>
@@ -18,10 +19,13 @@ DirectoryManager::DirectoryManager() :
     setSortingMode(settings->sortingMode());
     connect(settings, &Settings::settingsChanged, this, &DirectoryManager::readSettings);
 
+    mEngineWatching = EngineBridge::supportsWatching();
     connect(&EngineBridge::instance(), &EngineBridge::dirListed,
             this, &DirectoryManager::onEngineDirListed);
     connect(&EngineBridge::instance(), &EngineBridge::openFailed,
             this, &DirectoryManager::onEngineOpenFailed);
+    connect(&EngineBridge::instance(), &EngineBridge::dirMutated,
+            this, &DirectoryManager::onEngineMutated);
     mAppliedSort = mSortingMode;
 }
 
@@ -118,6 +122,8 @@ bool DirectoryManager::setDirectory(QString dirPath) {
         mEngineDir.clear();
         if(rescanTimer)
             rescanTimer->stop();
+        if(mEngineWatching)
+            EngineBridge::instance().stopWatch();
         return false;
     }
     if(!std::filesystem::exists(toStdString(dirPath))) {
@@ -142,7 +148,8 @@ bool DirectoryManager::setDirectory(QString dirPath) {
                                      settings->showHiddenFiles());
     mEngineDir = dirPath;
     mAppliedSort = mSortingMode;
-    startFileWatcher(dirPath);
+    if (!mEngineWatching)
+        startFileWatcher(dirPath); // engine watcher handles it on Linux
     return true;
 }
 
@@ -453,8 +460,11 @@ bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
     if(!directoryPath().isEmpty()) {
         qDebug() << "fileIns" << filePath << directoryPath();
         emit fileAdded(filePath);
+        // keep the engine listing in sync (the filter doesn't match this file)
+        EngineBridge::instance().includePath(filePath);
     }
-    scheduleRescan();
+    if(!mEngineWatching)
+        scheduleRescan();
     return true;
 }
 
@@ -465,7 +475,8 @@ void DirectoryManager::removeFileEntry(const QString &filePath) {
     fileEntryVec.erase(fileEntryVec.begin() + index);
     qDebug() << "fileRem" << filePath;
     emit fileRemoved(filePath, index);
-    scheduleRescan();
+    if(!mEngineWatching)
+        scheduleRescan();
 }
 
 void DirectoryManager::updateFileEntry(const QString &filePath) {
@@ -477,7 +488,8 @@ void DirectoryManager::updateFileEntry(const QString &filePath) {
         fileEntryVec.at(index) = newEntry;
     qDebug() << "fileMod" << filePath;
     emit fileModified(filePath);
-    scheduleRescan();
+    if(!mEngineWatching)
+        scheduleRescan();
 }
 
 void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString &newFileName) {
@@ -508,7 +520,8 @@ void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString
     insert_sorted(fileEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     qDebug() << "fileRen" << oldFilePath << newFilePath;
     emit fileRenamed(oldFilePath, oldIndex, newFilePath, indexOfFile(newFilePath));
-    scheduleRescan();
+    if(!mEngineWatching)
+        scheduleRescan();
 }
 
 // ---- dir entries
@@ -525,7 +538,8 @@ bool DirectoryManager::insertDirEntry(const QString &dirPath) {
     insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     qDebug() << "dirIns" << dirPath;
     emit dirAdded(dirPath);
-    scheduleRescan();
+    if(!mEngineWatching)
+        scheduleRescan();
     return true;
 }
 
@@ -536,7 +550,8 @@ void DirectoryManager::removeDirEntry(const QString &dirPath) {
     dirEntryVec.erase(dirEntryVec.begin() + index);
     qDebug() << "dirRem" << dirPath;
     emit dirRemoved(dirPath, index);
-    scheduleRescan();
+    if(!mEngineWatching)
+        scheduleRescan();
 }
 
 void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &newDirName) {
@@ -556,7 +571,8 @@ void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &
     insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     qDebug() << "dirRen" << oldDirPath << newDirPath;
     emit dirRenamed(oldDirPath, oldIndex, newDirPath, indexOfDir(newDirPath));
-    scheduleRescan();
+    if(!mEngineWatching)
+        scheduleRescan();
 }
 
 
@@ -663,6 +679,41 @@ void DirectoryManager::onEngineDirListed(QString dirPath) {
     mResyncing = true;
     mirrorEngineListing(dirPath);
     mResyncing = false;
+}
+
+void DirectoryManager::onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs) {
+    if(mListSource != SOURCE_DIRECTORY || mResyncing)
+        return;
+    switch(kind) {
+        case QIMGV_MUT_ADDED: {
+            if(containsFile(path) || containsDir(path))
+                return; // app-side mutation already applied this
+            FSEntry entry;
+            entry.path = path;
+            entry.name = QFileInfo(path).fileName();
+            entry.isDirectory = isDir;
+            entry.size = size;
+            if(isDir)
+                entry.modifyTime = fileTimeFromMs(0);
+            else
+                entry.modifyTime = fileTimeFromMs(mtimeMs);
+            if(isDir) {
+                insert_sorted(dirEntryVec, entry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
+                emit dirAdded(path);
+            } else {
+                insert_sorted(fileEntryVec, entry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
+                emit fileAdded(path);
+            }
+            break;
+        }
+        case QIMGV_MUT_MODIFIED:
+            updateFileEntry(path);
+            break;
+        case QIMGV_MUT_REMOVED:
+            removeDirEntry(path);
+            removeFileEntry(path);
+            break;
+    }
 }
 
 void DirectoryManager::onEngineOpenFailed(QString dirPath, int code) {

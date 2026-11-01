@@ -154,6 +154,79 @@ impl DirectoryState {
         let i = *self.dir_pos.get(&handle)? as usize;
         if i == 0 { None } else { self.dir_order.get(i - 1).copied() }
     }
+
+    // --- incremental mutations (engine watcher) ---------------------------------
+
+    /// Inserts an entry keeping the current sort order. Returns the new handle,
+    /// or None if the path is already listed.
+    pub fn insert_entry(&mut self, data: EntryData) -> Option<EntryKey> {
+        if self.entries.values().any(|e| e.path == data.path) {
+            return None;
+        }
+        let key = self.entries.insert(data);
+        let is_dir = self.entries.get(key).unwrap().is_dir;
+        let pos = {
+            let mode = self.sort;
+            let entries = &self.entries;
+            let order = if is_dir { &mut self.dir_order } else { &mut self.file_order };
+            let idx = order
+                .binary_search_by(|&k| mode.compare(&entries[k], &entries[key]))
+                .unwrap_or_else(|i| i);
+            order.insert(idx, key);
+            idx as u32
+        };
+        if is_dir {
+            self.dir_pos.insert(key, pos);
+        } else {
+            self.file_pos.insert(key, pos);
+        }
+        Some(key)
+    }
+
+    /// Removes by full path from whichever order it lives in.
+    pub fn remove_entry_by_path(&mut self, path: &str) -> Option<EntryKey> {
+        let key = self
+            .entries
+            .iter()
+            .find(|(_, e)| e.path == path)
+            .map(|(k, _)| k)?;
+        let (order, pos) = if self.entries.get(key).unwrap().is_dir {
+            (&mut self.dir_order, &mut self.dir_pos)
+        } else {
+            (&mut self.file_order, &mut self.file_pos)
+        };
+        if let Some(i) = pos.remove(&key) {
+            order.remove(i as usize);
+            for v in pos.values_mut() {
+                if *v > i {
+                    *v -= 1;
+                }
+            }
+        }
+        self.entries.remove(key);
+        Some(key)
+    }
+
+    /// (size, mtime) of a listed entry, for watcher change detection.
+    pub fn entry_meta(&self, path: &str) -> Option<(u64, SystemTime)> {
+        self.entries
+            .values()
+            .find(|e| e.path == path)
+            .map(|e| (e.size, e.mtime))
+    }
+
+    pub fn update_entry_meta(&mut self, path: &str, size: u64, mtime: SystemTime) -> bool {
+        let key = self
+            .entries
+            .iter()
+            .find(|(_, e)| e.path == path)
+            .map(|(k, _)| k);
+        let Some(key) = key else { return false };
+        let e = self.entries.get_mut(key).unwrap();
+        e.size = size;
+        e.mtime = mtime;
+        true
+    }
 }
 
 // --- FFI helpers: stable bit representation for opaque handles --------------

@@ -37,6 +37,12 @@ typedef struct qimgv_engine qimgv_engine;
 #define QIMGV_EVENT_NONE        0
 #define QIMGV_EVENT_DIR_LISTED  1
 #define QIMGV_EVENT_OPEN_FAILED 2
+#define QIMGV_EVENT_DIR_MUTATED 3
+
+/* mutation kinds (qimgv_mutation.kind) */
+#define QIMGV_MUT_ADDED    1
+#define QIMGV_MUT_MODIFIED 2
+#define QIMGV_MUT_REMOVED  3
 
 /* image formats (qimgv_probe_result.format) */
 #define QIMGV_FMT_UNKNOWN 0
@@ -67,7 +73,15 @@ typedef struct qimgv_entry_meta {
 typedef struct qimgv_event {
     int kind;          /* QIMGV_EVENT_* */
     int code;          /* QIMGV_ERR_* (QIMGV_OK for DIR_LISTED) */
+    uint32_t epoch;    /* session; drop events older than your open_dir epoch */
 } qimgv_event;
+
+typedef struct qimgv_mutation {
+    int32_t kind;      /* QIMGV_MUT_* */
+    int32_t is_dir;
+    uint64_t size;
+    int64_t mtime_ms;
+} qimgv_mutation;
 
 typedef struct qimgv_probe_result {
     int32_t format;      /* QIMGV_FMT_* */
@@ -93,7 +107,16 @@ void qimgv_engine_free(qimgv_engine *engine);
  * events). */
 /* sort_mode: QIMGV_SORT_* applied atomically with the scan, or -1 to keep
  * the engine's current sort. */
-int qimgv_engine_open_dir(qimgv_engine *engine, const char *path_utf8, int sort_mode);
+/* epoch_out (nullable) receives the session id for this open; events with a
+ * smaller epoch belong to older sessions and should be dropped. */
+int qimgv_engine_open_dir(qimgv_engine *engine, const char *path_utf8, int sort_mode,
+                          uint32_t *epoch_out);
+
+/* 1 when the engine watches directories itself (Linux) and DIR_MUTATED
+ * events will fire; 0 means the caller keeps its platform watcher. */
+int qimgv_engine_supports_watching(void);
+int qimgv_engine_include_path(qimgv_engine *engine, const char *path_utf8);
+int qimgv_engine_stop_watch(qimgv_engine *engine);
 int qimgv_engine_set_sort(qimgv_engine *engine, int mode);
 int qimgv_engine_set_show_hidden(qimgv_engine *engine, int show);
 
@@ -114,9 +137,12 @@ int qimgv_engine_prev_file(qimgv_engine *engine, uint64_t handle, uint64_t *out)
 int qimgv_engine_next_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
 int qimgv_engine_prev_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
 
-/* Returns 1 if an event was written, 0 if none pending, negative on error. */
+/* Returns 1 if an event was written, 0 if none pending, negative on error.
+ * dir_buf receives the directory path (for DIR_MUTATED: the changed entry's
+ * full path); mutation is filled for DIR_MUTATED, may be NULL otherwise. */
 int qimgv_engine_take_event(qimgv_engine *engine, qimgv_event *out,
-                            char *dir_buf, size_t dir_cap);
+                            char *dir_buf, size_t dir_cap,
+                            qimgv_mutation *mutation);
 
 /* Pure function — thread-safe, does not touch the engine instance. One file
  * open, header-only parse. Parse failures are QIMGV_OK with FMT_UNKNOWN and

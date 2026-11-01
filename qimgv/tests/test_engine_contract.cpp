@@ -24,6 +24,10 @@ static_assert(offsetof(qimgv_entry_meta, size) == 8, "layout drift");
 static_assert(offsetof(qimgv_entry_meta, mtime_ms) == 16, "layout drift");
 static_assert(offsetof(qimgv_entry_meta, is_dir) == 24, "layout drift");
 
+// Layout pinning — must match #[repr(C)] QimgvEvent (i32,i32,u32).
+static_assert(sizeof(qimgv_event) == 12, "qimgv_event layout drift");
+static_assert(offsetof(qimgv_event, epoch) == 8, "layout drift");
+
 // Layout pinning — must match #[repr(C)] QimgvProbeResult (5 × int32).
 static_assert(sizeof(qimgv_probe_result) == 20, "qimgv_probe_result layout drift");
 static_assert(offsetof(qimgv_probe_result, format) == 0, "layout drift");
@@ -31,6 +35,13 @@ static_assert(offsetof(qimgv_probe_result, animated) == 4, "layout drift");
 static_assert(offsetof(qimgv_probe_result, orientation) == 8, "layout drift");
 static_assert(offsetof(qimgv_probe_result, width) == 12, "layout drift");
 static_assert(offsetof(qimgv_probe_result, height) == 16, "layout drift");
+
+// Layout pinning — must match #[repr(C)] QimgvMutation (i32,i32,u64,i64).
+static_assert(sizeof(qimgv_mutation) == 24, "qimgv_mutation layout drift");
+static_assert(offsetof(qimgv_mutation, kind) == 0, "layout drift");
+static_assert(offsetof(qimgv_mutation, is_dir) == 4, "layout drift");
+static_assert(offsetof(qimgv_mutation, size) == 8, "layout drift");
+static_assert(offsetof(qimgv_mutation, mtime_ms) == 16, "layout drift");
 
 static int failures = 0;
 #define CHECK(cond)                                                        \
@@ -65,21 +76,24 @@ int main() {
     CHECK(qimgv_engine_file_count(engine) == 0);
     CHECK(qimgv_engine_dir_count(engine) == 0);
     qimgv_event ev{};
+    qimgv_mutation mut{};
     char dirbuf[512];
-    CHECK(qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf)) == 0);
+    CHECK(qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut) == 0);
 
     // error paths leave a readable diagnostic
     CHECK(qimgv_engine_set_sort(engine, 99) == QIMGV_ERR_BAD_SORT);
     CHECK(qimgv_last_error() != nullptr);
-    CHECK(qimgv_engine_open_dir(engine, nullptr, 0) == QIMGV_ERR_INVALID);
+    CHECK(qimgv_engine_open_dir(engine, nullptr, 0, nullptr) == QIMGV_ERR_INVALID);
 
     // async open on a real directory
     std::string fixture = makeFixture();
-    CHECK(qimgv_engine_open_dir(engine, fixture.c_str(), 0) == QIMGV_OK);
+    uint32_t openEpoch = 0;
+    CHECK(qimgv_engine_open_dir(engine, fixture.c_str(), 0, &openEpoch) == QIMGV_OK);
+    CHECK(openEpoch > 0);
 
     int got = 0;
     for (int i = 0; i < 1000; ++i) {
-        got = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf));
+        got = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut);
         if (got != 0)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -87,6 +101,7 @@ int main() {
     CHECK(got == 1);
     CHECK(ev.kind == QIMGV_EVENT_DIR_LISTED);
     CHECK(ev.code == QIMGV_OK);
+    CHECK(ev.epoch == openEpoch);
     CHECK(std::strcmp(dirbuf, fixture.c_str()) == 0);
 
     CHECK(qimgv_engine_file_count(engine) == 2);
@@ -131,6 +146,9 @@ int main() {
         CHECK(pr.orientation >= 1 && pr.orientation <= 8);
         CHECK(qimgv_engine_probe(nullptr, &pr) == QIMGV_ERR_INVALID);
     }
+
+    // watcher support query must answer consistently with mutation events
+    CHECK(qimgv_engine_supports_watching() == 1);
 
     std::printf(failures == 0 ? "engine contract: OK\n" : "engine contract: %d FAILURES\n", failures);
     return failures == 0 ? 0 : 1;
