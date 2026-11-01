@@ -20,4 +20,4 @@ release/
 ui_settingsdialog.h
 Makefile
 
-engine/target/
+/target/

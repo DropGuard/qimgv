@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["qimgv-engine", "qimgv-engine-ffi"]
+members = ["engine/qimgv-engine", "engine/qimgv-engine-ffi"]
 
 [workspace.dependencies]
 crossbeam-channel = "0.5"
