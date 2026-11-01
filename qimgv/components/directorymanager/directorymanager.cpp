@@ -1,5 +1,10 @@
 #include "directorymanager.h"
 
+#include "enginebridge.h"
+
+#include <QTimer>
+#include <chrono>
+
 namespace fs = std::filesystem;
 
 DirectoryManager::DirectoryManager() :
@@ -12,6 +17,12 @@ DirectoryManager::DirectoryManager() :
     readSettings();
     setSortingMode(settings->sortingMode());
     connect(settings, &Settings::settingsChanged, this, &DirectoryManager::readSettings);
+
+    connect(&EngineBridge::instance(), &EngineBridge::dirListed,
+            this, &DirectoryManager::onEngineDirListed);
+    connect(&EngineBridge::instance(), &EngineBridge::openFailed,
+            this, &DirectoryManager::onEngineOpenFailed);
+    mAppliedSort = mSortingMode;
 }
 
 template< typename T, typename Pred >
@@ -104,6 +115,9 @@ void DirectoryManager::readSettings() {
 
 bool DirectoryManager::setDirectory(QString dirPath) {
     if(dirPath.isEmpty()) {
+        mEngineDir.clear();
+        if(rescanTimer)
+            rescanTimer->stop();
         return false;
     }
     if(!std::filesystem::exists(toStdString(dirPath))) {
@@ -122,9 +136,12 @@ bool DirectoryManager::setDirectory(QString dirPath) {
     mListSource = SOURCE_DIRECTORY;
     mDirectoryPath = dirPath;
 
-    loadEntryList(dirPath, false);
-    sortEntryLists();
-    emit loaded(dirPath);
+    // async: the listing arrives via onEngineDirListed(); the vectors keep
+    // serving the previous directory until then
+    EngineBridge::instance().openDir(dirPath, engineSortMode(mSortingMode),
+                                     settings->showHiddenFiles());
+    mEngineDir = dirPath;
+    mAppliedSort = mSortingMode;
     startFileWatcher(dirPath);
     return true;
 }
@@ -143,6 +160,8 @@ bool DirectoryManager::setDirectoryRecursive(QString dirPath) {
     }
     stopFileWatcher();
     mListSource = SOURCE_DIRECTORY_RECURSIVE;
+    mEngineDir.clear();
+    mMirroredDir.clear();
     mDirectoryPath = dirPath;
     loadEntryList(dirPath, true);
     sortEntryLists();
@@ -398,6 +417,12 @@ void DirectoryManager::sortEntryLists() {
 void DirectoryManager::setSortingMode(SortingMode mode) {
     if(mode != mSortingMode) {
         mSortingMode = mode;
+        if(mListSource == SOURCE_DIRECTORY && !mEngineDir.isEmpty()) {
+            // engine resorts and reports back via onEngineDirListed()
+            EngineBridge::instance().setSort(engineSortMode(mode));
+            return;
+        }
+        mAppliedSort = mode;
         if(fileEntryVec.size() > 1 || dirEntryVec.size() > 1) {
             sortEntryLists();
             emit sortingChanged();
@@ -429,6 +454,7 @@ bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
         qDebug() << "fileIns" << filePath << directoryPath();
         emit fileAdded(filePath);
     }
+    scheduleRescan();
     return true;
 }
 
@@ -439,6 +465,7 @@ void DirectoryManager::removeFileEntry(const QString &filePath) {
     fileEntryVec.erase(fileEntryVec.begin() + index);
     qDebug() << "fileRem" << filePath;
     emit fileRemoved(filePath, index);
+    scheduleRescan();
 }
 
 void DirectoryManager::updateFileEntry(const QString &filePath) {
@@ -450,6 +477,7 @@ void DirectoryManager::updateFileEntry(const QString &filePath) {
         fileEntryVec.at(index) = newEntry;
     qDebug() << "fileMod" << filePath;
     emit fileModified(filePath);
+    scheduleRescan();
 }
 
 void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString &newFileName) {
@@ -480,6 +508,7 @@ void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString
     insert_sorted(fileEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     qDebug() << "fileRen" << oldFilePath << newFilePath;
     emit fileRenamed(oldFilePath, oldIndex, newFilePath, indexOfFile(newFilePath));
+    scheduleRescan();
 }
 
 // ---- dir entries
@@ -496,6 +525,7 @@ bool DirectoryManager::insertDirEntry(const QString &dirPath) {
     insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     qDebug() << "dirIns" << dirPath;
     emit dirAdded(dirPath);
+    scheduleRescan();
     return true;
 }
 
@@ -506,6 +536,7 @@ void DirectoryManager::removeDirEntry(const QString &dirPath) {
     dirEntryVec.erase(dirEntryVec.begin() + index);
     qDebug() << "dirRem" << dirPath;
     emit dirRemoved(dirPath, index);
+    scheduleRescan();
 }
 
 void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &newDirName) {
@@ -525,6 +556,7 @@ void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &
     insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     qDebug() << "dirRen" << oldDirPath << newDirPath;
     emit dirRenamed(oldDirPath, oldIndex, newDirPath, indexOfDir(newDirPath));
+    scheduleRescan();
 }
 
 
@@ -573,4 +605,192 @@ void DirectoryManager::onFileRenamedExternal(QString oldName, QString newName) {
 
 void DirectoryManager::onFileModifiedExternal(QString fileName) {
     updateFileEntry(watcher->watchPath() + "/" + fileName);
+}
+
+//----------------------------------------------------------------------------
+// rust engine bridge
+
+// settings.h's SortingMode order differs from the QIMGV_SORT_* codes — map
+// explicitly, never positionally.
+int DirectoryManager::engineSortMode(SortingMode mode) {
+    switch(mode) {
+        case SORT_NAME:       return 0;
+        case SORT_NAME_DESC:  return 1;
+        case SORT_SIZE:       return 4;
+        case SORT_SIZE_DESC:  return 5;
+        case SORT_TIME:       return 2;
+        case SORT_TIME_DESC:  return 3;
+    }
+    return 0;
+}
+
+// C++17 has no clock_cast; anchor the file clock against the system clock.
+// Used only for mirror entries — change detection compares engine metadata,
+// not these values.
+std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
+    using namespace std::chrono;
+    using FileClock = std::filesystem::file_time_type::clock;
+    const auto sysNow = system_clock::now();
+    const auto target = system_clock::time_point(milliseconds(ms));
+    return std::filesystem::file_time_type{FileClock::now() + (target - sysNow)};
+}
+
+// watcher events and in-app file operations both land here; the vectors get
+// the instant update, the engine rescan reconciles a beat later (debounced).
+void DirectoryManager::scheduleRescan() {
+    if(mResyncing)
+        return;
+    if(mListSource != SOURCE_DIRECTORY || mDirectoryPath.isEmpty())
+        return;
+    if(!rescanTimer) {
+        rescanTimer = new QTimer(this);
+        rescanTimer->setSingleShot(true);
+        rescanTimer->setInterval(150);
+        connect(rescanTimer, &QTimer::timeout, this, [this]() {
+            if(!mResyncing && mListSource == SOURCE_DIRECTORY && !mDirectoryPath.isEmpty())
+                EngineBridge::instance().openDir(mDirectoryPath, engineSortMode(mSortingMode),
+                                                 settings->showHiddenFiles());
+        });
+    }
+    rescanTimer->start();
+}
+
+void DirectoryManager::onEngineDirListed(QString dirPath) {
+    if(mResyncing || dirPath != mEngineDir || mListSource != SOURCE_DIRECTORY)
+        return;
+    if(mDirectoryPath != dirPath)
+        return;
+    mResyncing = true;
+    mirrorEngineListing(dirPath);
+    mResyncing = false;
+}
+
+void DirectoryManager::onEngineOpenFailed(QString dirPath, int code) {
+    if(dirPath != mEngineDir || mListSource != SOURCE_DIRECTORY)
+        return;
+    qWarning() << "[DirectoryManager] engine open failed:" << dirPath << "code" << code;
+    emit loadingFailed(dirPath);
+}
+
+void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
+    auto &bridge = EngineBridge::instance();
+    const int newFileCount = bridge.fileCount();
+    const int newDirCount = bridge.dirCount();
+    qDebug() << "[DirectoryManager] mirrored listing" << dirPath
+             << "files:" << newFileCount << "dirs:" << newDirCount;
+
+    // snapshot the engine listing
+    std::vector<EngineBridge::EngineEntry> files, dirs;
+    files.reserve(newFileCount);
+    dirs.reserve(newDirCount);
+    EngineBridge::EngineEntry e;
+    for(int i = 0; i < newFileCount; ++i)
+        if(bridge.entryAt(i, false, e))
+            files.push_back(e);
+    for(int i = 0; i < newDirCount; ++i)
+        if(bridge.entryAt(i, true, e))
+            dirs.push_back(e);
+
+    QHash<QString, QPair<quint64, qint64>> newMeta;
+    for(const auto &f : files)
+        newMeta.insert(f.path, {f.size, f.mtimeMs});
+
+    const bool isNewDir = (mMirroredDir != dirPath);
+
+    if(isNewDir) {
+        fileEntryVec.clear();
+        dirEntryVec.clear();
+        for(const auto &f : files) {
+            FSEntry entry;
+            entry.path = f.path;
+            entry.name = f.name;
+            entry.isDirectory = false;
+            entry.size = f.size;
+            entry.modifyTime = fileTimeFromMs(f.mtimeMs);
+            fileEntryVec.push_back(std::move(entry));
+        }
+        for(const auto &d : dirs) {
+            FSEntry entry;
+            entry.path = d.path;
+            entry.name = d.name;
+            entry.isDirectory = true;
+            dirEntryVec.push_back(std::move(entry));
+        }
+        mPrevFileMeta = std::move(newMeta);
+        mMirroredDir = dirPath;
+        emit loaded(mDirectoryPath);
+        return;
+    }
+
+    // same directory: granular resync — keep views/selection stable
+    QSet<QString> newPaths, oldPaths;
+    for(const auto &f : files)
+        newPaths.insert(f.path);
+    for(const auto &f : fileEntryVec)
+        oldPaths.insert(f.path);
+    QSet<QString> newDirPaths, oldDirPaths;
+    for(const auto &d : dirs)
+        newDirPaths.insert(d.path);
+    for(const auto &d : dirEntryVec)
+        oldDirPaths.insert(d.path);
+
+    // 1. removals (descending index keeps earlier indexes valid)
+    for(int i = static_cast<int>(fileEntryVec.size()) - 1; i >= 0; --i) {
+        if(!newPaths.contains(fileEntryVec[static_cast<size_t>(i)].path)) {
+            qDebug() << "fileRem(resync)" << fileEntryVec[static_cast<size_t>(i)].path;
+            emit fileRemoved(fileEntryVec[static_cast<size_t>(i)].path, i);
+            fileEntryVec.erase(fileEntryVec.begin() + i);
+        }
+    }
+    for(int i = static_cast<int>(dirEntryVec.size()) - 1; i >= 0; --i) {
+        if(!newDirPaths.contains(dirEntryVec[static_cast<size_t>(i)].path)) {
+            emit dirRemoved(dirEntryVec[static_cast<size_t>(i)].path, i);
+            dirEntryVec.erase(dirEntryVec.begin() + i);
+        }
+    }
+
+    // 2. changed files: compare engine metadata against the previous mirror
+    for(const auto &f : files) {
+        if(oldPaths.contains(f.path)) {
+            const auto prev = mPrevFileMeta.constFind(f.path);
+            if(prev == mPrevFileMeta.constEnd() || prev->first != f.size || prev->second != f.mtimeMs)
+                updateFileEntry(f.path); // re-stats natively, emits fileModified
+        }
+    }
+
+    // 3. rebuild both vectors in engine order
+    fileEntryVec.clear();
+    for(const auto &f : files) {
+        FSEntry entry;
+        entry.path = f.path;
+        entry.name = f.name;
+        entry.isDirectory = false;
+        entry.size = f.size;
+        entry.modifyTime = fileTimeFromMs(f.mtimeMs);
+        fileEntryVec.push_back(std::move(entry));
+    }
+    dirEntryVec.clear();
+    for(const auto &d : dirs) {
+        FSEntry entry;
+        entry.path = d.path;
+        entry.name = d.name;
+        entry.isDirectory = true;
+        dirEntryVec.push_back(std::move(entry));
+    }
+
+    // 4. additions (emitted after the vectors hold the final state)
+    for(const auto &f : files)
+        if(!oldPaths.contains(f.path))
+            emit fileAdded(f.path);
+    for(const auto &d : dirs)
+        if(!oldDirPaths.contains(d.path))
+            emit dirAdded(d.path);
+
+    // 5. resort signal if the sort mode changed since the last mirror
+    if(mAppliedSort != mSortingMode) {
+        mAppliedSort = mSortingMode;
+        emit sortingChanged();
+    }
+
+    mPrevFileMeta = std::move(newMeta);
 }

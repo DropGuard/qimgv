@@ -21,6 +21,7 @@ target_sources(qimgv PRIVATE
     thumbnailer/thumbnailerrunnable.cpp
 
     directorymanager/directorymanager.cpp
+    directorymanager/enginebridge.cpp
 
     directorymanager/watchers/directorywatcher.cpp
     directorymanager/watchers/dummywatcher.cpp

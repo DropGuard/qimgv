@@ -15,10 +15,16 @@
 #include <filesystem>
 #include <algorithm>
 
+#include <QHash>
+#include <QPair>
+#include <QSet>
+
 #include "settings.h"
 #include "watchers/directorywatcher.h"
 #include "utils/stuff.h"
 #include "sourcecontainers/fsentry.h"
+
+class QTimer;
 
 #ifdef Q_OS_WIN32
 #include "windows.h"
@@ -97,6 +103,19 @@ private:
     const FSEntry defaultEntry;
     QString mDirectoryPath;
 
+    // rust engine mirror (SOURCE_DIRECTORY only)
+    QString mEngineDir;      // dir we asked the engine to open
+    QString mMirroredDir;    // dir the vectors currently reflect
+    SortingMode mAppliedSort;
+    QTimer *rescanTimer = nullptr;
+    bool mResyncing = false;
+    QHash<QString, QPair<quint64, qint64>> mPrevFileMeta; // engine size/mtime per path
+
+    void scheduleRescan();
+    void mirrorEngineListing(const QString &dirPath);
+    static int engineSortMode(SortingMode mode);
+    static std::filesystem::file_time_type fileTimeFromMs(qint64 ms);
+
     DirectoryWatcher* watcher;
     void readSettings();
     SortingMode mSortingMode;
@@ -125,10 +144,13 @@ private slots:
     void onFileRemovedExternal(QString fileName);
     void onFileModifiedExternal(QString fileName);
     void onFileRenamedExternal(QString oldFileName, QString newFileName);
+    void onEngineDirListed(QString dirPath);
+    void onEngineOpenFailed(QString dirPath, int code);
 
 signals:
     void loaded(const QString &path);
     void sortingChanged();
+    void loadingFailed(QString dirPath);
     void fileRemoved(QString filePath, int);
     void fileModified(QString filePath);
     void fileAdded(QString filePath);
