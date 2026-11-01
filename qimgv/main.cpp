@@ -13,6 +13,8 @@
 #include "proxystyle.h"
 #include "core.h"
 
+#include "qimgv_engine.h"
+
 #ifdef __APPLE__
 #include "macosapplication.h"
 #endif
@@ -85,6 +87,8 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationVersion(appVersion.toString());
     QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false);
     QGuiApplication::setDesktopFileName(QCoreApplication::applicationName() + ".desktop");
+
+    qDebug() << "[rustcore] qimgv-engine version:" << qimgv_engine_version();
 
     // needed for mpv
 #ifndef _MSC_VER

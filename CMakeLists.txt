@@ -73,6 +73,17 @@ if(OPENCV_SUPPORT)
     find_package(OpenCV REQUIRED core imgproc)
 endif()
 
+# --- Rust engine (corrosion: cargo integrated into this CMake build) --------
+include(FetchContent)
+FetchContent_Declare(
+    Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_TAG v0.5.2
+)
+FetchContent_MakeAvailable(Corrosion)
+corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/engine/qimgv-engine-ffi/Cargo.toml)
+
+
 ##############################################################
 
 add_subdirectory(qimgv)
