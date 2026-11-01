@@ -78,6 +78,7 @@ bool EngineBridge::openDir(const QString &path, int sortMode, bool showHidden) {
     // sort rides with OpenDir (atomic in the engine) — a separate setSort
     // would emit a stale resort event for the previous directory's state
     const QByteArray utf8 = path.toUtf8();
+    qDebug() << "[EngineBridge] openDir" << path;
     uint32_t epoch = 0;
     const int rc = qimgv_engine_open_dir(engine, utf8.constData(), sortMode, &epoch);
     if (rc == QIMGV_OK)

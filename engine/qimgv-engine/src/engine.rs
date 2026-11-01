@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
+use std::time::Instant;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
 use std::thread;
@@ -99,6 +100,7 @@ struct ScanDone {
     epoch: u64,
     path: PathBuf,
     result: Result<ScanOutput, EngineError>,
+    scan_ms: u128,
 }
 
 pub struct Engine {
@@ -186,6 +188,7 @@ impl Engine {
                         filter: filter.clone(),
                         overrides: Arc::clone(&overrides),
                     };
+                    let scan_start = Instant::now();
                     let result = catch_unwind(AssertUnwindSafe(|| {
                         scan_directory(&job.path, &options)
                     }))
@@ -195,8 +198,9 @@ impl Engine {
                             source: std::io::Error::other("scan worker panicked"),
                         })
                     });
+                    let scan_ms = scan_start.elapsed().as_millis();
                     if res_tx
-                        .send(ScanDone { epoch: job.epoch, path: job.path, result })
+                        .send(ScanDone { epoch: job.epoch, path: job.path, result, scan_ms })
                         .is_err()
                     {
                         break;
@@ -317,10 +321,18 @@ impl Engine {
                             match done.result {
                                 Ok(out) => {
                                     let dir = done.path.clone();
+                                    let entry_count = out.files.len();
+                                    let apply_start = Instant::now();
                                     {
                                         let mut st = state_write(&state);
                                         st.replace_all(dir.clone(), out.files, out.dirs);
                                     }
+                                    eprintln!(
+                                        "[engine] scan {} ms + insert/sort {} ms ({} entries, off UI thread)",
+                                        done.scan_ms,
+                                        apply_start.elapsed().as_millis(),
+                                        entry_count
+                                    );
                                     let _ = ev_tx.send(Event::DirListed { dir, epoch: done.epoch });
                                     fire_notify(&notify);
                                 }
