@@ -724,6 +724,8 @@ void DirectoryManager::onEngineOpenFailed(QString dirPath, int code) {
 }
 
 void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
+    QElapsedTimer rebuildTimer;
+    rebuildTimer.start();
     auto &bridge = EngineBridge::instance();
     const int newFileCount = bridge.fileCount();
     const int newDirCount = bridge.dirCount();
@@ -796,6 +798,7 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
         mPrevFileMeta = std::move(newMeta);
         mMirroredDir = dirPath;
         emit loaded(mDirectoryPath);
+        qDebug() << "[DirectoryManager] listing rebuild" << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
         if(engineBehind)
             scheduleRescan();
         return;
@@ -879,6 +882,7 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     }
 
     mPrevFileMeta = std::move(newMeta);
+    qDebug() << "[DirectoryManager] listing resync" << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
     if(staleSnapshot || engineBehind)
         scheduleRescan();
 }
