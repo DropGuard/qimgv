@@ -68,6 +68,7 @@ signals:
     void fitWindowStretch();
     void flipH();
     void flipV();
+    void nextFitMode();
     void toggleFitMode();
     void toggleFullscreen();
     void scrollUp();

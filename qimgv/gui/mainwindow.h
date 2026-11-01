@@ -240,6 +240,7 @@ public slots:
     void fitWidth();
     void fitOriginal();
     void fitWindowStretch();
+    void cycleFitMode();
     void switchFitMode();
     void closeImage();
     void showContextMenu();
