@@ -36,7 +36,7 @@ fn take_event(engine: *mut QimgvEngine, timeout: Duration) -> Option<(c_int, c_i
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 512];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
-        let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m) };
+        let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()) };
         if r > 0 {
             let dir = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned();
             return Some((ev.kind, ev.code, dir));
@@ -83,7 +83,7 @@ fn fresh_engine_state_and_free() {
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 64];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
-        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m), 0);
+        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
         qimgv_engine_free(engine);
     }
 }
@@ -189,7 +189,7 @@ fn open_dir_event_queries_and_truncation() {
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 64];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
-        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m), 0);
+        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
 
         qimgv_engine_free(engine);
     }

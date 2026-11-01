@@ -33,7 +33,27 @@ pub enum Command {
     IncludePath(PathBuf),
     /// Stops watching the current directory (listing reset on the C++ side).
     StopWatch,
+    /// Thumbnail scheduling: submit one request. `replace_batch` clears all
+    /// pending (not yet dispatched) requests first — the caller sends it on
+    /// the FIRST request of a fresh viewport batch, so an older batch dies
+    /// structurally (requests that were never dispatched never decode).
+    ThumbRequest { req: ThumbReq, replace_batch: bool },
+    /// The C++ executor finished (or failed) one dispatched request.
+    ThumbDone { req: ThumbReq },
+    /// Drop all pending requests (directory switch).
+    ThumbClear,
+    /// How many decodes may run concurrently on the C++ side.
+    ThumbConfig { max_in_flight: u32 },
     Shutdown,
+}
+
+/// A decode request; identity is the full tuple (path may repeat at
+/// different sizes/crops).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ThumbReq {
+    pub path: PathBuf,
+    pub size: u32,
+    pub crop: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +79,8 @@ pub enum Event {
         mtime_ms: i64,
         epoch: u64,
     },
+    /// Scheduler dispatches the next decode (C++ pool executes it).
+    ThumbNext { req: ThumbReq },
 }
 
 #[derive(Clone)]
@@ -96,6 +118,41 @@ fn state_write(lock: &RwLock<DirectoryState>) -> RwLockWriteGuard<'_, DirectoryS
 
 fn fire_notify(notify: &Notify) {
     let _ = catch_unwind(AssertUnwindSafe(|| notify()));
+}
+
+/// Viewport-aware thumbnail scheduling policy. The C++ pool executes; this
+/// decides WHAT decodes next and lets stale batches die structurally.
+#[derive(Default)]
+struct ThumbScheduler {
+    pending: std::collections::VecDeque<ThumbReq>,
+    in_flight: HashSet<ThumbReq>,
+    max_in_flight: u32,
+}
+
+impl ThumbScheduler {
+    fn request(&mut self, req: ThumbReq, replace_batch: bool) {
+        if replace_batch {
+            self.pending.clear();
+        }
+        if !self.in_flight.contains(&req) && !self.pending.contains(&req) {
+            self.pending.push_back(req);
+        }
+    }
+
+    fn done(&mut self, req: &ThumbReq) {
+        self.in_flight.remove(req);
+    }
+
+    fn pump(&mut self, ev_tx: &Sender<Event>, notify: &Notify) {
+        while self.in_flight.len() < self.max_in_flight as usize {
+            let Some(req) = self.pending.pop_front() else { break };
+            if !self.in_flight.insert(req.clone()) {
+                continue;
+            }
+            let _ = ev_tx.send(Event::ThumbNext { req });
+            fire_notify(notify);
+        }
+    }
 }
 
 impl Engine {
@@ -168,6 +225,7 @@ impl Engine {
             thread::spawn(move || {
                 let mut watch_gen: u64 = 0;
                 let mut watched_dir = PathBuf::new();
+                let mut thumbs = ThumbScheduler { max_in_flight: 2, ..Default::default() };
                 loop {
                     crossbeam_channel::select! {
                         recv(cmd_rx) -> cmd => {
@@ -220,6 +278,21 @@ impl Engine {
                                         let _ = ev_tx.send(Event::DirListed { dir, epoch: epoch_at() });
                                         fire_notify(&notify);
                                     }
+                                }
+                                Ok(Command::ThumbRequest { req, replace_batch }) => {
+                                    thumbs.request(req, replace_batch);
+                                    thumbs.pump(&ev_tx, &notify);
+                                }
+                                Ok(Command::ThumbDone { req }) => {
+                                    thumbs.done(&req);
+                                    thumbs.pump(&ev_tx, &notify);
+                                }
+                                Ok(Command::ThumbClear) => {
+                                    thumbs.pending.clear();
+                                }
+                                Ok(Command::ThumbConfig { max_in_flight }) => {
+                                    thumbs.max_in_flight = max_in_flight.max(1);
+                                    thumbs.pump(&ev_tx, &notify);
                                 }
                                 Ok(Command::StopWatch) => {
                                     watch_gen += 1;

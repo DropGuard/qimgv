@@ -1,5 +1,9 @@
 #include "thumbnailerrunnable.h"
 
+#include "qimgv_engine.h"
+
+#include <QFileInfo>
+
 ThumbnailerRunnable::ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, int _size, bool _crop, bool _force) :
     path(_path),
     size(_size),
@@ -12,7 +16,7 @@ ThumbnailerRunnable::ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, 
 void ThumbnailerRunnable::run() {
     emit taskStart(path, size);
     std::shared_ptr<Thumbnail> thumbnail = generate(cache, path, size, crop, force);
-    emit taskEnd(thumbnail, path);
+    emit taskEnd(thumbnail, path, crop);
 }
 
 QString ThumbnailerRunnable::generateIdString(QString path, int size, bool crop) {
@@ -24,11 +28,41 @@ QString ThumbnailerRunnable::generateIdString(QString path, int size, bool crop)
 }
 
 std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, QString path, int size, bool crop, bool force) {
-    DocumentInfo imgInfo(path);
+    // Fast path: ONE file open (header probe) for format/animation/orientation.
+    // DocumentInfo (mime sniff + per-format probes, 3-5 opens) is only used for
+    // videos and formats the header parser doesn't know.
+    QFileInfo fileInfo(path);
+    std::unique_ptr<DocumentInfo> imgInfo;
+    DocumentType type;
+    QString format;
+    int orientation = 1;
+    qimgv_probe_result pr{};
+    if(qimgv_engine_probe(fileInfo.absoluteFilePath().toUtf8().constData(), &pr) == QIMGV_OK
+       && pr.format != QIMGV_FMT_UNKNOWN) {
+        switch(pr.format) {
+            case QIMGV_FMT_JPEG: format = "jpg"; break;
+            case QIMGV_FMT_PNG:  format = "png"; break;
+            case QIMGV_FMT_GIF:  format = "gif"; break;
+            case QIMGV_FMT_WEBP: format = "webp"; break;
+            case QIMGV_FMT_AVIF: format = "avif"; break;
+            case QIMGV_FMT_JXL:  format = "jxl"; break;
+            case QIMGV_FMT_BMP:  format = "bmp"; break;
+            case QIMGV_FMT_TIFF: format = "tiff"; break;
+            default: break;
+        }
+        type = pr.animated ? DocumentType::ANIMATED : DocumentType::STATIC;
+        orientation = (pr.orientation >= 1 && pr.orientation <= 8) ? pr.orientation : 1;
+    } else {
+        imgInfo = std::make_unique<DocumentInfo>(path);
+        type = imgInfo->type();
+        format = imgInfo->format();
+        orientation = imgInfo->exifOrientation();
+    }
+
     QString thumbnailId = generateIdString(path, size, crop);
     std::unique_ptr<QImage> image;
 
-    QString time = QString::number(imgInfo.lastModified().toMSecsSinceEpoch());
+    QString time = QString::number(fileInfo.lastModified().toMSecsSinceEpoch());
 
     if(!force && cache) {
         image.reset(cache->readThumbnail(thumbnailId));
@@ -37,28 +71,28 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
     }
 
     if(!image) {
-        if(imgInfo.type() == DocumentType::NONE) {
-            std::shared_ptr<Thumbnail> thumbnail(new Thumbnail(imgInfo.fileName(), "", size, nullptr));
+        if(type == DocumentType::NONE) {
+            std::shared_ptr<Thumbnail> thumbnail(new Thumbnail(fileInfo.fileName(), "", size, nullptr));
             return thumbnail;
         }
         std::pair<QImage*, QSize> pair;
-        if(imgInfo.type() == VIDEO)
+        if(type == VIDEO)
             pair = createVideoThumbnail(path, size, crop);
         else
-            pair = createThumbnail(imgInfo.filePath(), imgInfo.format().toStdString().c_str(), size, crop);
+            pair = createThumbnail(fileInfo.absoluteFilePath(), format.toStdString().c_str(), size, crop);
         image.reset(pair.first);
         QSize originalSize = pair.second;
 
-        image = ImageLib::exifRotated(std::move(image), imgInfo.exifOrientation());
+        image = ImageLib::exifRotated(std::move(image), orientation);
 
         // put in image info
         image->setText("originalWidth", QString::number(originalSize.width()));
         image->setText("originalHeight", QString::number(originalSize.height()));
         image->setText("lastModified", time);
 
-        if(imgInfo.type() == ANIMATED)
+        if(type == ANIMATED)
             image->setText("label", " [a]");
-        else if(imgInfo.type() == VIDEO)
+        else if(type == VIDEO)
             image->setText("label", " [v]");
 
         if(cache) {
@@ -83,7 +117,7 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
                 image->text("label");
     }
     std::shared_ptr<QPixmap> pixmapPtr(tmpPixmap);
-    std::shared_ptr<Thumbnail> thumbnail(new Thumbnail(imgInfo.fileName(), label, size, pixmapPtr));
+    std::shared_ptr<Thumbnail> thumbnail(new Thumbnail(fileInfo.fileName(), label, size, pixmapPtr));
     return thumbnail;
 }
 

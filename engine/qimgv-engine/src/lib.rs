@@ -14,7 +14,7 @@ pub mod sort;
 pub mod watcher;
 
 pub use engine::{
-    Command, Engine, EngineConfig, Event, Notify, WatchChangeKind,
+    Command, Engine, EngineConfig, Event, Notify, ThumbReq, WatchChangeKind,
 };
 pub use error::EngineError;
 pub use filter::NameFilter;

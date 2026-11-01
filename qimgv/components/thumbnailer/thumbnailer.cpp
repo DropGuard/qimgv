@@ -1,6 +1,10 @@
 #include "thumbnailer.h"
 
+#include "../directorymanager/enginebridge.h"
+
 Thumbnailer::Thumbnailer() {
+    connect(&EngineBridge::instance(), &EngineBridge::thumbNext,
+            this, &Thumbnailer::onThumbNext);
     cache = new ThumbnailCache();
     pool = new QThreadPool(this);
     int threads = settings->thumbnailerThreadCount();
@@ -20,7 +24,16 @@ void Thumbnailer::waitForDone() {
 }
 
 void Thumbnailer::clearTasks() {
+    // pool->clear() kills queued runnables whose taskEnd will never fire —
+    // report every dispatched request as done so the engine's in-flight
+    // accounting doesn't leak, then drop the pending batch
+    auto &bridge = EngineBridge::instance();
+    for (auto it = dispatched.begin(); it != dispatched.end(); ++it)
+        bridge.thumbDone(it.key(), it.value().first, it.value().second);
+    dispatched.clear();
+    bridge.thumbClear();
     pool->clear();
+    mBatchStart = true;
 }
 
 std::shared_ptr<Thumbnail> Thumbnailer::getThumbnail(QString filePath, int size) {
@@ -28,8 +41,15 @@ std::shared_ptr<Thumbnail> Thumbnailer::getThumbnail(QString filePath, int size)
 }
 
 void Thumbnailer::getThumbnailAsync(QString path, int size, bool crop, bool force) {
-    if(!runningTasks.contains(path, size))
-        startThumbnailerThread(path, size, crop, force);
+    const QString key = path + QString("|%1|%2").arg(size).arg(crop);
+    if(runningTasks.contains(path, size) || dispatched.contains(path, qMakePair(size, crop)))
+        return;
+    // viewport priority lives in the engine; the runnable starts on ThumbNext.
+    // `force` (cache bypass) is C++-side state — it only matters at decode time.
+    mPendingForce.insert(key, force);
+    EngineBridge::instance().thumbRequest(path, size, crop, mBatchStart);
+    mBatchStart = false;
+    dispatched.insert(path, qMakePair(size, crop));
 }
 
 void Thumbnailer::startThumbnailerThread(QString filePath, int size, bool crop, bool force) {
@@ -44,7 +64,15 @@ void Thumbnailer::onTaskStart(QString filePath, int size) {
     runningTasks.insert(filePath, size);
 }
 
-void Thumbnailer::onTaskEnd(std::shared_ptr<Thumbnail> thumbnail, QString filePath) {
+void Thumbnailer::onTaskEnd(std::shared_ptr<Thumbnail> thumbnail, QString filePath, bool crop) {
     runningTasks.remove(filePath, thumbnail->size());
+    dispatched.remove(filePath, qMakePair(thumbnail->size(), crop));
+    EngineBridge::instance().thumbDone(filePath, thumbnail->size(), crop);
     emit thumbnailReady(thumbnail, filePath);
+}
+
+void Thumbnailer::onThumbNext(QString filePath, int size, bool crop) {
+    const QString key = filePath + QString("|%1|%2").arg(size).arg(crop);
+    const bool force = mPendingForce.take(key);
+    startThumbnailerThread(filePath, size, crop, force);
 }

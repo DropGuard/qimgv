@@ -78,7 +78,7 @@ int main() {
     qimgv_event ev{};
     qimgv_mutation mut{};
     char dirbuf[512];
-    CHECK(qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut) == 0);
+    CHECK(qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut, nullptr) == 0);
 
     // error paths leave a readable diagnostic
     CHECK(qimgv_engine_set_sort(engine, 99) == QIMGV_ERR_BAD_SORT);
@@ -93,7 +93,7 @@ int main() {
 
     int got = 0;
     for (int i = 0; i < 1000; ++i) {
-        got = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut);
+        got = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut, nullptr);
         if (got != 0)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));

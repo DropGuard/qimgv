@@ -20,7 +20,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use qimgv_engine::{Command, Engine, EngineConfig, EngineError, Event, NameFilter, Notify, SortMode};
+use qimgv_engine::{Command, Engine, EngineConfig, EngineError, Event, NameFilter, Notify, SortMode, ThumbReq};
 
 // --- status codes (mirror include/qimgv_engine.h) ---------------------------
 pub const QIMGV_OK: c_int = 0;
@@ -43,6 +43,9 @@ pub const QIMGV_EVENT_DIR_MUTATED: c_int = 3;
 pub const QIMGV_MUT_ADDED: c_int = 1;
 pub const QIMGV_MUT_MODIFIED: c_int = 2;
 pub const QIMGV_MUT_REMOVED: c_int = 3;
+
+// --- events (continued) ------------------------------------------------------
+pub const QIMGV_EVENT_THUMB_NEXT: c_int = 4;
 
 // --- image formats (mirror meta::ImageFormat) -------------------------------
 pub const QIMGV_FMT_UNKNOWN: c_int = 0;
@@ -111,6 +114,12 @@ pub struct QimgvMutation {
     pub is_dir: c_int,
     pub size: u64,
     pub mtime_ms: i64,
+}
+
+#[repr(C)]
+pub struct QimgvThumbReq {
+    pub size: u32,
+    pub crop: c_int,
 }
 
 /// Raw pointers are not Send; the notify callback ships one to engine threads.
@@ -513,6 +522,105 @@ pub unsafe extern "C" fn qimgv_engine_prev_dir(engine: *mut QimgvEngine, handle:
     neighbor(engine, handle, true, false, out)
 }
 
+// --- thumbnail scheduling -----------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_thumb_request(
+    engine: *mut QimgvEngine,
+    path: *const c_char,
+    size: u32,
+    crop: c_int,
+    replace_batch: c_int,
+) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        let path = read_path(path)?;
+        with_engine(engine, |e| {
+            e.send(Command::ThumbRequest {
+                req: ThumbReq { path, size, crop: crop != 0 },
+                replace_batch: replace_batch != 0,
+            })
+            .map(|_| QIMGV_OK)
+            .map_err(|er| map_engine_error(&er))
+        })
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => {
+            set_last_error_by_code(code);
+            code
+        }
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_thumb_request");
+            QIMGV_ERR_PANIC
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_thumb_done(
+    engine: *mut QimgvEngine,
+    path: *const c_char,
+    size: u32,
+    crop: c_int,
+) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        let path = read_path(path)?;
+        with_engine(engine, |e| {
+            e.send(Command::ThumbDone {
+                req: ThumbReq { path, size, crop: crop != 0 },
+            })
+            .map(|_| QIMGV_OK)
+            .map_err(|er| map_engine_error(&er))
+        })
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => code,
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_thumb_done");
+            QIMGV_ERR_PANIC
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_thumb_clear(engine: *mut QimgvEngine) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        with_engine(engine, |e| {
+            e.send(Command::ThumbClear)
+                .map(|_| QIMGV_OK)
+                .map_err(|er| map_engine_error(&er))
+        })
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => code,
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_thumb_clear");
+            QIMGV_ERR_PANIC
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_thumb_config(engine: *mut QimgvEngine, max_in_flight: u32) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        with_engine(engine, |e| {
+            e.send(Command::ThumbConfig { max_in_flight })
+                .map(|_| QIMGV_OK)
+                .map_err(|er| map_engine_error(&er))
+        })
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => code,
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_thumb_config");
+            QIMGV_ERR_PANIC
+        }
+    }
+}
+
 // --- header probe -----------------------------------------------------------
 
 /// Pure function (thread-safe, does not touch the engine instance): one file
@@ -617,6 +725,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
     dir_buf: *mut c_char,
     dir_cap: usize,
     mutation: *mut QimgvMutation,
+    thumb: *mut QimgvThumbReq,
 ) -> c_int {
     if engine.is_null() || out.is_null() {
         set_last_error("invalid argument");
@@ -638,6 +747,18 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                 set_last_error(&error.to_string());
                 unsafe {
                     *out = QimgvEvent { kind: QIMGV_EVENT_OPEN_FAILED, code, epoch: epoch as u32 };
+                }
+                Ok(1)
+            }
+            Some(Event::ThumbNext { req }) => {
+                write_str(dir_buf, dir_cap, &req.path.to_string_lossy())?;
+                if !thumb.is_null() {
+                    unsafe {
+                        *thumb = QimgvThumbReq { size: req.size, crop: req.crop as c_int };
+                    }
+                }
+                unsafe {
+                    *out = QimgvEvent { kind: QIMGV_EVENT_THUMB_NEXT, code: QIMGV_OK, epoch: 0 };
                 }
                 Ok(1)
             }

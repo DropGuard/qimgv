@@ -42,10 +42,17 @@ public:
     bool includePath(const QString &path);
     void stopWatch();
 
+    // thumbnail scheduling (viewport priority lives in the engine)
+    bool thumbRequest(const QString &path, int size, bool crop, bool replaceBatch);
+    void thumbDone(const QString &path, int size, bool crop);
+    void thumbClear();
+    void thumbConfig(int maxInFlight);
+
 signals:
     void dirListed(const QString &dirPath);
     void openFailed(const QString &dirPath, int statusCode);
     void dirMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs);
+    void thumbNext(const QString &path, int size, bool crop);
 
 private:
     EngineBridge();

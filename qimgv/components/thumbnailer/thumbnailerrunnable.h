@@ -31,5 +31,5 @@ private:
 
 signals:
     void taskStart(QString, int);
-    void taskEnd(std::shared_ptr<Thumbnail>, QString);
+    void taskEnd(std::shared_ptr<Thumbnail>, QString, bool crop);
 };

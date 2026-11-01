@@ -125,6 +125,33 @@ void EngineBridge::stopWatch() {
         qimgv_engine_stop_watch(engine);
 }
 
+bool EngineBridge::thumbRequest(const QString &path, int size, bool crop, bool replaceBatch) {
+    if (!engine)
+        return false;
+    const QByteArray utf8 = path.toUtf8();
+    return qimgv_engine_thumb_request(engine, utf8.constData(),
+                                      static_cast<uint32_t>(size),
+                                      crop ? 1 : 0, replaceBatch ? 1 : 0) == QIMGV_OK;
+}
+
+void EngineBridge::thumbDone(const QString &path, int size, bool crop) {
+    if (!engine)
+        return;
+    const QByteArray utf8 = path.toUtf8();
+    qimgv_engine_thumb_done(engine, utf8.constData(),
+                            static_cast<uint32_t>(size), crop ? 1 : 0);
+}
+
+void EngineBridge::thumbClear() {
+    if (engine)
+        qimgv_engine_thumb_clear(engine);
+}
+
+void EngineBridge::thumbConfig(int maxInFlight) {
+    if (engine)
+        qimgv_engine_thumb_config(engine, static_cast<uint32_t>(maxInFlight));
+}
+
 bool EngineBridge::entryAt(int index, bool dirs, EngineEntry &out) const {
     if (!engine || index < 0)
         return false;
@@ -154,8 +181,9 @@ void EngineBridge::drainEvents() {
     for (;;) {
         qimgv_event ev{};
         qimgv_mutation mut{};
+        qimgv_thumb_req treq{};
         char buf[4096];
-        const int r = qimgv_engine_take_event(engine, &ev, buf, sizeof(buf), &mut);
+        const int r = qimgv_engine_take_event(engine, &ev, buf, sizeof(buf), &mut, &treq);
         if (r <= 0) {
             if (r < 0)
                 qWarning() << "[EngineBridge] take_event failed:" << qimgv_last_error();
@@ -168,6 +196,8 @@ void EngineBridge::drainEvents() {
             emit dirListed(dir);
         } else if (ev.kind == QIMGV_EVENT_DIR_MUTATED) {
             emit dirMutated(mut.kind, dir, mut.is_dir != 0, mut.size, mut.mtime_ms);
+        } else if (ev.kind == QIMGV_EVENT_THUMB_NEXT) {
+            emit thumbNext(dir, static_cast<int>(treq.size), treq.crop != 0);
         } else if (ev.kind == QIMGV_EVENT_OPEN_FAILED) {
             qWarning() << "[EngineBridge] open failed:" << dir << "code" << ev.code
                        << (qimgv_last_error() ? qimgv_last_error() : "");
