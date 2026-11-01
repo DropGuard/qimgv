@@ -4,6 +4,7 @@
 #include "qimgv_engine.h"
 
 #include <QTimer>
+#include <QtEndian>
 #include <chrono>
 
 namespace fs = std::filesystem;
@@ -727,33 +728,82 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     QElapsedTimer rebuildTimer;
     rebuildTimer.start();
     auto &bridge = EngineBridge::instance();
-    const int newFileCount = bridge.fileCount();
-    const int newDirCount = bridge.dirCount();
-    qDebug() << "[DirectoryManager] mirrored listing" << dirPath
-             << "files:" << newFileCount << "dirs:" << newDirCount;
 
-    // snapshot the engine listing
+    // bulk pull: the whole listing crosses in one engine lock pass
+    QByteArray listing;
+    quint32 newFileCount = 0, newDirCount = 0;
+    if(!bridge.exportListing(listing, newFileCount, newDirCount))
+        return;
+
+    // parse the arena into mirror entries
+    QElapsedTimer parseTimer;
+    parseTimer.start();
     std::vector<EngineBridge::EngineEntry> files, dirs;
     files.reserve(newFileCount);
     dirs.reserve(newDirCount);
-    EngineBridge::EngineEntry e;
-    for(int i = 0; i < newFileCount; ++i)
-        if(bridge.entryAt(i, false, e))
-            files.push_back(e);
-    for(int i = 0; i < newDirCount; ++i)
-        if(bridge.entryAt(i, true, e))
-            dirs.push_back(e);
+    {
+        const unsigned char *p = reinterpret_cast<const unsigned char *>(listing.constData());
+        const unsigned char *end = p + listing.size();
+        auto rd32 = [&p]() -> quint32 { quint32 v = qFromLittleEndian<quint32>(p); p += 4; return v; };
+        auto rd64 = [&p]() -> quint64 { quint64 v = qFromLittleEndian<quint64>(p); p += 8; return v; };
+        const quint32 fc = rd32();
+        const quint32 dc = rd32();
+        for(quint32 i = 0; i < fc && p + 32 <= end; ++i) {
+            const quint64 handle = rd64();
+            const quint64 size = rd64();
+            const qint64 mtimeMs = qint64(rd64());
+            const quint32 nlen = rd32();
+            const quint32 plen = rd32();
+            if(p + nlen + plen > end)
+                break;
+            EngineBridge::EngineEntry e;
+            e.name = QString::fromUtf8(reinterpret_cast<const char *>(p), int(nlen));
+            p += nlen;
+            e.path = QString::fromUtf8(reinterpret_cast<const char *>(p), int(plen));
+            p += plen;
+            e.size = size;
+            e.mtimeMs = mtimeMs;
+            e.isDir = false;
+            files.push_back(std::move(e));
+        }
+        for(quint32 i = 0; i < dc && p + 32 <= end; ++i) {
+            const quint64 handle = rd64();
+            const quint64 size = rd64();
+            const qint64 mtimeMs = qint64(rd64());
+            const quint32 nlen = rd32();
+            const quint32 plen = rd32();
+            if(p + nlen + plen > end)
+                break;
+            EngineBridge::EngineEntry e;
+            e.name = QString::fromUtf8(reinterpret_cast<const char *>(p), int(nlen));
+            p += nlen;
+            e.path = QString::fromUtf8(reinterpret_cast<const char *>(p), int(plen));
+            p += plen;
+            e.size = size;
+            e.mtimeMs = mtimeMs;
+            e.isDir = true;
+            dirs.push_back(std::move(e));
+        }
+        qDebug() << "[DirectoryManager] arena pull+parse" << parseTimer.elapsed() << "ms; parsed"
+                 << files.size() << "files" << dirs.size() << "dirs; arena" << listing.size() << "bytes";
+    }
 
+    QElapsedTimer hashTimer;
+    hashTimer.start();
     QHash<QString, QPair<quint64, qint64>> newMeta;
+    newMeta.reserve(newFileCount * 2);
     for(const auto &f : files)
         newMeta.insert(f.path, {f.size, f.mtimeMs});
 
     QSet<QString> newPaths;
+    newPaths.reserve(newFileCount * 2);
     for(const auto &f : files)
         newPaths.insert(f.path);
     QSet<QString> newDirPaths;
+    newDirPaths.reserve(newDirCount * 2);
     for(const auto &d : dirs)
         newDirPaths.insert(d.path);
+    qDebug() << "[dbg] parse" << parseTimer.elapsed() << "ms; hash containers" << hashTimer.elapsed() << "ms";
 
     // The engine snapshot may predate local mutations (watcher-applied
     // creates/renames). Never regress to a stale listing: same-directory
@@ -771,6 +821,8 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     const bool engineBehind = !keepFiles.empty() || !keepDirs.empty();
 
     const bool isNewDir = (mMirroredDir != dirPath);
+    QElapsedTimer rebuildTimer2;
+    rebuildTimer2.start();
 
     if(isNewDir) {
         fileEntryVec.clear();
@@ -797,8 +849,13 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
             dirEntryVec.push_back(std::move(e));
         mPrevFileMeta = std::move(newMeta);
         mMirroredDir = dirPath;
+        qDebug() << "[DirectoryManager] listing vectors rebuilt" << rebuildTimer2.elapsed() << "ms";
+        // NOTE: emit loaded triggers the view-layer repopulation (100k items
+        // measured ~400ms in the gui/ layer) — on the same UI thread but
+        // belonging to the view, not to this mirror
         emit loaded(mDirectoryPath);
-        qDebug() << "[DirectoryManager] listing rebuild" << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
+        qDebug() << "[DirectoryManager] listing rebuild (incl. view repopulation)"
+                 << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
         if(engineBehind)
             scheduleRescan();
         return;

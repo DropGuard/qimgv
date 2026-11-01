@@ -227,6 +227,56 @@ impl DirectoryState {
         e.mtime = mtime;
         true
     }
+
+    // --- bulk listing export ------------------------------------------------
+
+    /// Serializes the whole listing into `buf` (little-endian, one read-lock pass):
+    ///
+    ///   u32 file_count, u32 dir_count
+    ///   then file_count + dir_count records (files first):
+    ///     u64 handle, u64 size, i64 mtime_ms, u32 name_len, u32 path_len
+    ///     name bytes, path bytes (no NUL)
+    ///
+    /// Returns (needed_bytes, file_count, dir_count). When `buf` is smaller than
+    /// needed, nothing is written and needed_bytes tells the caller how much to
+    /// allocate.
+    pub fn write_listing(&self, buf: &mut [u8]) -> (usize, usize, usize) {
+        let mut needed = 8usize;
+        let mut records: Vec<(&EntryKey, &EntryData)> =
+            Vec::with_capacity(self.file_order.len() + self.dir_order.len());
+        for k in &self.file_order {
+            records.push((k, &self.entries[*k]));
+        }
+        for k in &self.dir_order {
+            records.push((k, &self.entries[*k]));
+        }
+        for (_, e) in &records {
+            needed += 32 + e.name.len() + e.path.len();
+        }
+        let file_count = self.file_order.len();
+        let dir_count = self.dir_order.len();
+        if buf.len() < needed {
+            return (needed, file_count, dir_count);
+        }
+
+        let mut off = 0usize;
+        let mut put = |bytes: &[u8]| {
+            buf[off..off + bytes.len()].copy_from_slice(bytes);
+            off += bytes.len();
+        };
+        put(&(file_count as u32).to_le_bytes());
+        put(&(dir_count as u32).to_le_bytes());
+        for (k, e) in &records {
+            put(&key_to_ffi(**k).to_le_bytes());
+            put(&e.size.to_le_bytes());
+            put(&crate::watcher::mtime_ms(e.mtime).to_le_bytes());
+            put(&(e.name.len() as u32).to_le_bytes());
+            put(&(e.path.len() as u32).to_le_bytes());
+            put(e.name.as_bytes());
+            put(e.path.as_bytes());
+        }
+        (needed, file_count, dir_count)
+    }
 }
 
 // --- FFI helpers: stable bit representation for opaque handles --------------

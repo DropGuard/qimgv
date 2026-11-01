@@ -151,6 +151,15 @@ int qimgv_engine_take_event(qimgv_engine *engine, qimgv_event *out,
                             qimgv_mutation *mutation,
                             qimgv_thumb_req *thumb);
 
+/* Bulk listing export: serializes the current listing in ONE lock pass
+ * (little-endian: u32 file_count, u32 dir_count, then per entry
+ * u64 handle, u64 size, i64 mtime_ms, u32 name_len, u32 path_len,
+ * name bytes, path bytes — files first, then dirs). Call with cap=0 to
+ * query `needed_out`; returns QIMGV_ERR_TRUNCATED when cap is too small. */
+int qimgv_engine_export_listing(qimgv_engine *engine, unsigned char *buf,
+                                size_t cap, uint32_t *needed_out,
+                                uint32_t *file_count_out, uint32_t *dir_count_out);
+
 /* Thumbnail scheduling: the engine holds the priority queue; the caller
  * executes dispatched requests (QIMGV_EVENT_THUMB_NEXT) and reports
  * completion. replace_batch=1 on the FIRST request of a fresh viewport

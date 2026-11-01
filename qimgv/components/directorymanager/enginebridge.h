@@ -37,6 +37,8 @@ public:
     int fileCount() const;
     int dirCount() const;
     bool entryAt(int index, bool dirs, EngineEntry &out) const;
+    // bulk pull: the whole listing serialized in one engine lock pass
+    bool exportListing(QByteArray &out, quint32 &fileCount, quint32 &dirCount);
 
     static bool supportsWatching();
     bool includePath(const QString &path);

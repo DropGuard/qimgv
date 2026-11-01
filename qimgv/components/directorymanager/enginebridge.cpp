@@ -153,6 +153,27 @@ void EngineBridge::thumbConfig(int maxInFlight) {
         qimgv_engine_thumb_config(engine, static_cast<uint32_t>(maxInFlight));
 }
 
+bool EngineBridge::exportListing(QByteArray &out, quint32 &fileCount, quint32 &dirCount) {
+    if (!engine)
+        return false;
+    uint32_t needed = 0, fc = 0, dc = 0;
+    if (qimgv_engine_export_listing(engine, nullptr, 0, &needed, &fc, &dc) == QIMGV_OK) {
+        out.clear(); // empty listing
+        fileCount = fc;
+        dirCount = dc;
+        return true;
+    }
+    out.resize(int(needed));
+    if (qimgv_engine_export_listing(engine, reinterpret_cast<unsigned char *>(out.data()),
+                                    size_t(out.size()), &needed, &fc, &dc) != QIMGV_OK) {
+        qWarning() << "[EngineBridge] export listing failed:" << qimgv_last_error();
+        return false;
+    }
+    fileCount = fc;
+    dirCount = dc;
+    return true;
+}
+
 bool EngineBridge::entryAt(int index, bool dirs, EngineEntry &out) const {
     if (!engine || index < 0)
         return false;

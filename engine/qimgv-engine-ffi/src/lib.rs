@@ -621,6 +621,60 @@ pub unsafe extern "C" fn qimgv_engine_thumb_config(engine: *mut QimgvEngine, max
     }
 }
 
+// --- bulk listing export ------------------------------------------------------
+
+/// Serializes the current listing into `buf` in one lock pass (LE wire format,
+/// see model::write_listing). If `cap` is too small, returns QIMGV_ERR_TRUNCATED
+/// with `needed_out` set; counts are always written.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_export_listing(
+    engine: *mut QimgvEngine,
+    buf: *mut u8,
+    cap: usize,
+    needed_out: *mut u32,
+    file_count_out: *mut u32,
+    dir_count_out: *mut u32,
+) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        if engine.is_null() || needed_out.is_null() || file_count_out.is_null() || dir_count_out.is_null()
+        {
+            return Err(QIMGV_ERR_INVALID);
+        }
+        with_engine(engine, |e| {
+            // cap==0 with a null buf is the size-probe call
+            let slice = if buf.is_null() && cap == 0 {
+                &mut [][..]
+            } else if buf.is_null() {
+                return Err(QIMGV_ERR_INVALID);
+            } else {
+                unsafe { std::slice::from_raw_parts_mut(buf, cap) }
+            };
+            let (needed, fc, dc) = e.export_listing(slice);
+            unsafe {
+                *needed_out = needed as u32;
+                *file_count_out = fc as u32;
+                *dir_count_out = dc as u32;
+            }
+            if slice.len() < needed {
+                Err(QIMGV_ERR_TRUNCATED)
+            } else {
+                Ok(QIMGV_OK)
+            }
+        })
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => {
+            set_last_error_by_code(code);
+            code
+        }
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_export_listing");
+            QIMGV_ERR_PANIC
+        }
+    }
+}
+
 // --- header probe -----------------------------------------------------------
 
 /// Pure function (thread-safe, does not touch the engine instance): one file

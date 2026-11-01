@@ -411,6 +411,14 @@ impl Engine {
         }
     }
 
+    /// Serializes the whole current listing in ONE read-lock pass
+    /// (see DirectoryState::write_listing for the wire format).
+    /// Returns (needed_bytes, file_count, dir_count).
+    pub fn export_listing(&self, buf: &mut [u8]) -> (usize, usize, usize) {
+        let st = self.state.read().unwrap_or_else(|p| p.into_inner());
+        st.write_listing(buf)
+    }
+
     /// Current session epoch; bumped by every OpenDir/rescan.
     pub fn epoch(&self) -> u64 {
         self.epoch.load(Ordering::Relaxed)
