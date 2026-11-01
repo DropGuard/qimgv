@@ -9,6 +9,9 @@ void LoaderRunnable::run() {
     QElapsedTimer t;
     t.start();
     auto image = ImageFactory::createImage(path, scaled);
-    qDebug() << "L:" << t.elapsed() << "ms" << (scaled ? "[scaled]" : "[full]") << path;
-    emit finished(image, path, scaled);
+    // the RESULT decides the tier: only formats with native scaled decode
+    // (JPEG) produce a tier-1 image; everything else decodes full here
+    bool resultScaled = scaled && image && image->isScaledResult();
+    qDebug() << "L:" << t.elapsed() << "ms" << (resultScaled ? "[scaled]" : "[full]");
+    emit finished(image, path, resultScaled);
 }

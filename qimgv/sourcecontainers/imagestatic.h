@@ -14,6 +14,7 @@ public:
     ImageStatic(QString _path);
     ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled = false);
     bool isScaledRequest() const { return mScaledRequest; }
+    bool isScaledResult() const override { return mScaledApplied; }
     ~ImageStatic();
 
     std::unique_ptr<QPixmap> getPixmap();
@@ -34,6 +35,7 @@ public slots:
 
 private:
     bool mScaledRequest = false;
+    bool mScaledApplied = false;
     void load();
     std::shared_ptr<const QImage> image, imageEdited;
     void loadGeneric();

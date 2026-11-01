@@ -14,6 +14,9 @@ public:
     Image(std::unique_ptr<DocumentInfo>);
     virtual ~Image() = 0;
     virtual std::unique_ptr<QPixmap> getPixmap() = 0;
+    // two-tier decode: true when the decoded image is a scaled (screen-res)
+    // tier-1 result that still needs a full-res upgrade
+    virtual bool isScaledResult() const { return false; }
     virtual std::shared_ptr<const QImage> getImage() = 0;
     DocumentType type() const;
     QString filePath() const;

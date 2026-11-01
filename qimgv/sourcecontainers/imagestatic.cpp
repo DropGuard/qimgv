@@ -44,14 +44,18 @@ void ImageStatic::loadGeneric() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     r.setAllocationLimit(settings->memoryAllocationLimit());
 #endif
-    if(mScaledRequest) {
+    if(mScaledRequest && mDocInfo->format() == "jpg") {
         // tier-1: decode at screen resolution via libjpeg DCT scaling
         // (1/2 edge = 1/4 pixels). Full-res follows as tier-2 upgrade.
+        // JPEG-only: other formats scale AFTER full decode in Qt, which
+        // costs more than it saves (measured: PNG scaled 84ms vs full 46ms).
         QSize orig = r.size();
         QSize screen = QApplication::primaryScreen()->size()
                        * QApplication::primaryScreen()->devicePixelRatio();
-        if(orig.isValid() && (orig.width() > screen.width() || orig.height() > screen.height()))
+        if(orig.isValid() && (orig.width() > screen.width() || orig.height() > screen.height())) {
             r.setScaledSize(orig.scaled(screen, Qt::KeepAspectRatio));
+            mScaledApplied = true;
+        }
     }
     QImage *tmp = new QImage();
     r.read(tmp);
