@@ -24,6 +24,14 @@ static_assert(offsetof(qimgv_entry_meta, size) == 8, "layout drift");
 static_assert(offsetof(qimgv_entry_meta, mtime_ms) == 16, "layout drift");
 static_assert(offsetof(qimgv_entry_meta, is_dir) == 24, "layout drift");
 
+// Layout pinning — must match #[repr(C)] QimgvProbeResult (5 × int32).
+static_assert(sizeof(qimgv_probe_result) == 20, "qimgv_probe_result layout drift");
+static_assert(offsetof(qimgv_probe_result, format) == 0, "layout drift");
+static_assert(offsetof(qimgv_probe_result, animated) == 4, "layout drift");
+static_assert(offsetof(qimgv_probe_result, orientation) == 8, "layout drift");
+static_assert(offsetof(qimgv_probe_result, width) == 12, "layout drift");
+static_assert(offsetof(qimgv_probe_result, height) == 16, "layout drift");
+
 static int failures = 0;
 #define CHECK(cond)                                                        \
     do {                                                                   \
@@ -63,11 +71,11 @@ int main() {
     // error paths leave a readable diagnostic
     CHECK(qimgv_engine_set_sort(engine, 99) == QIMGV_ERR_BAD_SORT);
     CHECK(qimgv_last_error() != nullptr);
-    CHECK(qimgv_engine_open_dir(engine, nullptr) == QIMGV_ERR_INVALID);
+    CHECK(qimgv_engine_open_dir(engine, nullptr, 0) == QIMGV_ERR_INVALID);
 
     // async open on a real directory
     std::string fixture = makeFixture();
-    CHECK(qimgv_engine_open_dir(engine, fixture.c_str()) == QIMGV_OK);
+    CHECK(qimgv_engine_open_dir(engine, fixture.c_str(), 0) == QIMGV_OK);
 
     int got = 0;
     for (int i = 0; i < 1000; ++i) {
@@ -97,6 +105,32 @@ int main() {
     CHECK(qimgv_engine_file_entry_at(engine, 0, &meta, name, 1, path, sizeof(path)) == QIMGV_ERR_TRUNCATED);
 
     qimgv_engine_free(engine);
+
+    // --- probe: pure function, no engine instance needed -------------------
+    qimgv_probe_result pr{};
+    // CRC-free PNG is fine — the header parsers don't validate chunk CRCs
+    auto chunk = [](const char tag[4], const unsigned char *data, uint32_t len) {
+        std::string c;
+        for (int i = 3; i >= 0; --i) c.push_back(char((len >> (8 * i)) & 0xff));
+        c.append(tag, 4);
+        c.append(reinterpret_cast<const char *>(data), len);
+        return c;
+    };
+    unsigned char ihdr[13] = {0, 0, 0, 40, 0, 0, 0, 20, 8, 2, 0, 0, 0}; // 40x20 RGB
+    std::string png = "\x89PNG\r\n\x1a\n";
+    png += chunk("IHDR", ihdr, 13);
+    png += chunk("IDAT", reinterpret_cast<const unsigned char *>(""), 0);
+    png += chunk("IEND", reinterpret_cast<const unsigned char *>(""), 0);
+    {
+        std::filesystem::path pp = std::filesystem::temp_directory_path() / "qimgv_contract_probe.png";
+        std::ofstream(pp, std::ios::binary).write(png.data(), png.size());
+        CHECK(qimgv_engine_probe(pp.string().c_str(), &pr) == QIMGV_OK);
+        CHECK(pr.format == QIMGV_FMT_PNG);
+        CHECK(pr.width == 40 && pr.height == 20);
+        CHECK(pr.animated == 0);
+        CHECK(pr.orientation >= 1 && pr.orientation <= 8);
+        CHECK(qimgv_engine_probe(nullptr, &pr) == QIMGV_ERR_INVALID);
+    }
 
     std::printf(failures == 0 ? "engine contract: OK\n" : "engine contract: %d FAILURES\n", failures);
     return failures == 0 ? 0 : 1;

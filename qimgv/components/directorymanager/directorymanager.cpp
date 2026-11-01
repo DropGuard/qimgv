@@ -695,6 +695,28 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     for(const auto &f : files)
         newMeta.insert(f.path, {f.size, f.mtimeMs});
 
+    QSet<QString> newPaths;
+    for(const auto &f : files)
+        newPaths.insert(f.path);
+    QSet<QString> newDirPaths;
+    for(const auto &d : dirs)
+        newDirPaths.insert(d.path);
+
+    // The engine snapshot may predate local mutations (watcher-applied
+    // creates/renames). Never regress to a stale listing: same-directory
+    // entries that still exist on disk are kept and a rescan converges the
+    // engine afterwards.
+    std::vector<FSEntry> keepFiles, keepDirs;
+    for(const auto &e : fileEntryVec)
+        if(!newPaths.contains(e.path) && QFileInfo(e.path).absolutePath() == dirPath
+           && QFileInfo(e.path).isFile())
+            keepFiles.push_back(e);
+    for(const auto &e : dirEntryVec)
+        if(!newDirPaths.contains(e.path) && QFileInfo(e.path).absolutePath() == dirPath
+           && QFileInfo(e.path).isDir())
+            keepDirs.push_back(e);
+    const bool engineBehind = !keepFiles.empty() || !keepDirs.empty();
+
     const bool isNewDir = (mMirroredDir != dirPath);
 
     if(isNewDir) {
@@ -716,35 +738,48 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
             entry.isDirectory = true;
             dirEntryVec.push_back(std::move(entry));
         }
+        for(auto &e : keepFiles)
+            fileEntryVec.push_back(std::move(e));
+        for(auto &e : keepDirs)
+            dirEntryVec.push_back(std::move(e));
         mPrevFileMeta = std::move(newMeta);
         mMirroredDir = dirPath;
         emit loaded(mDirectoryPath);
+        if(engineBehind)
+            scheduleRescan();
         return;
     }
 
     // same directory: granular resync — keep views/selection stable
-    QSet<QString> newPaths, oldPaths;
-    for(const auto &f : files)
-        newPaths.insert(f.path);
+    QSet<QString> oldPaths;
     for(const auto &f : fileEntryVec)
         oldPaths.insert(f.path);
-    QSet<QString> newDirPaths, oldDirPaths;
-    for(const auto &d : dirs)
-        newDirPaths.insert(d.path);
+    QSet<QString> oldDirPaths;
     for(const auto &d : dirEntryVec)
         oldDirPaths.insert(d.path);
 
-    // 1. removals (descending index keeps earlier indexes valid)
+    // 1. removals (descending index keeps earlier indexes valid); a missing
+    //    entry that still exists on disk means a stale engine snapshot
+    bool staleSnapshot = false;
     for(int i = static_cast<int>(fileEntryVec.size()) - 1; i >= 0; --i) {
-        if(!newPaths.contains(fileEntryVec[static_cast<size_t>(i)].path)) {
-            qDebug() << "fileRem(resync)" << fileEntryVec[static_cast<size_t>(i)].path;
-            emit fileRemoved(fileEntryVec[static_cast<size_t>(i)].path, i);
+        const QString &p = fileEntryVec[static_cast<size_t>(i)].path;
+        if(!newPaths.contains(p)) {
+            if(QFileInfo(p).isFile()) {
+                staleSnapshot = true;
+                continue;
+            }
+            emit fileRemoved(p, i);
             fileEntryVec.erase(fileEntryVec.begin() + i);
         }
     }
     for(int i = static_cast<int>(dirEntryVec.size()) - 1; i >= 0; --i) {
-        if(!newDirPaths.contains(dirEntryVec[static_cast<size_t>(i)].path)) {
-            emit dirRemoved(dirEntryVec[static_cast<size_t>(i)].path, i);
+        const QString &p = dirEntryVec[static_cast<size_t>(i)].path;
+        if(!newDirPaths.contains(p)) {
+            if(QFileInfo(p).isDir()) {
+                staleSnapshot = true;
+                continue;
+            }
+            emit dirRemoved(p, i);
             dirEntryVec.erase(dirEntryVec.begin() + i);
         }
     }
@@ -793,4 +828,6 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     }
 
     mPrevFileMeta = std::move(newMeta);
+    if(staleSnapshot || engineBehind)
+        scheduleRescan();
 }

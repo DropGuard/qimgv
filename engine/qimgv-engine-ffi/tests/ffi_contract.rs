@@ -92,7 +92,7 @@ fn argument_validation_and_last_error() {
     let engine = new_engine(None, false, &flag);
     assert!(!engine.is_null());
     unsafe {
-        assert_eq!(qimgv_engine_open_dir(engine, std::ptr::null()), QIMGV_ERR_INVALID);
+        assert_eq!(qimgv_engine_open_dir(engine, std::ptr::null(), 0), QIMGV_ERR_INVALID);
         assert_eq!(qimgv_engine_set_sort(engine, 99), QIMGV_ERR_BAD_SORT);
 
         // no directory opened yet → any index is out of range
@@ -125,7 +125,7 @@ fn bad_utf8_path_rejected() {
     let bad = b"\xff\xfe\x00";
     unsafe {
         assert_eq!(
-            qimgv_engine_open_dir(engine, bad.as_ptr() as *const c_char),
+            qimgv_engine_open_dir(engine, bad.as_ptr() as *const c_char, 0),
             QIMGV_ERR_BAD_UTF8
         );
         qimgv_engine_free(engine);
@@ -143,7 +143,7 @@ fn open_dir_event_queries_and_truncation() {
     assert!(!engine.is_null());
 
     let path_c = CString::new(dir.path().to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr()) }, QIMGV_OK);
+    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr(), 0) }, QIMGV_OK);
 
     assert!(wait_flag(&flag, Duration::from_secs(5)), "notify not fired");
     let (kind, code, ev_dir) =
@@ -193,6 +193,48 @@ fn open_dir_event_queries_and_truncation() {
 }
 
 #[test]
+fn probe_via_ffi() {
+    // minimal CRC-free PNG (parsers don't validate chunk CRCs)
+    fn png_chunk(tag: &[u8], data: &[u8]) -> Vec<u8> {
+        let mut out = (data.len() as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(tag);
+        out.extend_from_slice(data);
+        out
+    }
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    let mut ihdr = 64u32.to_be_bytes().to_vec();
+    ihdr.extend_from_slice(&32u32.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 2, 0, 0, 0]);
+    png.extend_from_slice(&png_chunk(b"IHDR", &ihdr));
+    png.extend_from_slice(&png_chunk(b"IDAT", &[0]));
+    png.extend_from_slice(&png_chunk(b"IEND", &[]));
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("t.png");
+    std::fs::write(&path, &png).unwrap();
+    let path_c = CString::new(path.to_str().unwrap()).unwrap();
+
+    let mut out = QimgvProbeResult { format: 0, animated: 0, orientation: 0, width: 0, height: 0 };
+    unsafe {
+        assert_eq!(qimgv_engine_probe(path_c.as_ptr(), &mut out), QIMGV_OK);
+        assert_eq!(out.format, QIMGV_FMT_PNG);
+        assert_eq!((out.width, out.height), (64, 32));
+        assert_eq!(out.animated, 0);
+        assert!(out.orientation >= 1 && out.orientation <= 8);
+
+        assert_eq!(qimgv_engine_probe(path_c.as_ptr(), std::ptr::null_mut()), QIMGV_ERR_INVALID);
+        assert_eq!(
+            qimgv_engine_probe(c"\xff\xfe".as_ptr(), &mut out),
+            QIMGV_ERR_BAD_UTF8
+        );
+        assert_eq!(
+            qimgv_engine_probe(c"/nonexistent/qimgv-probe".as_ptr(), &mut out),
+            QIMGV_ERR_IO
+        );
+    }
+}
+
+#[test]
 fn extension_filter_via_ffi() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("keep.jpg"), b"x").unwrap();
@@ -204,7 +246,7 @@ fn extension_filter_via_ffi() {
     assert!(!engine.is_null());
 
     let path_c = CString::new(dir.path().to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr()) }, QIMGV_OK);
+    assert_eq!(unsafe { qimgv_engine_open_dir(engine, path_c.as_ptr(), 0) }, QIMGV_OK);
     take_event(engine, Duration::from_secs(5)).expect("no DirListed event");
 
     unsafe {

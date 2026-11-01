@@ -38,6 +38,17 @@ typedef struct qimgv_engine qimgv_engine;
 #define QIMGV_EVENT_DIR_LISTED  1
 #define QIMGV_EVENT_OPEN_FAILED 2
 
+/* image formats (qimgv_probe_result.format) */
+#define QIMGV_FMT_UNKNOWN 0
+#define QIMGV_FMT_JPEG    1
+#define QIMGV_FMT_PNG     2
+#define QIMGV_FMT_GIF     3
+#define QIMGV_FMT_WEBP    4
+#define QIMGV_FMT_AVIF    5
+#define QIMGV_FMT_JXL     6
+#define QIMGV_FMT_BMP     7
+#define QIMGV_FMT_TIFF    8
+
 /* sort modes (maps qimgv's SortingMode; bridge maps explicitly) */
 #define QIMGV_SORT_NAME       0
 #define QIMGV_SORT_NAME_DESC  1
@@ -58,6 +69,14 @@ typedef struct qimgv_event {
     int code;          /* QIMGV_ERR_* (QIMGV_OK for DIR_LISTED) */
 } qimgv_event;
 
+typedef struct qimgv_probe_result {
+    int32_t format;      /* QIMGV_FMT_* */
+    int32_t animated;    /* 0/1 */
+    int32_t orientation; /* EXIF 1..=8; 1 = normal/unknown */
+    int32_t width;       /* 0 = unknown */
+    int32_t height;
+} qimgv_probe_result;
+
 typedef void (*qimgv_notify_fn)(void *user);
 
 const char *qimgv_engine_version(void);
@@ -72,7 +91,9 @@ void qimgv_engine_free(qimgv_engine *engine);
 
 /* Commands — return QIMGV_OK when accepted (asynchronous; results arrive as
  * events). */
-int qimgv_engine_open_dir(qimgv_engine *engine, const char *path_utf8);
+/* sort_mode: QIMGV_SORT_* applied atomically with the scan, or -1 to keep
+ * the engine's current sort. */
+int qimgv_engine_open_dir(qimgv_engine *engine, const char *path_utf8, int sort_mode);
 int qimgv_engine_set_sort(qimgv_engine *engine, int mode);
 int qimgv_engine_set_show_hidden(qimgv_engine *engine, int show);
 
@@ -96,6 +117,11 @@ int qimgv_engine_prev_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
 /* Returns 1 if an event was written, 0 if none pending, negative on error. */
 int qimgv_engine_take_event(qimgv_engine *engine, qimgv_event *out,
                             char *dir_buf, size_t dir_cap);
+
+/* Pure function — thread-safe, does not touch the engine instance. One file
+ * open, header-only parse. Parse failures are QIMGV_OK with FMT_UNKNOWN and
+ * zero dimensions; only an unreadable file is ERR_IO. */
+int qimgv_engine_probe(const char *path_utf8, qimgv_probe_result *out);
 
 #ifdef __cplusplus
 }

@@ -38,6 +38,17 @@ pub const QIMGV_EVENT_NONE: c_int = 0;
 pub const QIMGV_EVENT_DIR_LISTED: c_int = 1;
 pub const QIMGV_EVENT_OPEN_FAILED: c_int = 2;
 
+// --- image formats (mirror meta::ImageFormat) -------------------------------
+pub const QIMGV_FMT_UNKNOWN: c_int = 0;
+pub const QIMGV_FMT_JPEG: c_int = 1;
+pub const QIMGV_FMT_PNG: c_int = 2;
+pub const QIMGV_FMT_GIF: c_int = 3;
+pub const QIMGV_FMT_WEBP: c_int = 4;
+pub const QIMGV_FMT_AVIF: c_int = 5;
+pub const QIMGV_FMT_JXL: c_int = 6;
+pub const QIMGV_FMT_BMP: c_int = 7;
+pub const QIMGV_FMT_TIFF: c_int = 8;
+
 thread_local! {
     static LAST_ERROR: RefCell<Option<CString>> = const { RefCell::new(None) };
 }
@@ -74,6 +85,15 @@ pub struct QimgvEntryMeta {
 pub struct QimgvEvent {
     pub kind: c_int,
     pub code: c_int,
+}
+
+#[repr(C)]
+pub struct QimgvProbeResult {
+    pub format: c_int,
+    pub animated: c_int,
+    pub orientation: c_int, // EXIF 1..=8; 1 = normal/unknown
+    pub width: c_int,       // 0 = unknown
+    pub height: c_int,
 }
 
 /// Raw pointers are not Send; the notify callback ships one to engine threads.
@@ -223,11 +243,20 @@ pub extern "C" fn qimgv_last_error() -> *const c_char {
 // --- commands ---------------------------------------------------------------
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn qimgv_engine_open_dir(engine: *mut QimgvEngine, path: *const c_char) -> c_int {
+pub unsafe extern "C" fn qimgv_engine_open_dir(
+    engine: *mut QimgvEngine,
+    path: *const c_char,
+    sort_mode: c_int,
+) -> c_int {
     let attempt = || -> Result<c_int, c_int> {
         let path = read_path(path)?;
+        let sort = if sort_mode < 0 {
+            None // keep the engine's current sort
+        } else {
+            Some(SortMode::try_from(sort_mode).map_err(|_| QIMGV_ERR_BAD_SORT)?)
+        };
         with_engine(engine, |e| {
-            e.send(Command::OpenDir { path })
+            e.send(Command::OpenDir { path, sort })
                 .map(|_| QIMGV_OK)
                 .map_err(|e| map_engine_error(&e))
         })
@@ -458,6 +487,43 @@ pub unsafe extern "C" fn qimgv_engine_next_dir(engine: *mut QimgvEngine, handle:
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn qimgv_engine_prev_dir(engine: *mut QimgvEngine, handle: u64, out: *mut u64) -> c_int {
     neighbor(engine, handle, true, false, out)
+}
+
+// --- header probe -----------------------------------------------------------
+
+/// Pure function (thread-safe, does not touch the engine instance): one file
+/// open, header-only parse. Parse failures are QIMGV_OK with FMT_UNKNOWN and
+/// zero dimensions; only an unreadable file is ERR_IO.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qimgv_engine_probe(path: *const c_char, out: *mut QimgvProbeResult) -> c_int {
+    let attempt = || -> Result<c_int, c_int> {
+        if out.is_null() {
+            return Err(QIMGV_ERR_INVALID);
+        }
+        let p = read_path(path)?;
+        let info = qimgv_engine::meta::probe(&p).map_err(|e| map_engine_error(&e))?;
+        unsafe {
+            *out = QimgvProbeResult {
+                format: info.format as c_int,
+                animated: info.animated as c_int,
+                orientation: info.orientation as c_int,
+                width: info.width as c_int,
+                height: info.height as c_int,
+            };
+        }
+        Ok(QIMGV_OK)
+    };
+    match catch_unwind(AssertUnwindSafe(attempt)) {
+        Ok(Ok(code)) => code,
+        Ok(Err(code)) => {
+            set_last_error_by_code(code);
+            code
+        }
+        Err(_) => {
+            set_last_error("panic in qimgv_engine_probe");
+            QIMGV_ERR_PANIC
+        }
+    }
 }
 
 // --- events -----------------------------------------------------------------

@@ -11,6 +11,8 @@ slotmap = { workspace = true }
 natord = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
+imagesize = { workspace = true }
+kamadak-exif = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

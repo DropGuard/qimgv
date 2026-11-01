@@ -18,7 +18,10 @@ pub type Notify = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    OpenDir { path: PathBuf },
+    /// Opens a directory. `sort` is applied atomically with the scan (one
+    /// DirListed event) — passing it separately would emit a stale resort
+    /// event for the *previous* directory's state.
+    OpenDir { path: PathBuf, sort: Option<SortMode> },
     SetSort(SortMode),
     Shutdown,
 }
@@ -121,8 +124,11 @@ impl Engine {
                         recv(cmd_rx) -> cmd => {
                             match cmd {
                                 Err(_) | Ok(Command::Shutdown) => break,
-                                Ok(Command::OpenDir { path }) => {
+                                Ok(Command::OpenDir { path, sort }) => {
                                     let e = epoch.fetch_add(1, Ordering::Relaxed) + 1;
+                                    if let Some(mode) = sort {
+                                        state_write(&state).resort(mode);
+                                    }
                                     let _ = job_tx.send(ScanJob { epoch: e, path });
                                 }
                                 Ok(Command::SetSort(mode)) => {
