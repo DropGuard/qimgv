@@ -1,4 +1,6 @@
 #include "imagestatic.h"
+
+#include <QScreen>
 #include <time.h>
 
 ImageStatic::ImageStatic(QString _path)
@@ -7,8 +9,8 @@ ImageStatic::ImageStatic(QString _path)
     load();
 }
 
-ImageStatic::ImageStatic(std::unique_ptr<DocumentInfo> _info)
-    : Image(std::move(_info))
+ImageStatic::ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled)
+    : Image(std::move(_info)), mScaledRequest(scaled)
 {
     load();
 }
@@ -29,6 +31,7 @@ void ImageStatic::load() {
 
 
 void ImageStatic::loadGeneric() {
+    // two-tier decode: scaled target = primary screen at devicePixelRatio
     /* QImageReader::read() seems more reliable than just reading via QImage.
      * For example: "Invalid JPEG file structure: two SOF markers"
      * QImageReader::read() returns false, but still reads an image. Meanwhile QImage just fails.
@@ -41,6 +44,15 @@ void ImageStatic::loadGeneric() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     r.setAllocationLimit(settings->memoryAllocationLimit());
 #endif
+    if(mScaledRequest) {
+        // tier-1: decode at screen resolution via libjpeg DCT scaling
+        // (1/2 edge = 1/4 pixels). Full-res follows as tier-2 upgrade.
+        QSize orig = r.size();
+        QSize screen = QApplication::primaryScreen()->size()
+                       * QApplication::primaryScreen()->devicePixelRatio();
+        if(orig.isValid() && (orig.width() > screen.width() || orig.height() > screen.height()))
+            r.setScaledSize(orig.scaled(screen, Qt::KeepAspectRatio));
+    }
     QImage *tmp = new QImage();
     r.read(tmp);
     std::unique_ptr<const QImage> img(tmp);

@@ -19,38 +19,43 @@ bool Loader::isLoading(QString path) {
 }
 
 std::shared_ptr<Image> Loader::load(QString path) {
-    return ImageFactory::createImage(path);
+    // sync path (editing fallback): always full quality
+    return ImageFactory::createImage(path, false);
 }
 
 // clears all buffered tasks before loading
 void Loader::loadAsyncPriority(QString path) {
     clearPool();
-    doLoadAsync(path, 1);
+    doLoadAsync(path, 1, true); // tier-1 scaled for instant display
 }
 
 void Loader::loadAsync(QString path) {
-    doLoadAsync(path, 0);
+    doLoadAsync(path, 0, true);
 }
 
-void Loader::doLoadAsync(QString path, int priority) {
+void Loader::loadAsyncFull(QString path) {
+    doLoadAsync(path, 0, false); // tier-2 full-res upgrade
+}
+
+void Loader::doLoadAsync(QString path, int priority, bool scaled) {
     if(tasks.contains(path)) {
         return;
     }
 
-    auto runnable = new LoaderRunnable(path);
+    auto runnable = new LoaderRunnable(path, scaled);
     runnable->setAutoDelete(false);
     tasks.insert(path, runnable);
     connect(runnable, &LoaderRunnable::finished, this, &Loader::onLoadFinished, Qt::UniqueConnection);
     pool->start(runnable, priority);
 }
 
-void Loader::onLoadFinished(std::shared_ptr<Image> image, const QString &path) {
+void Loader::onLoadFinished(std::shared_ptr<Image> image, const QString &path, bool scaled) {
     auto task = tasks.take(path);
     delete task;
     if(!image)
         emit loadFailed(path);
     else
-        emit loadFinished(image, path);
+        emit loadFinished(image, path, scaled);
 }
 
 void Loader::clearPool() {

@@ -12,7 +12,8 @@
 class ImageStatic : public Image {
 public:
     ImageStatic(QString _path);
-    ImageStatic(std::unique_ptr<DocumentInfo> _info);
+    ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled = false);
+    bool isScaledRequest() const { return mScaledRequest; }
     ~ImageStatic();
 
     std::unique_ptr<QPixmap> getPixmap();
@@ -32,6 +33,7 @@ public slots:
     bool save(QString destPath);
 
 private:
+    bool mScaledRequest = false;
     void load();
     std::shared_ptr<const QImage> image, imageEdited;
     void loadGeneric();

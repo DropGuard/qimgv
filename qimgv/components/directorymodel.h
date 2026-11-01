@@ -16,7 +16,9 @@ public:
     Scaler *scaler;
 
     void load(QString filePath, bool asyncHint);
+    void load(QString filePath, bool asyncHint, bool scaled);
     void preload(QString filePath);
+    void upgradeToFull(QString filePath);
 
     int fileCount() const;
     int dirCount() const;
@@ -84,17 +86,18 @@ signals:
     void loadFailed(const QString &path);
     void sortingChanged(SortingMode);
     void indexChanged(int oldIndex, int index);
-    void imageReady(std::shared_ptr<Image> img, const QString&);
+    void imageReady(std::shared_ptr<Image> img, const QString&, bool scaled);
     void imageUpdated(QString filePath);
 
 private:
     DirectoryManager dirManager;
     Loader loader;
+    QSet<QString> mScaledCache; // paths whose cached image is tier-1 (scaled)
     Cache cache;
     FileListSource fileListSource;
 
 private slots:
-    void onImageReady(std::shared_ptr<Image> img, const QString &path);
+    void onImageReady(std::shared_ptr<Image> img, const QString &path, bool scaled);
     void onSortingChanged();
     void onFileAdded(QString filePath);
     void onFileRemoved(QString filePath, int index);

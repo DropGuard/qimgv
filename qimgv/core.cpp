@@ -1272,12 +1272,17 @@ bool Core::loadFileIndex(int index, bool async, bool preload) {
     auto entry = model->fileEntryAt(index);
     if(entry.path.isEmpty())
         return false;
+    // direction-aware preload: decode only the side of travel
+    int oldIndex = model->indexOfFile(state.currentFilePath);
+    bool movingForward = (oldIndex == -1) ? true : (index >= oldIndex);
     state.currentFilePath = entry.path;
     model->unloadExcept(entry.path, preload);
     model->load(entry.path, async);
     if(preload) {
-        model->preload(model->nextOf(entry.path));
-        model->preload(model->prevOf(entry.path));
+        if(movingForward)
+            model->preload(model->nextOf(entry.path));
+        else
+            model->preload(model->prevOf(entry.path));
     }
     thumbPanelPresenter.selectAndFocus(entry.path);
     folderViewPresenter.selectAndFocus(entry.path);
@@ -1455,7 +1460,7 @@ void Core::onLoadFailed(const QString &path) {
         mw->closeImage();
 }
 
-void Core::onModelItemReady(std::shared_ptr<Image> img, const QString &path) {
+void Core::onModelItemReady(std::shared_ptr<Image> img, const QString &path, bool scaled) {
     if(path == state.currentFilePath) {
         state.currentImg = img;
         guiSetImage(img);
@@ -1466,6 +1471,10 @@ void Core::onModelItemReady(std::shared_ptr<Image> img, const QString &path) {
             QTimer::singleShot(40, this, SLOT(modelDelayLoad()));
         }
         model->unloadExcept(state.currentFilePath, settings->usePreloader());
+        // two-tier: a scaled image on screen schedules the full-res upgrade.
+        // The next flip's clearPool kills it if the user moved on.
+        if(scaled)
+            model->upgradeToFull(path);
     }
 }
 

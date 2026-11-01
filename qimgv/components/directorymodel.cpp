@@ -201,14 +201,18 @@ bool DirectoryModel::loaderBusy() const {
     return loader.isBusy();
 }
 
-void DirectoryModel::onImageReady(std::shared_ptr<Image> img, const QString &path) {
+void DirectoryModel::onImageReady(std::shared_ptr<Image> img, const QString &path, bool scaled) {
     if(!img) {
         emit loadFailed(path);
         return;
     }
     cache.remove(path);
     cache.insert(img);
-    emit imageReady(img, path);
+    if(scaled)
+        mScaledCache.insert(path);
+    else
+        mScaledCache.remove(path);
+    emit imageReady(img, path, scaled);
 }
 
 bool DirectoryModel::saveFile(const QString &filePath) {
@@ -305,22 +309,31 @@ void DirectoryModel::updateImage(QString filePath, std::shared_ptr<Image> img) {
 }
 
 void DirectoryModel::load(QString filePath, bool asyncHint) {
+    load(filePath, asyncHint, true); // tier-1 by default
+}
+
+void DirectoryModel::load(QString filePath, bool asyncHint, bool scaled) {
     if(!containsFile(filePath) || loader.isLoading(filePath))
         return;
     if(!cache.contains(filePath)) {
         if(asyncHint) {
             loader.loadAsyncPriority(filePath);
         } else {
+            // sync path (editing): full quality
             auto img = loader.load(filePath);
             if(img) {
                 cache.insert(img);
-                emit imageReady(img, filePath);
+                emit imageReady(img, filePath, false);
             } else {
                 emit loadFailed(filePath);
             }
         }
     } else {
-        emit imageReady(cache.get(filePath), filePath);
+        bool cachedScaled = mScaledCache.contains(filePath);
+        // instant display from cache; a tier-1 cached image upgrades to full
+        if(cachedScaled && scaled)
+            loader.loadAsyncFull(filePath);
+        emit imageReady(cache.get(filePath), filePath, cachedScaled);
     }
 }
 
@@ -334,5 +347,11 @@ void DirectoryModel::reload(QString filePath) {
 
 void DirectoryModel::preload(QString filePath) {
     if(containsFile(filePath) && !cache.contains(filePath))
-        loader.loadAsync(filePath);
+        loader.loadAsync(filePath); // tier-1 scaled
+}
+
+// tier-2: full-res re-decode of a tier-1 cached image
+void DirectoryModel::upgradeToFull(QString filePath) {
+    if(containsFile(filePath) && !loader.isLoading(filePath) && mScaledCache.contains(filePath))
+        loader.loadAsyncFull(filePath);
 }

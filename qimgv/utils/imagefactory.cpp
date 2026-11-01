@@ -1,6 +1,6 @@
 #include "imagefactory.h"
 
-std::shared_ptr<Image> ImageFactory::createImage(QString path) {
+std::shared_ptr<Image> ImageFactory::createImage(QString path, bool scaled) {
     std::unique_ptr<DocumentInfo> docInfo(new DocumentInfo(path));
     std::shared_ptr<Image> img = nullptr;
     if(docInfo->type() == NONE) {
@@ -10,7 +10,7 @@ std::shared_ptr<Image> ImageFactory::createImage(QString path) {
     } else if(docInfo->type() == VIDEO) {
         img.reset(new Video(move(docInfo)));
     } else {
-        img.reset(new ImageStatic(move(docInfo)));
+        img.reset(new ImageStatic(move(docInfo), scaled));
     }
     return img;
 }

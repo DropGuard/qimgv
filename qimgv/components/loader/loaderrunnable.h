@@ -8,11 +8,12 @@ class LoaderRunnable: public QObject, public QRunnable
 {
     Q_OBJECT
 public:
-    LoaderRunnable(QString _path);
+    LoaderRunnable(QString _path, bool _scaled);
     void run();
 private:
     QString path;
+    bool scaled;
 signals:
-    void finished(std::shared_ptr<Image>, QString);
+    void finished(std::shared_ptr<Image>, QString, bool scaled);
     void failed(QString);
 };
