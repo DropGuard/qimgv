@@ -74,6 +74,7 @@ void BookmarksWidget::onPathChanged(QString path) {
 }
 
 void BookmarksWidget::dropEvent(QDropEvent *event) {
+    Q_UNUSED(event)
 //    QModelIndex dropIndex = indexAt(event->pos());
 //    if(dropIndex.isValid())
 //        emit droppedIn(event->mimeData()->urls(), dropIndex);

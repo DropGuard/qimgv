@@ -63,6 +63,11 @@ FetchContent_Declare(
     GIT_TAG v0.5.2
 )
 FetchContent_MakeAvailable(Corrosion)
+# Tier-0 static analysis: the warnings are part of the contract. The build is
+# expected to be warning-free; the audit tests and the settings/mirror tables
+# rely on new code failing loudly here.
+add_compile_options(-Wall -Wextra -Wpedantic)
+
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/engine/qimgv-engine-ffi/Cargo.toml)
 
 

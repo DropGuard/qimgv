@@ -180,7 +180,6 @@ void Settings::loadStylesheet() {
         int font_large = (int)(fnt.pointSize() * 1.8f);
         int text_height = fm.height();
         int text_padding = (int)(text_height * 0.10f);
-        int text_padding_small = (int)(text_height * 0.05f);
         int text_padding_large = (int)(text_height * 0.25f);
 
         // folderview top panel item sizes
@@ -191,7 +190,6 @@ void Settings::loadStylesheet() {
         int top_panel_height = qMax((text_height + top_panel_text_padding * 2 + top_panel_v_margin * 2), 38);
 
         // overlay headers
-        int overlay_header_margin = 2;
         // 32px base size
         int overlay_header_size = qMax(text_height + text_padding * 2, 30);
 
@@ -477,7 +475,7 @@ void Settings::setBlurBackground(bool mode) {
 void Settings::setSortingMode(SortingMode mode) {
     if(mode >= 6)
         mode = SortingMode::SORT_NAME;
-    store(K_SortingMode, mode);
+    store(K_SortingMode, static_cast<qlonglong>(mode));
 }
 
 SortingMode Settings::sortingMode() {
@@ -511,7 +509,7 @@ FolderViewMode Settings::folderViewMode() {
 }
 
 void Settings::setFolderViewMode(FolderViewMode mode) {
-    store(K_FolderViewMode, mode);
+    store(K_FolderViewMode, static_cast<qlonglong>(mode));
 }
 //------------------------------------------------------------------------------
 ThumbPanelStyle Settings::thumbPanelStyle() {
@@ -522,7 +520,7 @@ ThumbPanelStyle Settings::thumbPanelStyle() {
 }
 
 void Settings::setThumbPanelStyle(ThumbPanelStyle mode) {
-    store(K_ThumbPanelStyle, mode);
+    store(K_ThumbPanelStyle, static_cast<qlonglong>(mode));
 }
 //------------------------------------------------------------------------------
 const QMultiMap<QByteArray, QByteArray> Settings::videoFormats() const {
@@ -1019,7 +1017,7 @@ void Settings::setMouseScrollingSpeed(float value) {
 }
 //------------------------------------------------------------------------------
 void Settings::setZoomIndicatorMode(ZoomIndicatorMode mode) {
-    store(K_ZoomIndicatorMode, mode);
+    store(K_ZoomIndicatorMode, static_cast<qlonglong>(mode));
 }
 
 ZoomIndicatorMode Settings::zoomIndicatorMode() {
@@ -1030,7 +1028,7 @@ ZoomIndicatorMode Settings::zoomIndicatorMode() {
 }
 //------------------------------------------------------------------------------
 void Settings::setFocusPointIn1to1Mode(ImageFocusPoint mode) {
-    store(K_FocusPointIn1to1Mode, mode);
+    store(K_FocusPointIn1to1Mode, static_cast<qlonglong>(mode));
 }
 
 ImageFocusPoint Settings::focusPointIn1to1Mode() {
@@ -1041,7 +1039,7 @@ ImageFocusPoint Settings::focusPointIn1to1Mode() {
 }
 
 void Settings::setDefaultCropAction(DefaultCropAction mode) {
-    store(K_DefaultCropAction, mode);
+    store(K_DefaultCropAction, static_cast<qlonglong>(mode));
 }
 
 DefaultCropAction Settings::defaultCropAction() {
@@ -1059,7 +1057,7 @@ ImageScrolling Settings::imageScrolling() {
 }
 
 void Settings::setImageScrolling(ImageScrolling mode) {
-    store(K_ImageScrolling, mode);
+    store(K_ImageScrolling, static_cast<qlonglong>(mode));
 }
 //------------------------------------------------------------------------------
 ViewMode Settings::defaultViewMode() {
@@ -1070,7 +1068,7 @@ ViewMode Settings::defaultViewMode() {
 }
 
 void Settings::setDefaultViewMode(ViewMode mode) {
-    store(K_DefaultViewMode, mode);
+    store(K_DefaultViewMode, static_cast<qlonglong>(mode));
 }
 //------------------------------------------------------------------------------
 FolderEndAction Settings::folderEndAction() {
@@ -1081,7 +1079,7 @@ FolderEndAction Settings::folderEndAction() {
 }
 
 void Settings::setFolderEndAction(FolderEndAction mode) {
-    store(K_FolderEndAction, mode);
+    store(K_FolderEndAction, static_cast<qlonglong>(mode));
 }
 //------------------------------------------------------------------------------
 bool Settings::printLandscape() {

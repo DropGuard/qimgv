@@ -256,7 +256,7 @@ QString DirectoryManager::prevOfFile(QString filePath) const {
 QString DirectoryManager::nextOfFile(QString filePath) const {
     QString nextFilePath = "";
     int currentIndex = indexOfFile(filePath);
-    if(currentIndex >= 0 && currentIndex < fileEntryVec.size() - 1)
+    if(currentIndex >= 0 && currentIndex < static_cast<int>(fileEntryVec.size()) - 1)
         nextFilePath = fileEntryVec.at(currentIndex + 1).path;
     return nextFilePath;
 }
@@ -272,7 +272,7 @@ QString DirectoryManager::prevOfDir(QString dirPath) const {
 QString DirectoryManager::nextOfDir(QString dirPath) const {
     QString nextDirectoryPath = "";
     int currentIndex = indexOfDir(dirPath);
-    if(currentIndex >= 0 && currentIndex < dirEntryVec.size() - 1)
+    if(currentIndex >= 0 && currentIndex < static_cast<int>(dirEntryVec.size()) - 1)
         nextDirectoryPath = dirEntryVec.at(currentIndex + 1).path;
     return nextDirectoryPath;
 }

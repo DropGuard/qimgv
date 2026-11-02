@@ -28,7 +28,7 @@ ThumbnailView::ThumbnailView(Qt::Orientation _orientation, QWidget *parent)
     lastTouchpadScroll.start();
 
     connect(&loadTimer, &QTimer::timeout, this, &ThumbnailView::loadVisibleThumbnails);
-    loadTimer.setInterval(static_cast<const int>(LOAD_DELAY));
+    loadTimer.setInterval(static_cast<int>(LOAD_DELAY));
     loadTimer.setSingleShot(true);
 
     qreal screenMaxRefreshRate = 60;
@@ -339,7 +339,7 @@ void ThumbnailView::reloadItem(int index) {
 }
 
 void ThumbnailView::setDragHover(int index) {
-
+    Q_UNUSED(index)
 }
 
 void ThumbnailView::setCropThumbnails(bool mode) {

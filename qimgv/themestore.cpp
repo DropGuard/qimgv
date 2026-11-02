@@ -1,7 +1,8 @@
 #include "themestore.h"
 
 ColorScheme ThemeStore::colorScheme(ColorSchemes name) {
-    BaseColorScheme base = {-1};
+    BaseColorScheme base;
+    base.tid = -1;
     QPalette p;
     switch(name) {
         case COLORS_SYSTEM:

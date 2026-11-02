@@ -96,6 +96,7 @@ void DocumentWidget::hideFloatingPanel() {
 }
 
 void DocumentWidget::hideFloatingPanel(bool animated) {
+    Q_UNUSED(animated)
     if(!mPanelPinned)
         mainPanel->hideAnimated();
 }

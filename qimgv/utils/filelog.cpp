@@ -73,7 +73,8 @@ void SessionLog::write(const QString &line) {
         ++mPart;
         mFile.close();
         mFile.setFileName(mBase + QString(".part%1").arg(mPart));
-        mFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+        if(!mFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+            mStopped = true; // rotation target unopenable: stop writing, console keeps working
         mBytes = 0;
     }
 }
