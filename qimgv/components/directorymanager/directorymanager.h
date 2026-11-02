@@ -8,6 +8,8 @@
 #include <QDebug>
 #include <QDateTime>
 #include <QRegularExpression>
+#include <functional>
+#include <QVector>
 
 #include <vector>
 #include <string>
@@ -20,7 +22,6 @@
 #include <QSet>
 
 #include "settings.h"
-#include "watchers/directorywatcher.h"
 #include "utils/stuff.h"
 #include "sourcecontainers/fsentry.h"
 
@@ -62,6 +63,13 @@ public:
     // order the user is looking at, not the persisted setting (a manager can be
     // resorted at runtime without the setting moving)
     static QString adjacentDirectory(const QString &dirPath, bool forward, SortingMode mode);
+    // Arms `action` to run once the listing for dirPath lands (mirror
+    // rebuilt, counts fresh). One engine session only: a newer openDir
+    // supersedes the queue, an open failure drops its own entry, and
+    // cancelListed revokes one. For decisions only knowable once the listing
+    // exists (Core's folder-boundary load). Returns the cancel token.
+    qint64 whenListed(const QString &dirPath, std::function<void()> action);
+    bool cancelListed(qint64 token);
     bool setDirectoryRecursive(QString);
     QString directoryPath() const;
     int indexOfFile(QString filePath) const;
@@ -92,7 +100,6 @@ public:
     const FSEntry &fileEntryAt(int index) const;
     QString dirPathAt(int index) const;
     QString dirNameAt(int index) const;
-    bool fileWatcherActive();
 
     bool insertFileEntry(const QString &filePath);
     bool forceInsertFileEntry(const QString &filePath);
@@ -128,7 +135,13 @@ private:
     SortingMode mAppliedSort;
     QTimer *rescanTimer = nullptr;
     bool mResyncing = false;
-    bool mEngineWatching = false;
+    struct PendingListed {
+        qint64 token;
+        QString dir;
+        std::function<void()> action;
+    };
+    qint64 nextWhenListedToken = 1;
+    QVector<PendingListed> pendingOnListed;
     QHash<QString, QPair<quint64, qint64>> mPrevFileMeta; // engine size/mtime per path
 
     void scheduleRescan();
@@ -136,7 +149,6 @@ private:
     static bool directoryUsable(const QString &dirPath);
     static std::filesystem::file_time_type fileTimeFromMs(qint64 ms);
 
-    DirectoryWatcher* watcher;
     void readSettings();
     SortingMode mSortingMode;
     FileListSource mListSource;
@@ -156,8 +168,6 @@ private:
     CompareFunction dirComparator() const;
     bool size_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
     bool size_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
-    void startFileWatcher(QString directoryPath);
-    void stopFileWatcher();
 
     void addEntriesFromDirectory(std::vector<FSEntry> &entryVec, QString directoryPath);
     void addSubdirsFromDirectory(const QString &directoryPath);
@@ -166,10 +176,6 @@ private:
     bool checkDirRange(int index) const;
 
 private slots:
-    void onFileAddedExternal(QString fileName);
-    void onFileRemovedExternal(QString fileName);
-    void onFileModifiedExternal(QString fileName);
-    void onFileRenamedExternal(QString oldFileName, QString newFileName);
     void onEngineDirListed(QString dirPath);
     void onEngineOpenFailed(QString dirPath, int code);
     void onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs);

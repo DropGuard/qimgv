@@ -1013,6 +1013,55 @@ private slots:
         // the original instance and its in-memory state are back
         QVERIFY(settings->sortingMode() == SORT_TIME);
     }
+
+    // --- layer 11: the deferred-listing primitive ------------------------------
+    // "Decide when the listing lands" used to be a hand-rolled flag in Core
+    // with three clear/consume sites; whenListed() centralizes the lifecycle,
+    // and these tests pin it.
+
+    void whenListedFiresWhenTheListingLands() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        bool fired = false;
+        dm.whenListed(fixtureDir, [&fired] { fired = true; });
+        QVERIFY(!fired); // armed, the listing is still in flight
+        QTRY_VERIFY_WITH_TIMEOUT(fired, 10000);
+    }
+
+    void whenListedIsSupersededByANewerOpen() {
+        resetFixture();
+        QVERIFY(QDir(fixtureDir).mkdir("second"));
+        QFile f(fixtureDir + "/second/z.jpg");
+        QVERIFY(f.open(QIODevice::WriteOnly));
+
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        bool staleFired = false;
+        dm.whenListed(fixtureDir, [&staleFired] { staleFired = true; });
+        // a newer open supersedes the queue before the stale listing lands
+        QVERIFY(dm.setDirectory(fixtureDir + "/second"));
+        QVERIFY(!staleFired);
+        bool freshFired = false;
+        dm.whenListed(fixtureDir + "/second", [&freshFired] { freshFired = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(freshFired, 10000);
+        QVERIFY(!staleFired);
+    }
+
+    void whenListedCanBeCancelled() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        bool fired = false;
+        qint64 token = dm.whenListed(fixtureDir, [&fired] { fired = true; });
+        QVERIFY(dm.cancelListed(token));
+        // the listing lands (the counts arrive), the cancelled action stays
+        // silent, and a double cancel is a no-op rather than an error
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3, 10000);
+        QTest::qWait(300);
+        QVERIFY(!fired);
+        QVERIFY(!dm.cancelListed(token));
+    }
 };
 
 int main(int argc, char **argv) {

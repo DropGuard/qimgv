@@ -21,18 +21,12 @@
 #include <malloc.h>
 #endif
 
-// A folder-boundary transition opens a directory whose listing is still in
-// flight, so the image to show has to be decided when the listing lands.
-enum PendingFolderFile {
-    NO_PENDING_FILE,
-    PENDING_FIRST_FILE,
-    PENDING_LAST_FILE
-};
-
 struct State {
     bool hasActiveImage = false;
     bool delayModel = false;
-    PendingFolderFile pendingFolderFile = NO_PENDING_FILE;
+    // armed via DirectoryManager::whenListed: which image to show on a
+    // folder-boundary transition is only knowable when the listing lands
+    qint64 pendingListedToken = 0;
     QString currentFilePath = "";
     QString directoryPath = "";
     std::shared_ptr<Image> currentImg;

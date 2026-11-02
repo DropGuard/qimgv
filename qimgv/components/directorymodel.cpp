@@ -69,9 +69,6 @@ QString DirectoryModel::dirPathAt(int index) const {
     return dirManager.dirPathAt(index);
 }
 
-bool DirectoryModel::autoRefresh() {
-    return dirManager.fileWatcherActive();
-}
 
 FileListSource DirectoryModel::source() {
     return dirManager.source();
@@ -176,6 +173,14 @@ void DirectoryModel::moveFileTo(const QString &srcFile, const QString &destDirPa
 bool DirectoryModel::setDirectory(QString path) {
     cache.clear();
     return dirManager.setDirectory(path);
+}
+
+qint64 DirectoryModel::whenListed(const QString &dirPath, std::function<void()> action) {
+    return dirManager.whenListed(dirPath, std::move(action));
+}
+
+bool DirectoryModel::cancelListed(qint64 token) {
+    return dirManager.cancelListed(token);
 }
 
 void DirectoryModel::unload(int index) {

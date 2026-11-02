@@ -7,12 +7,12 @@
 Q_LOGGING_CATEGORY(lcWatchPerf, "qimgv.perf.watch", QtInfoMsg)
 
 #include <QTimer>
+#include <algorithm>
 #include <chrono>
 
 namespace fs = std::filesystem;
 
 DirectoryManager::DirectoryManager() :
-    watcher(nullptr),
     mSortingMode(SORT_NAME)
 {
     regex.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
@@ -22,7 +22,6 @@ DirectoryManager::DirectoryManager() :
     setSortingMode(settings->sortingMode());
     connect(settings, &Settings::settingsChanged, this, &DirectoryManager::readSettings);
 
-    mEngineWatching = EngineBridge::supportsWatching();
     connect(&EngineBridge::instance(), &EngineBridge::dirListed,
             this, &DirectoryManager::onEngineDirListed);
     connect(&EngineBridge::instance(), &EngineBridge::openFailed,
@@ -91,32 +90,6 @@ CompareFunction DirectoryManager::compareFunction() {
     return cmpFn;
 }
 
-void DirectoryManager::startFileWatcher(QString directoryPath) {
-    if(directoryPath == "")
-        return;
-    if(!watcher)
-        watcher = DirectoryWatcher::newInstance();
-
-    connect(watcher, &DirectoryWatcher::fileCreated,  this, &DirectoryManager::onFileAddedExternal,    Qt::UniqueConnection);
-    connect(watcher, &DirectoryWatcher::fileDeleted,  this, &DirectoryManager::onFileRemovedExternal,  Qt::UniqueConnection);
-    connect(watcher, &DirectoryWatcher::fileModified, this, &DirectoryManager::onFileModifiedExternal, Qt::UniqueConnection);
-    connect(watcher, &DirectoryWatcher::fileRenamed,  this, &DirectoryManager::onFileRenamedExternal,  Qt::UniqueConnection);
-
-    watcher->setWatchPath(directoryPath);
-    watcher->observe();
-}
-
-void DirectoryManager::stopFileWatcher() {
-    if(!watcher)
-        return;
-
-    watcher->stopObserving();
-
-    disconnect(watcher, &DirectoryWatcher::fileCreated,  this, &DirectoryManager::onFileAddedExternal);
-    disconnect(watcher, &DirectoryWatcher::fileDeleted,  this, &DirectoryManager::onFileRemovedExternal);
-    disconnect(watcher, &DirectoryWatcher::fileModified, this, &DirectoryManager::onFileModifiedExternal);
-    disconnect(watcher, &DirectoryWatcher::fileRenamed,  this, &DirectoryManager::onFileRenamedExternal);
-}
 
 // ##############################################################
 // ####################### PUBLIC METHODS #######################
@@ -131,8 +104,7 @@ bool DirectoryManager::setDirectory(QString dirPath) {
         mEngineDir.clear();
         if(rescanTimer)
             rescanTimer->stop();
-        if(mEngineWatching)
-            EngineBridge::instance().stopWatch();
+        EngineBridge::instance().stopWatch();
         return false;
     }
     if(!directoryUsable(dirPath))
@@ -152,8 +124,8 @@ bool DirectoryManager::setDirectory(QString dirPath) {
     mDirectoryPath = dirPath;
     mEngineDir = dirPath;
     mAppliedSort = mSortingMode;
-    if (!mEngineWatching)
-        startFileWatcher(dirPath); // engine watcher handles it on Linux
+    // a newer open supersedes everything armed for the previous session
+    pendingOnListed.clear();
     return true;
 }
 
@@ -235,7 +207,6 @@ bool DirectoryManager::setDirectoryRecursive(QString dirPath) {
         qDebug() << "[DirectoryManager] Error - path is not a directory.";
         return false;
     }
-    stopFileWatcher();
     mListSource = SOURCE_DIRECTORY_RECURSIVE;
     mEngineDir.clear();
     mMirroredDir.clear();
@@ -540,8 +511,6 @@ bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
         // keep the engine listing in sync (the filter doesn't match this file)
         EngineBridge::instance().includePath(filePath);
     }
-    if(!mEngineWatching)
-        scheduleRescan();
     return true;
 }
 
@@ -552,8 +521,6 @@ void DirectoryManager::removeFileEntry(const QString &filePath) {
     fileEntryVec.erase(fileEntryVec.begin() + index);
     qCDebug(lcWatchPerf) << "fileRem" << filePath;
     emit fileRemoved(filePath, index);
-    if(!mEngineWatching)
-        scheduleRescan();
 }
 
 void DirectoryManager::updateFileEntry(const QString &filePath) {
@@ -565,8 +532,6 @@ void DirectoryManager::updateFileEntry(const QString &filePath) {
         fileEntryVec.at(index) = newEntry;
     qCDebug(lcWatchPerf) << "fileMod" << filePath;
     emit fileModified(filePath);
-    if(!mEngineWatching)
-        scheduleRescan();
 }
 
 void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString &newFileName) {
@@ -597,8 +562,6 @@ void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString
     insert_sorted(fileEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
     qCDebug(lcWatchPerf) << "fileRen" << oldFilePath << newFilePath;
     emit fileRenamed(oldFilePath, oldIndex, newFilePath, indexOfFile(newFilePath));
-    if(!mEngineWatching)
-        scheduleRescan();
 }
 
 // ---- dir entries
@@ -615,8 +578,6 @@ bool DirectoryManager::insertDirEntry(const QString &dirPath) {
     insert_sorted(dirEntryVec, FSEntry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
     qCDebug(lcWatchPerf) << "dirIns" << dirPath;
     emit dirAdded(dirPath);
-    if(!mEngineWatching)
-        scheduleRescan();
     return true;
 }
 
@@ -627,8 +588,6 @@ void DirectoryManager::removeDirEntry(const QString &dirPath) {
     dirEntryVec.erase(dirEntryVec.begin() + index);
     qCDebug(lcWatchPerf) << "dirRem" << dirPath;
     emit dirRemoved(dirPath, index);
-    if(!mEngineWatching)
-        scheduleRescan();
 }
 
 void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &newDirName) {
@@ -648,8 +607,6 @@ void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &
     insert_sorted(dirEntryVec, FSEntry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
     qCDebug(lcWatchPerf) << "dirRen" << oldDirPath << newDirPath;
     emit dirRenamed(oldDirPath, oldIndex, newDirPath, indexOfDir(newDirPath));
-    if(!mEngineWatching)
-        scheduleRescan();
 }
 
 
@@ -664,42 +621,8 @@ QStringList DirectoryManager::fileList() const {
     return list;
 }
 
-bool DirectoryManager::fileWatcherActive() {
-    if(!watcher)
-        return false;
-    return watcher->isObserving();
-}
 
 //----------------------------------------------------------------------------
-// fs watcher events  ( onFile___External() )
-// these take file NAMES, not paths
-void DirectoryManager::onFileRemovedExternal(QString fileName) {
-    QString fullPath = watcher->watchPath() + "/" + fileName;
-    removeDirEntry(fullPath);
-    removeFileEntry(fullPath);
-}
-
-void DirectoryManager::onFileAddedExternal(QString fileName) {
-    QString fullPath = watcher->watchPath() + "/" + fileName;
-    if(isDir(fullPath))
-        insertDirEntry(fullPath);
-    else
-        insertFileEntry(fullPath);
-}
-
-void DirectoryManager::onFileRenamedExternal(QString oldName, QString newName) {
-    QString oldPath = watcher->watchPath() + "/" + oldName;
-    QString newPath = watcher->watchPath() + "/" + newName;
-    if(isDir(newPath))
-        renameDirEntry(oldPath, newName);
-    else
-        renameFileEntry(oldPath, newName);
-}
-
-void DirectoryManager::onFileModifiedExternal(QString fileName) {
-    updateFileEntry(watcher->watchPath() + "/" + fileName);
-}
-
 //----------------------------------------------------------------------------
 // rust engine bridge
 
@@ -728,8 +651,8 @@ std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
     return std::filesystem::file_time_type{FileClock::now() + (target - sysNow)};
 }
 
-// watcher events and in-app file operations both land here; the vectors get
-// the instant update, the engine rescan reconciles a beat later (debounced).
+// in-app file operations and an engine snapshot that looks stale both land
+// here; the debounced re-open lets the engine catch up with local truth.
 void DirectoryManager::scheduleRescan() {
     if(mResyncing)
         return;
@@ -756,6 +679,15 @@ void DirectoryManager::onEngineDirListed(QString dirPath) {
     mResyncing = true;
     mirrorEngineListing(dirPath);
     mResyncing = false;
+    // deferred actions armed for this listing run with fresh counts; the
+    // leftovers can never fire (the engine lists one directory at a time).
+    // The queue is moved out first: an action may re-enter and arm its own
+    // follow-up.
+    auto pendings = std::move(pendingOnListed);
+    pendingOnListed.clear();
+    for(const auto &pending : pendings)
+        if(pending.dir == dirPath)
+            pending.action();
 }
 
 void DirectoryManager::onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs) {
@@ -793,10 +725,30 @@ void DirectoryManager::onEngineMutated(int kind, QString path, bool isDir, quint
     }
 }
 
+qint64 DirectoryManager::whenListed(const QString &dirPath, std::function<void()> action) {
+    const qint64 token = nextWhenListedToken++;
+    pendingOnListed.append({token, dirPath, std::move(action)});
+    return token;
+}
+
+bool DirectoryManager::cancelListed(qint64 token) {
+    for(int i = 0; i < pendingOnListed.size(); ++i) {
+        if(pendingOnListed[i].token == token) {
+            pendingOnListed.remove(i);
+            return true;
+        }
+    }
+    return false;
+}
+
 void DirectoryManager::onEngineOpenFailed(QString dirPath, int code) {
     if(dirPath != mEngineDir || mListSource != SOURCE_DIRECTORY)
         return;
     qWarning() << "[DirectoryManager] engine open failed:" << dirPath << "code" << code;
+    // an open that failed will never produce the listing its actions wait for
+    pendingOnListed.erase(std::remove_if(pendingOnListed.begin(), pendingOnListed.end(),
+                             [&](const PendingListed &p) { return p.dir == dirPath; }),
+                          pendingOnListed.end());
     emit loadingFailed(dirPath);
 }
 
@@ -839,7 +791,7 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
         newDirPaths.insert(d.path);
     qDebug() << "[dbg] parse" << parseTimer.elapsed() << "ms; hash containers" << hashTimer.elapsed() << "ms";
 
-    // The engine snapshot may predate local mutations (watcher-applied
+    // The engine snapshot may predate local mutations (operation-applied
     // creates/renames). Never regress to a stale listing: same-directory
     // entries that still exist on disk are kept and a rescan converges the
     // engine afterwards.

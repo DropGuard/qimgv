@@ -41,6 +41,9 @@ public:
     void removeDir(const QString &dirPath, bool trash, bool recursive, FileOpResult &result);
 
     bool setDirectory(QString);
+    // deferred listing actions, straight through to the manager
+    qint64 whenListed(const QString &dirPath, std::function<void()> action);
+    bool cancelListed(qint64 token);
 
     void unload(int index);
 
@@ -67,7 +70,6 @@ public:
     QString dirNameAt(int index) const;
     QString dirPathAt(int index) const;
 
-    bool autoRefresh();
 
     bool saveFile(const QString &filePath);
     bool saveFile(const QString &filePath, const QString &destPath);

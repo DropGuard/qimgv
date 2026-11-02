@@ -329,15 +329,6 @@ void Core::onModelLoaded() {
     folderViewPresenter.selectAndFocus(state.currentFilePath);
     if(shuffle)
         syncRandomizer();
-    // a folder transition had to defer this: which image to open is only
-    // knowable once the new directory's listing exists
-    if(state.pendingFolderFile != NO_PENDING_FILE) {
-        bool selectLast = (state.pendingFolderFile == PENDING_LAST_FILE);
-        state.pendingFolderFile = NO_PENDING_FILE;
-        unsigned long count = model->fileCount();
-        if(count)
-            loadFileIndex(selectLast ? static_cast<int>(count - 1) : 0, false, true);
-    }
 }
 
 void Core::onDirectoryViewFileActivated(QString filePath) {
@@ -1217,7 +1208,10 @@ void Core::onScalingFinished(QPixmap *scaled, ScalerRequest req) {
 void Core::reset() {
     state.hasActiveImage = false;
     state.currentFilePath = "";
-    state.pendingFolderFile = NO_PENDING_FILE;
+    if(state.pendingListedToken) {
+        model->cancelListed(state.pendingListedToken);
+        state.pendingListedToken = 0;
+    }
     model->setDirectory("");
 }
 
@@ -1287,7 +1281,10 @@ bool Core::loadFileIndex(int index, bool async, bool preload) {
     if(!model)
         return false;
     // an explicit choice of file outranks the deferred folder-boundary load
-    state.pendingFolderFile = NO_PENDING_FILE;
+    if(state.pendingListedToken) {
+        model->cancelListed(state.pendingListedToken);
+        state.pendingListedToken = 0;
+    }
     auto entry = model->fileEntryAt(index);
     if(entry.path.isEmpty())
         return false;
@@ -1333,8 +1330,11 @@ void Core::nextDirectory() {
         return;
     mw->showMessageDirectory(QFileInfo(next).baseName());
     // the new folder's listing is in flight; loading index 0 here would show a
-    // file of the folder we just left
-    state.pendingFolderFile = PENDING_FIRST_FILE;
+    // file of the folder we just left — defer until it lands
+    state.pendingListedToken = model->whenListed(next, [this] {
+        if(model->fileCount())
+            loadFileIndex(0, false, true);
+    });
 }
 
 void Core::prevDirectory(bool selectLast) {
@@ -1348,7 +1348,10 @@ void Core::prevDirectory(bool selectLast) {
     if(!setDirectory(prev))
         return;
     mw->showMessageDirectory(QFileInfo(prev).baseName());
-    state.pendingFolderFile = selectLast ? PENDING_LAST_FILE : PENDING_FIRST_FILE;
+    state.pendingListedToken = model->whenListed(prev, [this, selectLast] {
+        if(model->fileCount())
+            loadFileIndex(selectLast ? static_cast<int>(model->fileCount()) - 1 : 0, false, true);
+    });
 }
 
 void Core::prevDirectory() {
