@@ -41,9 +41,7 @@ void ImageStatic::loadGeneric() {
      * tldr: qimage bad
      */
     QImageReader r(mPath, mDocInfo->format().toStdString().c_str());
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     r.setAllocationLimit(settings->memoryAllocationLimit());
-#endif
     if(mScaledRequest && mDocInfo->format() == "jpg") {
         // tier-1: decode at screen resolution via libjpeg DCT scaling
         // (1/2 edge = 1/4 pixels). Full-res follows as tier-2 upgrade.
