@@ -120,7 +120,6 @@ bool DirectoryManager::setDirectory(QString dirPath) {
                    << (qimgv_last_error() ? qimgv_last_error() : "");
         return false;
     }
-    mListOpen = true;
     mDirectoryPath = dirPath;
     mEngineDir = dirPath;
     mAppliedSort = mSortingMode;
@@ -141,7 +140,6 @@ bool DirectoryManager::setDirectory(QString dirPath) {
 bool DirectoryManager::setSubdirsSync(const QString &dirPath) {
     if(dirPath.isEmpty() || !directoryUsable(dirPath))
         return false;
-    mListOpen = true;
     mDirectoryPath = dirPath;
     dirEntryVec.clear();
     fileEntryVec.clear();
@@ -195,15 +193,8 @@ bool DirectoryManager::directoryUsable(const QString &dirPath) {
     return true;
 }
 
-bool DirectoryManager::listingOpen() const {
-    return mListOpen;
-}
-
 QString DirectoryManager::directoryPath() const {
-    if(mListOpen)
-        return mDirectoryPath;
-    else
-        return "";
+    return mDirectoryPath;
 }
 
 int DirectoryManager::indexOfFile(QString filePath) const {
@@ -376,7 +367,7 @@ void DirectoryManager::sortEntryLists() {
 void DirectoryManager::setSortingMode(SortingMode mode) {
     if(mode != mSortingMode) {
         mSortingMode = mode;
-        if(mListOpen && !mEngineDir.isEmpty()) {
+        if(!mEngineDir.isEmpty()) {
             // engine resorts and reports back via onEngineDirListed()
             EngineBridge::instance().setSort(engineSortMode(mode));
             return;
@@ -444,13 +435,6 @@ void DirectoryManager::removeDirEntry(const QString &dirPath) {
 }
 
 
-QStringList DirectoryManager::fileList() const {
-    QStringList list;
-    for(auto const& value : fileEntryVec)
-        list << value.path;
-    return list;
-}
-
 
 //----------------------------------------------------------------------------
 //----------------------------------------------------------------------------
@@ -486,14 +470,14 @@ std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
 void DirectoryManager::scheduleRescan() {
     if(mResyncing)
         return;
-    if(!mListOpen || mDirectoryPath.isEmpty())
+    if(mDirectoryPath.isEmpty())
         return;
     if(!rescanTimer) {
         rescanTimer = new QTimer(this);
         rescanTimer->setSingleShot(true);
         rescanTimer->setInterval(150);
         connect(rescanTimer, &QTimer::timeout, this, [this]() {
-            if(!mResyncing && mListOpen && !mDirectoryPath.isEmpty())
+            if(!mResyncing && !mDirectoryPath.isEmpty())
                 EngineBridge::instance().openDir(mDirectoryPath, engineSortMode(mSortingMode),
                                                  settings->showHiddenFiles());
         });
@@ -502,7 +486,7 @@ void DirectoryManager::scheduleRescan() {
 }
 
 void DirectoryManager::onEngineDirListed(QString dirPath) {
-    if(mResyncing || dirPath != mEngineDir || !mListOpen)
+    if(mResyncing || dirPath != mEngineDir)
         return;
     if(mDirectoryPath != dirPath)
         return;
@@ -521,7 +505,7 @@ void DirectoryManager::onEngineDirListed(QString dirPath) {
 }
 
 void DirectoryManager::onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs) {
-    if(!mListOpen || mResyncing)
+    if(mResyncing)
         return;
     switch(kind) {
         case QIMGV_MUT_ADDED: {
@@ -572,7 +556,7 @@ bool DirectoryManager::cancelListed(qint64 token) {
 }
 
 void DirectoryManager::onEngineOpenFailed(QString dirPath, int code) {
-    if(dirPath != mEngineDir || !mListOpen)
+    if(dirPath != mEngineDir)
         return;
     qWarning() << "[DirectoryManager] engine open failed:" << dirPath << "code" << code;
     // an open that failed will never produce the listing its actions wait for

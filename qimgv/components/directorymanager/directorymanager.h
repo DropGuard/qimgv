@@ -100,9 +100,7 @@ public:
     //bool forceInsertDirEntry(const QString &dirPath);
     //void updateDirEntry(const QString &dirPath);
 
-    bool listingOpen() const;
 
-    QStringList fileList() const;
 
     // The one place qimgv's SortingMode becomes a QIMGV_SORT_* code. Public so a
     // test can pin it against the header constants: the two enums are ordered
@@ -143,9 +141,6 @@ private:
 
     void readSettings();
     SortingMode mSortingMode;
-    // true once an entry list exists in this instance (engine-opened or the
-    // local dirs-only scan); replaces a one-value enum
-    bool mListOpen = false;
 
     bool path_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
     bool path_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;

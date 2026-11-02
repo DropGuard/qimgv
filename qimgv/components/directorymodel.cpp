@@ -69,9 +69,6 @@ QString DirectoryModel::dirPathAt(int index) const {
 }
 
 
-bool DirectoryModel::listingOpen() const {
-    return dirManager.listingOpen();
-}
 
 QString DirectoryModel::directoryPath() const {
     return dirManager.directoryPath();

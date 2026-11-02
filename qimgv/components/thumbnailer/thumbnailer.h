@@ -24,7 +24,7 @@ public slots:
 private:
     EngineBridge &mBridge;
     ThumbnailCache *cache;
-    QThreadPool *pool;
+    QThreadPool *pool = nullptr;
     void startThumbnailerThread(QString filePath, int size, bool crop, bool force);
     QMultiMap<QString, int> runningTasks;
     // engine-dispatched requests (path -> {size, crop}); cleared entries are

@@ -13,7 +13,7 @@ public:
     explicit DirectoryModel(QObject *parent = nullptr);
     ~DirectoryModel();
 
-    Scaler *scaler;
+    Scaler *scaler = nullptr;
 
     void load(QString filePath, bool asyncHint);
     void load(QString filePath, bool asyncHint, bool scaled);
@@ -75,7 +75,6 @@ public:
     bool saveFile(const QString &filePath, const QString &destPath);
 
     bool containsDir(QString dirPath) const;
-    bool listingOpen() const;
 signals:
     void fileRemoved(QString filePath, int index);
     void fileRenamed(QString fromPath, int indexFrom, QString toPath, int indexTo);

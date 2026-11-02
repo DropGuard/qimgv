@@ -28,7 +28,7 @@ private slots:
     void slotForwardScaledResult(QImage *image, ScalerRequest req);
 
 private:
-    QThreadPool *pool;
+    QThreadPool *pool = nullptr;
     ScalerRunnable *runnable;
     bool buffered, running;
     clock_t currentRequestTimestamp;
@@ -38,5 +38,5 @@ private:
 
     void startRequest(ScalerRequest req);
 
-    QSemaphore *sem;
+    QSemaphore *sem = nullptr;
 };
