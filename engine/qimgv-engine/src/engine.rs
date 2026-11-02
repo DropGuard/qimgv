@@ -106,6 +106,7 @@ struct ScanDone {
 pub struct Engine {
     cmd_tx: Sender<Command>,
     events: Receiver<Event>,
+    loop_join: Option<thread::JoinHandle<()>>,
     show_hidden: Arc<AtomicBool>,
     epoch: Arc<AtomicU64>,
     pub state: Arc<RwLock<DirectoryState>>,
@@ -217,7 +218,7 @@ impl Engine {
         #[cfg(not(target_os = "linux"))]
         let watch_ev_rx: Receiver<(u64, ())> = crossbeam_channel::never();
 
-        {
+        let loop_join = {
             let state = Arc::clone(&state);
             let epoch = Arc::clone(&epoch);
             let overrides = Arc::clone(&overrides);
@@ -399,8 +400,8 @@ impl Engine {
                 if let Some(mut w) = watcher {
                     w.shutdown();
                 }
-            });
-        }
+            })
+        };
 
         Engine {
             cmd_tx,
@@ -408,6 +409,7 @@ impl Engine {
             show_hidden,
             epoch: epoch_shared,
             state,
+            loop_join: Some(loop_join),
         }
     }
 
@@ -454,5 +456,13 @@ impl Drop for Engine {
     fn drop(&mut self) {
         // wakes the loop thread; it shuts workers and the watcher down
         let _ = self.cmd_tx.send(Command::Shutdown);
+        // ...and wait for it. The C++ side calls the notify callback with a
+        // pointer to its own eventfd member, and it frees this engine from
+        // ~EngineBridge before closing that fd. Returning here while the loop
+        // thread could still fire a callback would leave it writing through a
+        // dangling pointer, and into a descriptor number that has been recycled.
+        if let Some(j) = self.loop_join.take() {
+            let _ = j.join();
+        }
     }
 }
