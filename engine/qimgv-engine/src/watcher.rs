@@ -6,7 +6,7 @@
 //! engine can reconcile with a full rescan.
 
 use std::fs;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -148,7 +148,11 @@ pub fn apply_event(
         K::Created | K::MovedTo => {
             let Some(name) = &ev.name else { return WatchAction::Ignored };
             let path = dir.join(name);
-            if !filter.matches(name) && !overrides.contains(&path) {
+            // Directories bypass the extension whitelist. scan.rs puts every
+            // directory in the listing without consulting it, and the watcher used
+            // to run dir names through it too — so an external mkdir matched no
+            // image extension and the folder never appeared until a full rescan.
+            if !ev.is_dir && !filter.matches(name) && !overrides.contains(&path) {
                 return WatchAction::Ignored;
             }
             let meta = match fs::metadata(&path) {
@@ -236,7 +240,7 @@ pub(crate) enum WatchCmd {
 /// target are dropped after a retarget).
 pub(crate) struct WatcherHandle {
     cmd_tx: Sender<WatchCmd>,
-    wake_fd: i32,
+    wake: OwnedFd,
     join: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
 }
@@ -249,17 +253,20 @@ impl WatcherHandle {
         let running_flag = Arc::clone(&running);
 
         // wake fd lets command sends interrupt the poll from any thread
-        let wake_fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK | libc::EFD_CLOEXEC) };
+        let wake = new_eventfd();
+        // the loop gets its own descriptor onto the same eventfd: each end closes
+        // exactly once by ownership, so no fd number is ever released twice
+        let loop_wake = wake.try_clone().expect("dup the watcher wake fd");
 
         let join = std::thread::Builder::new()
             .name("qimgv-watch".into())
-            .spawn(move || watcher_loop(&cmd_rx, &ev_tx, wake_fd, running_flag))
+            .spawn(move || watcher_loop(&cmd_rx, &ev_tx, loop_wake, running_flag))
             .expect("spawn watcher thread");
 
         (
             WatcherHandle {
                 cmd_tx,
-                wake_fd,
+                wake,
                 join: Some(join),
                 running,
             },
@@ -271,18 +278,32 @@ impl WatcherHandle {
         let _ = self.cmd_tx.send(cmd);
         let one: u64 = 1;
         unsafe {
-            libc::write(self.wake_fd, &one as *const u64 as *const libc::c_void, 8);
+            libc::write(self.wake.as_raw_fd(), &one as *const u64 as *const libc::c_void, 8);
         }
     }
 
+    /// Safe to call twice, because the engine loop shuts the watcher down and
+    /// then drops it: this only re-sends a command and re-joins an already-joined
+    /// thread. Nothing releases a descriptor by hand anymore — `wake` is an
+    /// OwnedFd and closes once when the handle drops.
     pub(crate) fn shutdown(&mut self) {
         self.running.store(false, Ordering::Relaxed);
-        self.send(WatchCmd::Stop);
+        let _ = self.cmd_tx.send(WatchCmd::Stop);
+        let one: u64 = 1;
+        unsafe {
+            libc::write(self.wake.as_raw_fd(), &one as *const u64 as *const libc::c_void, 8);
+        }
         if let Some(j) = self.join.take() {
             let _ = j.join();
         }
-        unsafe { libc::close(self.wake_fd) };
     }
+}
+
+fn new_eventfd() -> OwnedFd {
+    // CLOEXEC so the wake pipe cannot leak into a process the app spawns
+    let fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK | libc::EFD_CLOEXEC) };
+    assert!(fd >= 0, "eventfd for the watcher wake pipe failed");
+    unsafe { OwnedFd::from_raw_fd(fd) }
 }
 
 impl Drop for WatcherHandle {
@@ -294,7 +315,7 @@ impl Drop for WatcherHandle {
 fn watcher_loop(
     cmd_rx: &Receiver<WatchCmd>,
     ev_tx: &Sender<(u64, RawWatchEvent)>,
-    wake_fd: i32,
+    wake: OwnedFd,
     running: Arc<AtomicBool>,
 ) {
     let mut inotify = match Inotify::init() {
@@ -311,7 +332,7 @@ fn watcher_loop(
     while running.load(Ordering::Relaxed) {
         let mut fds = [
             libc::pollfd { fd: inotify.as_raw_fd(), events: libc::POLLIN, revents: 0 },
-            libc::pollfd { fd: wake_fd, events: libc::POLLIN, revents: 0 },
+            libc::pollfd { fd: wake.as_raw_fd(), events: libc::POLLIN, revents: 0 },
         ];
         let ready = unsafe { libc::poll(fds.as_mut_ptr(), 2, 500) };
         if ready < 0 {
@@ -330,7 +351,7 @@ fn watcher_loop(
             // commands: drain the wake counter, then the channel
             let mut buf = [0u8; 8];
             unsafe {
-                while libc::read(wake_fd, buf.as_mut_ptr().cast(), 8) as isize == 8 {}
+                while libc::read(wake.as_raw_fd(), buf.as_mut_ptr().cast(), 8) as isize == 8 {}
             }
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {

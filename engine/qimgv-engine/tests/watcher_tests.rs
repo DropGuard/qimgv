@@ -103,6 +103,28 @@ fn apply_created_respects_filter_and_adds() {
 }
 
 #[test]
+fn apply_created_adds_directories_even_though_the_filter_rejects_their_names() {
+    // The scanner and the watcher have to agree: scan.rs lists every directory
+    // regardless of the extension whitelist, so a name like "newfolder" must still
+    // reach the listing. Otherwise a folder created outside the app stays invisible.
+    let (mut st, dir, _p) = state_with_file();
+    let filter = NameFilter::from_extensions(["jpg"]);
+    let mut overrides: std::collections::HashSet<std::path::PathBuf> = Default::default();
+
+    std::fs::create_dir(dir.path().join("newfolder")).unwrap();
+    let ev = RawWatchEvent { name: Some("newfolder".into()), is_dir: true, kind: RawWatchKind::Created };
+    match apply_event(&mut st, dir.path(), &filter, &mut overrides, &ev) {
+        WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Added, path, is_dir, .. } => {
+            assert!(path.ends_with("newfolder"));
+            assert!(is_dir, "the mutation must still report it as a directory");
+        }
+        other => panic!("unexpected: {other:?}"),
+    }
+    assert_eq!(st.dir_count(), 1);
+    assert_eq!(st.file_count(), 1, "the pre-existing file is untouched");
+}
+
+#[test]
 fn apply_deleted_and_modified() {
     let (mut st, dir, p) = state_with_file();
     let filter = NameFilter::from_extensions(["jpg"]);
