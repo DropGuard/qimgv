@@ -40,7 +40,7 @@ QImage* ImageLib::flippedHRaw(const QImage *src) {
     if(!src)
         return new QImage();
     else
-        return new QImage(src->mirrored(true, false));
+        return new QImage(src->flipped(Qt::Horizontal));
 }
 //------------------------------------------------------------------------------
 QImage* ImageLib::flippedH(std::shared_ptr<const QImage> src) {
@@ -51,7 +51,7 @@ QImage* ImageLib::flippedVRaw(const QImage *src) {
     if(!src)
         return new QImage();
     else
-        return new QImage(src->mirrored(false, true));
+        return new QImage(src->flipped(Qt::Vertical));
 }
 //------------------------------------------------------------------------------
 QImage* ImageLib::flippedV(std::shared_ptr<const QImage> src) {

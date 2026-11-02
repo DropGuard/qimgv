@@ -64,8 +64,10 @@ private:
     MW *mw;
 
     State state;
-    bool loopSlideshow, slideshow, shuffle;
     FolderEndAction folderEndAction;
+    bool loopSlideshow;
+    QDrag *mDrag;
+    bool slideshow, shuffle;
 
     // components
     std::shared_ptr<DirectoryModel> model;
@@ -81,7 +83,6 @@ private:
     void reset();
     bool setDirectory(QString path);
 
-    QDrag *mDrag;
     QMimeData *getMimeDataForImage(std::shared_ptr<Image> img, MimeDataTarget target);
     QTranslator *translator = nullptr;
 

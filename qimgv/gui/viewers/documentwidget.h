@@ -41,5 +41,5 @@ private:
     std::shared_ptr<ViewerWidget> mViewWidget;
     std::shared_ptr<InfoBarProxy> mInfoBar;
     std::shared_ptr<MainPanel> mainPanel;
-    bool avoidPanelFlag, mPanelEnabled, mPanelFullscreenOnly, mIsFullscreen, mPanelPinned, mInteractionEnabled, mAllowPanelInit;
+    bool mPanelPinned, mPanelEnabled, mPanelFullscreenOnly, avoidPanelFlag, mIsFullscreen, mInteractionEnabled, mAllowPanelInit;
 };

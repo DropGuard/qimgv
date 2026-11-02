@@ -74,15 +74,17 @@ signals:
     void draggedOver(int) override;
     void droppedInto(const QMimeData*, QObject*, int) override;
 
-private:
+protected:
     QTimer loadTimer;
     bool blockThumbnailLoading;
 
-    int mDrawScrollbarIndicator, lastScrollFrameTime;
-    QList<int> mSelection;
-
     bool mCropThumbnails, mouseReleaseSelect;
+    int mDrawScrollbarIndicator;
+    int mThumbnailSize;
+    bool rangeSelection;
     ThumbnailSelectMode selectMode;
+    int lastScrollFrameTime;
+    QList<int> mSelection;
     QPoint dragStartPos;
     ThumbnailWidget* dragTarget;
 
@@ -98,12 +100,11 @@ protected:
     QScrollBar *scrollBar;
     QTimeLine *scrollTimeLine;
     QPointF viewportCenter;
-    int mThumbnailSize;
-    int offscreenPreloadArea = 3000;
 
     QList<int> rangeSelectionSnapshot;
-    bool rangeSelection; // true if shift is pressed
     bool wayland = false;
+
+    int offscreenPreloadArea = 3000;
 
     QRect indicator;
     const int indicatorSize = 2;

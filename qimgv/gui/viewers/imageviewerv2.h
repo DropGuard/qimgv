@@ -127,7 +127,6 @@ private slots:
 
     void onDPRChanged();
 private:
-    QGraphicsScene *scene;
     std::shared_ptr<QPixmap> pixmap;
     std::unique_ptr<QPixmap> pixmapScaled;
     std::shared_ptr<QMovie> movie;
@@ -164,9 +163,11 @@ private:
 
     QElapsedTimer lastTouchpadScroll;
 
-    ImageFitMode imageFitMode, imageFitModeDefault;
-    ImageFocusPoint focusIn1to1;
+    ImageFitMode imageFitMode;
     ScalingFilter mScalingFilter;
+    ImageFitMode imageFitModeDefault;
+    QGraphicsScene *scene;
+    ImageFocusPoint focusIn1to1;
 
     QPixmap *checkboard;
 

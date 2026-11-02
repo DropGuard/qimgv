@@ -21,3 +21,15 @@ ui_settingsdialog.h
 Makefile
 
 /target/
+
+# in-source CMake build accident vaccine (CMake generates these next to
+# sources when pointed at the source dir instead of a build dir)
+CMakeFiles/
+CMakeCache.txt
+CMakeUserFile.txt
+CTestTestfile.cmake
+cmake_install.cmake
+_deps/
+.lupdate/
+cmake_uninstall.cmake
+install_manifest.txt
