@@ -8,15 +8,11 @@ bool Cache::contains(QString path) const {
 }
 
 bool Cache::insert(std::shared_ptr<Image> img) {
-    if(img) {
-        if(items.contains(img->filePath())) {
-            return false;
-        } else {
-            items.insert(img->filePath(), new CacheItem(img));
-            return true;
-        }
-    }
-    // TODO: what state returns here ??
+    if(!img)
+        return false; // reporting success for a failed decode hides the failure
+    if(items.contains(img->filePath()))
+        return false;
+    items.insert(img->filePath(), new CacheItem(img));
     return true;
 }
 

@@ -11,6 +11,10 @@ Randomizer::Randomizer(int _count) : currentIndex(0) {
 void Randomizer::setCount(int _count) {
     vec.resize(_count);
     fill();
+    // a shrinking folder can strand the cursor past the new end (and a missed
+    // setCurrent() can leave it at -1); nobody may index with that state
+    if(currentIndex < 0 || currentIndex >= static_cast<int>(vec.size()))
+        currentIndex = 0;
 }
 
 void Randomizer::shuffle() {
@@ -57,9 +61,16 @@ void Randomizer::print() {
 }
 
 int Randomizer::next() {
+    if(vec.empty())
+        return 0; // nothing to draw from; loadFileIndex no-ops on a bad index
+    if(vec.size() == 1)
+        return vec[0]; // reshuffling cannot move the cursor, and the loop below
+                       // would spin on it forever, hanging the UI thread
+    if(currentIndex < 0 || currentIndex >= static_cast<int>(vec.size()))
+        currentIndex = 0;
     // re-shuffle when needed
     // because vector gets rearranged this will break prev()
-    while(currentIndex == vec.size() - 1) {
+    while(currentIndex == static_cast<int>(vec.size()) - 1) {
         int currentItem = vec[currentIndex];
         shuffle();
         setCurrent(currentItem);
@@ -69,6 +80,12 @@ int Randomizer::next() {
 }
 
 int Randomizer::prev() {
+    if(vec.empty())
+        return 0;
+    if(vec.size() == 1)
+        return vec[0];
+    if(currentIndex < 1 || currentIndex >= static_cast<int>(vec.size()))
+        currentIndex = static_cast<int>(vec.size());
     while(currentIndex == 0) {
         int currentItem = vec[currentIndex];
         shuffle();
