@@ -53,7 +53,6 @@ private:
     void setupSidebar();
     void removeShortcutAt(int row);
     void adjustSizeToContents();
-    QMap<QString, QString> langs; // <"en_US", "English">
     QButtonGroup fitModeGrp, folderEndGrp, zoomIndGrp;
 
 private:
@@ -63,6 +62,14 @@ private:
         void (Settings::*set)(bool);
     };
     QVector<CheckBinding> mChecks;
+
+    struct ComboBinding {
+        QComboBox *box;
+        const SettingDesc *desc;
+        QStringList values;   // combo index -> stored value
+        QString fallback;     // used when the stored value is not in the list
+    };
+    QVector<ComboBinding> mCombos;
 
 private slots:
     void saveSettingsAndClose();

@@ -134,7 +134,8 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
     zoomIndGrp.addButton(ui->zoomIndicatorOff);
     zoomIndGrp.addButton(ui->zoomIndicatorOn);
 
-    // readable language names
+    // readable language names (ctor-local: consumed by the binding below)
+    QMap<QString, QString> langs;
     langs.insert("de_DE", "Deutsch");
     langs.insert("en_US", "English");
     langs.insert("es_ES", "Español");
@@ -148,6 +149,12 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
     // insert system language entry manually at the beginning
     langs.insert("system", "System language");
     ui->langComboBox->insertItem(0, "System language");
+    // the combo is [System language] + locales in map order; the stored value
+    // for index 0 is "system". Unknown stored values fall back to en_US.
+    QStringList langValues = langs.keys(); // sorted, "system" included
+    langValues.removeAll("system");
+    langValues.prepend("system");          // combo index 0 is the System entry
+    mCombos = {{ui->langComboBox, &K_Language, langValues, QStringLiteral("en_US")}};
 
     connect(this, &SettingsDialog::settingsChanged, settings, &Settings::sendChangeNotification);
     readSettings();
@@ -204,6 +211,12 @@ void SettingsDialog::readSettings() {
     // checkbox bindings: one declaration, both directions
     for(const CheckBinding &b : mChecks)
         b.box->setChecked((settings->*b.get)());
+    for(const ComboBinding &b : mCombos) {
+        int idx = b.values.indexOf(settings->load<QString>(*b.desc));
+        if(idx < 0)
+            idx = b.values.indexOf(b.fallback);
+        b.box->setCurrentIndex(idx);
+    }
     ui->loopSlideshowCheckBox->setChecked(settings->loopSlideshow());
     ui->videoPlaybackCheckBox->setChecked(settings->videoPlayback());
     ui->videoPlaybackGroupContents->setEnabled(settings->videoPlayback());
@@ -298,12 +311,6 @@ void SettingsDialog::readSettings() {
 
     ui->memoryLimitSpinBox->setValue(settings->memoryAllocationLimit());
 
-    // language
-    QString langName = langs.value(settings->language());
-    if(langName.isEmpty() || ui->langComboBox->findText(langName) == -1)
-        ui->langComboBox->setCurrentText("en_US");
-    else
-        ui->langComboBox->setCurrentText(langName);
 
     // ##### fit mode #####
     if(settings->imageFitMode() == FIT_WINDOW)
@@ -341,6 +348,11 @@ void SettingsDialog::saveSettings() {
     }
     for(const CheckBinding &b : mChecks)
         (settings->*b.set)(b.box->isChecked());
+    for(const ComboBinding &b : mCombos) {
+        int idx = b.box->currentIndex();
+        if(idx >= 0 && idx < b.values.size())
+            settings->store(*b.desc, b.values.at(idx));
+    }
 
     settings->setLoopSlideshow(ui->loopSlideshowCheckBox->isChecked());
     settings->setFullscreenMode(ui->fullscreenCheckBox->isChecked());
@@ -353,7 +365,6 @@ void SettingsDialog::saveSettings() {
     else
         settings->setImageFitMode(FIT_ORIGINAL);
 
-    settings->setLanguage(langs.key(ui->langComboBox->currentText()));
 
     settings->setVideoPlayback(ui->videoPlaybackCheckBox->isChecked());
     settings->setPlayVideoSounds(ui->playSoundsCheckBox->isChecked());

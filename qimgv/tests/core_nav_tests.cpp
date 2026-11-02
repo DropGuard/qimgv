@@ -193,6 +193,29 @@ private slots:
         dlg.saveSettings();
         QCOMPARE(settings->trackpadDetection(), false);
     }
+
+    void dialogComboBindingFollowsTheSetting() {
+        FreshSettings fresh;
+        settings->setLanguage("ja_JP");
+
+        SettingsDialog dlg;
+        auto *combo = dlg.findChild<QComboBox *>("langComboBox");
+        QVERIFY(combo != nullptr);
+        // read half: the stored locale maps through the display-name list
+        QCOMPARE(combo->currentText(), QStringLiteral("日本語"));
+        // save half: a user pick lands as the stored locale
+        combo->setCurrentIndex(combo->findText(QStringLiteral("简体中文")));
+        dlg.saveSettings();
+        QCOMPARE(settings->language(), QStringLiteral("zh_CN"));
+        // an unknown stored value falls back to en_US — the old fallback line
+        // ("setCurrentText("en_US")") never matched any item and silently
+        // kept the previous selection
+        settings->setLanguage("xx_XX");
+        dlg.readSettings();
+        QCOMPARE(combo->currentText(), QStringLiteral("English"));
+        dlg.saveSettings();
+        QCOMPARE(settings->language(), QStringLiteral("en_US"));
+    }
 };
 
 int main(int argc, char **argv) {
