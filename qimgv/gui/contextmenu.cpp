@@ -57,6 +57,9 @@ ContextMenu::ContextMenu(QWidget *parent) :
     ui->print->setAction("print");
     ui->print->setText(tr("Print"));
     ui->print->setIconPath(":/res/icons/common/menuitem/print16.png");
+    ui->setWallpaper->setAction("setWallpaper");
+    ui->setWallpaper->setText(tr("Set as wallpaper"));
+    ui->setWallpaper->setIconPath(":/res/icons/common/menuitem/wallpaper16.png");
 
     ui->copy->setAction("copyFile");
     ui->copy->setText(tr("Quick copy"));

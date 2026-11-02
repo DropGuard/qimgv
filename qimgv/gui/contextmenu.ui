@@ -439,6 +439,9 @@
           <widget class="ContextMenuItem" name="print" native="true"/>
          </item>
          <item>
+          <widget class="ContextMenuItem" name="setWallpaper" native="true"/>
+         </item>
+         <item>
           <spacer name="verticalSpacer">
            <property name="orientation">
             <enum>Qt::Vertical</enum>

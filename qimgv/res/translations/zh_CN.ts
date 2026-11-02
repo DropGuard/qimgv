@@ -16,7 +16,11 @@
 </context>
 <context>
     <name>ContextMenu</name>
-    <message>
+            <message>
+            <source>Set as wallpaper</source>
+            <translation>设为壁纸</translation>
+        </message>
+<message>
         <location filename="../../gui/contextmenu.cpp" line="55"/>
         <source>Print</source>
         <translation type="unfinished">打印</translation>

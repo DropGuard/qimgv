@@ -1134,6 +1134,8 @@ void Core::runScript(const QString &scriptName) {
     scriptManager->runScript(scriptName, model->getImage(selectedPath()));
 }
 
+// Linux implementation is KDE Plasma only (plasma-apply-wallpaperimage /
+// qdbus) — deliberate fork scope, see the context menu entry.
 void Core::setWallpaper() {
     if(model->isEmpty() || selectedPath().isEmpty())
         return;
