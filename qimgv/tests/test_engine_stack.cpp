@@ -1096,6 +1096,82 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(model.containsFile(fixtureDir + "/copy.jpg"), 10000);
         QCOMPARE(model.fileCount(), 2UL + 1UL);
     }
+
+    // --- layer 13: the settings table ------------------------------------------
+    // Every row of settings_table.h is walked, so a new setting inherits this
+    // coverage the moment it is added to the table: missing key -> default,
+    // junk value -> default (not QVariant's silent zero/false), clamp bounds
+    // hold on both ends.
+
+    void settingsTableRowsSurviveJunkAndClamps() {
+        FreshSettings fresh;
+        QSettings junk(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+
+        // missing key: every row serves its default
+        for(const SettingDesc *d : kAllSettings) {
+            switch(d->kind) {
+            case SettingDesc::Kind::Bool:
+                QCOMPARE(settings->load<bool>(*d), d->defB);
+                break;
+            case SettingDesc::Kind::Int:
+                QCOMPARE(settings->load<qlonglong>(*d), d->defI);
+                break;
+            case SettingDesc::Kind::Real:
+                QCOMPARE(settings->load<double>(*d), d->defR);
+                break;
+            case SettingDesc::Kind::Str:
+                QCOMPARE(settings->load<QString>(*d), QString::fromUtf8(d->defS));
+                break;
+            }
+        }
+
+        // junk string for every row: numbers fall back to the default instead
+        // of QVariant's silent zero/false
+        for(const SettingDesc *d : kAllSettings)
+            junk.setValue(d->key, QVariant(QStringLiteral("banana")));
+        junk.sync();
+        for(const SettingDesc *d : kAllSettings) {
+            switch(d->kind) {
+            case SettingDesc::Kind::Bool:
+                settings->load<bool>(*d); // defined, do not pin QVariant's whim
+                break;
+            case SettingDesc::Kind::Int:
+                QCOMPARE(settings->load<qlonglong>(*d), d->defI);
+                break;
+            case SettingDesc::Kind::Real:
+                QCOMPARE(settings->load<double>(*d), d->defR);
+                break;
+            case SettingDesc::Kind::Str:
+                QCOMPARE(settings->load<QString>(*d), QStringLiteral("banana"));
+                break;
+            }
+        }
+
+        // clamp bounds hold on both ends, for every row that declares them
+        for(const SettingDesc *d : kAllSettings) {
+            if(!d->clamped())
+                continue;
+            if(d->kind == SettingDesc::Kind::Int) {
+                if(d->hasLo) {
+                    junk.setValue(d->key, QVariant(static_cast<qlonglong>(d->lo) - 1000));
+                    junk.sync();
+                    QCOMPARE(settings->load<qlonglong>(*d), static_cast<qlonglong>(d->lo));
+                }
+                if(d->hasHi) {
+                    junk.setValue(d->key, QVariant(static_cast<qlonglong>(d->hi) + 1000));
+                    junk.sync();
+                    QCOMPARE(settings->load<qlonglong>(*d), static_cast<qlonglong>(d->hi));
+                }
+            } else if(d->kind == SettingDesc::Kind::Real) {
+                junk.setValue(d->key, QVariant(d->lo - 1000.0));
+                junk.sync();
+                QCOMPARE(settings->load<double>(*d), d->lo);
+                junk.setValue(d->key, QVariant(d->hi + 1000.0));
+                junk.sync();
+                QCOMPARE(settings->load<double>(*d), d->hi);
+            }
+        }
+    }
 };
 
 int main(int argc, char **argv) {

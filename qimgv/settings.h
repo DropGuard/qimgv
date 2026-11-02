@@ -18,6 +18,7 @@
 #include <QThread>
 #include "utils/script.h"
 #include "themestore.h"
+#include "settings_table.h"
 
 enum SortingMode {
     SORT_NAME,
@@ -101,6 +102,11 @@ class Settings : public QObject
     Q_OBJECT
 public:
     static Settings* getInstance();
+    // Typed access to the declarative table (settings_table.h): read with
+    // default + conversion + clamp semantics, write raw. Public because the
+    // table is the typed API; the named accessors are one-line wrappers.
+    template<class T> T load(const SettingDesc &d) const;
+    template<class T> void store(const SettingDesc &d, const T &v);
     // Direct construction is allowed: each instance binds its own QSettings
     // identity, so a test can run against an isolated config. The application
     // keeps using getInstance().

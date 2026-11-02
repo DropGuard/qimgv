@@ -1,6 +1,68 @@
+#include <type_traits>
+#include <algorithm>
 #include "settings.h"
 
 Settings *settings = nullptr;
+
+namespace {
+template<class T> constexpr SettingDesc::Kind kindOf();
+template<> constexpr SettingDesc::Kind kindOf<bool>()      { return SettingDesc::Kind::Bool; }
+template<> constexpr SettingDesc::Kind kindOf<int>()        { return SettingDesc::Kind::Int; }
+template<> constexpr SettingDesc::Kind kindOf<qlonglong>()  { return SettingDesc::Kind::Int; }
+template<> constexpr SettingDesc::Kind kindOf<float>()      { return SettingDesc::Kind::Real; }
+template<> constexpr SettingDesc::Kind kindOf<double>()     { return SettingDesc::Kind::Real; }
+template<> constexpr SettingDesc::Kind kindOf<QString>()    { return SettingDesc::Kind::Str; }
+
+template<class T> T settingDefault(const SettingDesc &d) {
+    Q_ASSERT(d.kind == kindOf<T>());
+    if constexpr(std::is_same_v<T, bool>)
+        return d.defB;
+    else if constexpr(std::is_same_v<T, int> || std::is_same_v<T, qlonglong>)
+        return static_cast<T>(d.defI);
+    else if constexpr(std::is_same_v<T, float> || std::is_same_v<T, double>)
+        return static_cast<T>(d.defR);
+    else
+        return QString::fromUtf8(d.defS);
+}
+}
+
+template<class T>
+T Settings::load(const SettingDesc &d) const {
+    Q_ASSERT(d.kind == kindOf<T>());
+    const QVariant raw = settingsConf->value(d.key);
+    if(!raw.isValid())
+        return settingDefault<T>(d);
+    if constexpr(std::is_same_v<T, bool>) {
+        return raw.toBool();
+    } else if constexpr(std::is_same_v<T, int> || std::is_same_v<T, qlonglong>) {
+        // QVariant::canConvert is lenient for QString->number (junk "converts"
+        // to 0), so the ok flag decides — INI configs hand values back as
+        // strings, and "3000" must convert while "banana" must not
+        bool ok = false;
+        qlonglong v = raw.toLongLong(&ok);
+        if(!ok)
+            return settingDefault<T>(d);
+        if(d.hasLo) v = std::max<qlonglong>(v, static_cast<qlonglong>(d.lo));
+        if(d.hasHi) v = std::min<qlonglong>(v, static_cast<qlonglong>(d.hi));
+        return static_cast<T>(v);
+    } else if constexpr(std::is_same_v<T, float> || std::is_same_v<T, double>) {
+        bool ok = false;
+        double v = raw.toDouble(&ok);
+        if(!ok)
+            return settingDefault<T>(d);
+        if(d.hasLo) v = std::max(v, d.lo);
+        if(d.hasHi) v = std::min(v, d.hi);
+        return static_cast<T>(v);
+    } else {
+        return raw.toString();
+    }
+}
+
+template<class T>
+void Settings::store(const SettingDesc &d, const T &v) {
+    Q_ASSERT(d.kind == kindOf<T>());
+    settingsConf->setValue(d.key, v);
+}
 
 Settings::Settings(QObject *parent) : QObject(parent) {
 #if defined(__linux__) || defined(__FreeBSD__)
@@ -308,7 +370,7 @@ QString Settings::mpvBinary() {
 
 void Settings::setMpvBinary(QString path) {
     if(QFile::exists(path)) {
-        settingsConf->setValue("mpvBinary", path);
+        store(K_MpvBinary, path);
     }
 }
 //------------------------------------------------------------------------------
@@ -358,22 +420,22 @@ QStringList Settings::supportedMimeTypes() {
 //------------------------------------------------------------------------------
 bool Settings::videoPlayback() {
 #ifdef USE_MPV
-    return settingsConf->value("videoPlayback", true).toBool();
+    return load<bool>(K_VideoPlayback);
 #else
     return false;
 #endif
 }
 
 void Settings::setVideoPlayback(bool mode) {
-    settingsConf->setValue("videoPlayback", mode);
+    store(K_VideoPlayback, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::useSystemColorScheme() {
-    return settingsConf->value("useSystemColorScheme", false).toBool();
+    return load<bool>(K_UseSystemColorScheme);
 }
 
 void Settings::setUseSystemColorScheme(bool mode) {
-    settingsConf->setValue("useSystemColorScheme", mode);
+    store(K_UseSystemColorScheme, mode);
 }
 //------------------------------------------------------------------------------
 QVersionNumber Settings::lastVersion() {
@@ -390,11 +452,11 @@ void Settings::setLastVersion(QVersionNumber &ver) {
 }
 //------------------------------------------------------------------------------
 void Settings::setShowChangelogs(bool mode) {
-    settingsConf->setValue("showChangelogs", mode);
+    store(K_ShowChangelogs, mode);
 }
 
 bool Settings::showChangelogs() {
-    return settingsConf->value("showChangelogs", true).toBool();
+    return load<bool>(K_ShowChangelogs);
 }
 //------------------------------------------------------------------------------
 qreal Settings::backgroundOpacity() {
@@ -414,24 +476,24 @@ void Settings::setBackgroundOpacity(qreal value) {
         value = 1.0;
     else if(value < 0.0)
         value = 0.0;
-    settingsConf->setValue("backgroundOpacity", value);
+    store(K_BackgroundOpacity, value);
 }
 //------------------------------------------------------------------------------
 bool Settings::blurBackground() {
 #ifndef USE_KDE_BLUR
     return false;
 #endif
-    return settingsConf->value("blurBackground", true).toBool();
+    return load<bool>(K_BlurBackground);
 }
 
 void Settings::setBlurBackground(bool mode) {
-    settingsConf->setValue("blurBackground", mode);
+    store(K_BlurBackground, mode);
 }
 //------------------------------------------------------------------------------
 void Settings::setSortingMode(SortingMode mode) {
     if(mode >= 6)
         mode = SortingMode::SORT_NAME;
-    settingsConf->setValue("sortingMode", mode);
+    store(K_SortingMode, mode);
 }
 
 SortingMode Settings::sortingMode() {
@@ -442,11 +504,11 @@ SortingMode Settings::sortingMode() {
 }
 //------------------------------------------------------------------------------
 bool Settings::playVideoSounds() {
-    return settingsConf->value("playVideoSounds", false).toBool();
+    return load<bool>(K_PlayVideoSounds);
 }
 
 void Settings::setPlayVideoSounds(bool mode) {
-    settingsConf->setValue("playVideoSounds", mode);
+    store(K_PlayVideoSounds, mode);
 }
 //------------------------------------------------------------------------------
 void Settings::setVolume(int vol) {
@@ -465,7 +527,7 @@ FolderViewMode Settings::folderViewMode() {
 }
 
 void Settings::setFolderViewMode(FolderViewMode mode) {
-    settingsConf->setValue("folderViewMode", mode);
+    store(K_FolderViewMode, mode);
 }
 //------------------------------------------------------------------------------
 ThumbPanelStyle Settings::thumbPanelStyle() {
@@ -476,7 +538,7 @@ ThumbPanelStyle Settings::thumbPanelStyle() {
 }
 
 void Settings::setThumbPanelStyle(ThumbPanelStyle mode) {
-    settingsConf->setValue("thumbPanelStyle", mode);
+    store(K_ThumbPanelStyle, mode);
 }
 //------------------------------------------------------------------------------
 const QMultiMap<QByteArray, QByteArray> Settings::videoFormats() const {
@@ -493,31 +555,31 @@ int Settings::panelPreviewsSize() {
 }
 
 void Settings::setPanelPreviewsSize(int size) {
-    settingsConf->setValue("panelPreviewsSize", size);
+    store(K_PanelPreviewsSize, size);
 }
 //------------------------------------------------------------------------------
 bool Settings::usePreloader() {
-    return settingsConf->value("usePreloader", true).toBool();
+    return load<bool>(K_UsePreloader);
 }
 
 void Settings::setUsePreloader(bool mode) {
-    settingsConf->setValue("usePreloader", mode);
+    store(K_UsePreloader, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::keepFitMode() {
-    return settingsConf->value("keepFitMode", false).toBool();
+    return load<bool>(K_KeepFitMode);
 }
 
 void Settings::setKeepFitMode(bool mode) {
-    settingsConf->setValue("keepFitMode", mode);
+    store(K_KeepFitMode, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::fullscreenMode() {
-    return settingsConf->value("openInFullscreen", false).toBool();
+    return load<bool>(K_FullscreenMode);
 }
 
 void Settings::setFullscreenMode(bool mode) {
-    settingsConf->setValue("openInFullscreen", mode);
+    store(K_FullscreenMode, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::maximizedWindow() {
@@ -529,19 +591,19 @@ void Settings::setMaximizedWindow(bool mode) {
 }
 //------------------------------------------------------------------------------
 bool Settings::panelEnabled() {
-    return settingsConf->value("panelEnabled", true).toBool();
+    return load<bool>(K_PanelEnabled);
 }
 
 void Settings::setPanelEnabled(bool mode) {
-    settingsConf->setValue("panelEnabled", mode);
+    store(K_PanelEnabled, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::panelFullscreenOnly() {
-    return settingsConf->value("panelFullscreenOnly", true).toBool();
+    return load<bool>(K_PanelFullscreenOnly);
 }
 
 void Settings::setPanelFullscreenOnly(bool mode) {
-    settingsConf->setValue("panelFullscreenOnly", mode);
+    store(K_PanelFullscreenOnly, mode);
 }
 //------------------------------------------------------------------------------
 int Settings::lastDisplay() {
@@ -581,15 +643,15 @@ void Settings::setPanelPosition(PanelPosition pos) {
             posString = "right";
             break;
     }
-    settingsConf->setValue("panelPosition", posString);
+    store(K_PanelPosition, posString);
 }
 //------------------------------------------------------------------------------
 bool Settings::panelPinned() {
-    return settingsConf->value("panelPinned", false).toBool();
+    return load<bool>(K_PanelPinned);
 }
 
 void Settings::setPanelPinned(bool mode) {
-    settingsConf->setValue("panelPinned", mode);
+    store(K_PanelPinned, mode);
 }
 //------------------------------------------------------------------------------
 /*
@@ -613,7 +675,7 @@ void Settings::setImageFitMode(ImageFitMode mode) {
         qDebug() << "Settings: Invalid fit mode ( " + QString::number(modeInt) + " ). Resetting to default.";
         modeInt = 0;
     }
-    settingsConf->setValue("defaultFitMode", modeInt);
+    store(K_DefaultFitMode, modeInt);
 }
 //------------------------------------------------------------------------------
 QRect Settings::windowGeometry() {
@@ -628,11 +690,11 @@ void Settings::setWindowGeometry(QRect geometry) {
 }
 //------------------------------------------------------------------------------
 bool Settings::loopSlideshow() {
-    return settingsConf->value("loopSlideshow", false).toBool();
+    return load<bool>(K_LoopSlideshow);
 }
 
 void Settings::setLoopSlideshow(bool mode) {
-    settingsConf->setValue("loopSlideshow", mode);
+    store(K_LoopSlideshow, mode);
 }
 //------------------------------------------------------------------------------
 void Settings::sendChangeNotification() {
@@ -701,35 +763,35 @@ void Settings::saveScripts(const QMap<QString, Script> &scripts) {
 }
 //------------------------------------------------------------------------------
 bool Settings::squareThumbnails() {
-    return settingsConf->value("squareThumbnails", false).toBool();
+    return load<bool>(K_SquareThumbnails);
 }
 
 void Settings::setSquareThumbnails(bool mode) {
-    settingsConf->setValue("squareThumbnails", mode);
+    store(K_SquareThumbnails, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::transparencyGrid() {
-    return settingsConf->value("drawTransparencyGrid", false).toBool();
+    return load<bool>(K_TransparencyGrid);
 }
 
 void Settings::setTransparencyGrid(bool mode) {
-    settingsConf->setValue("drawTransparencyGrid", mode);
+    store(K_TransparencyGrid, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::enableSmoothScroll() {
-    return settingsConf->value("enableSmoothScroll", true).toBool();
+    return load<bool>(K_EnableSmoothScroll);
 }
 
 void Settings::setEnableSmoothScroll(bool mode) {
-    settingsConf->setValue("enableSmoothScroll", mode);
+    store(K_EnableSmoothScroll, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::useThumbnailCache() {
-    return settingsConf->value("thumbnailCache", true).toBool();
+    return load<bool>(K_UseThumbnailCache);
 }
 
 void Settings::setUseThumbnailCache(bool mode) {
-    settingsConf->setValue("thumbnailCache", mode);
+    store(K_UseThumbnailCache, mode);
 }
 //------------------------------------------------------------------------------
 QStringList Settings::savedPaths() {
@@ -781,7 +843,7 @@ void Settings::setPlacesPanelWidth(int width) {
 }
 //------------------------------------------------------------------------------
 void Settings::setSlideshowInterval(int ms) {
-    settingsConf->setValue("slideshowInterval", ms);
+    store(K_SlideshowInterval, ms);
 }
 
 int Settings::slideshowInterval() {
@@ -799,39 +861,39 @@ int Settings::thumbnailerThreadCount() {
 }
 
 void Settings::setThumbnailerThreadCount(int count) {
-    settingsConf->setValue("thumbnailerThreads", count);
+    store(K_ThumbnailerThreads, count);
 }
 //------------------------------------------------------------------------------
 bool Settings::smoothUpscaling() {
-    return settingsConf->value("smoothUpscaling", true).toBool();
+    return load<bool>(K_SmoothUpscaling);
 }
 
 void Settings::setSmoothUpscaling(bool mode) {
-    settingsConf->setValue("smoothUpscaling", mode);
+    store(K_SmoothUpscaling, mode);
 }
 //------------------------------------------------------------------------------
 int Settings::folderViewIconSize() {
-    return settingsConf->value("folderViewIconSize", 120).toInt();
+    return static_cast<int>(load<qlonglong>(K_FolderViewIconSize));
 }
 
 void Settings::setFolderViewIconSize(int value) {
-    settingsConf->setValue("folderViewIconSize", value);
+    store(K_FolderViewIconSize, value);
 }
 //------------------------------------------------------------------------------
 bool Settings::expandImage() {
-    return settingsConf->value("expandImage", false).toBool();
+    return load<bool>(K_ExpandImage);
 }
 
 void Settings::setExpandImage(bool mode) {
-    settingsConf->setValue("expandImage", mode);
+    store(K_ExpandImage, mode);
 }
 //------------------------------------------------------------------------------
 int Settings::expandLimit() {
-    return settingsConf->value("expandLimit", 2).toInt();
+    return static_cast<int>(load<qlonglong>(K_ExpandLimit));
 }
 
 void Settings::setExpandLimit(int value) {
-    settingsConf->setValue("expandLimit", value);
+    store(K_ExpandLimit, value);
 }
 //------------------------------------------------------------------------------
 int Settings::JPEGSaveQuality() {
@@ -840,7 +902,7 @@ int Settings::JPEGSaveQuality() {
 }
 
 void Settings::setJPEGSaveQuality(int value) {
-    settingsConf->setValue("JPEGSaveQuality", value);
+    store(K_JPEGSaveQuality, value);
 }
 //------------------------------------------------------------------------------
 ScalingFilter Settings::scalingFilter() {
@@ -864,84 +926,84 @@ void Settings::setScalingFilter(ScalingFilter mode) {
 }
 //------------------------------------------------------------------------------
 bool Settings::smoothAnimatedImages() {
-    return settingsConf->value("smoothAnimatedImages", true).toBool();
+    return load<bool>(K_SmoothAnimatedImages);
 }
 
 void Settings::setSmoothAnimatedImages(bool mode) {
-    settingsConf->setValue("smoothAnimatedImages", mode);
+    store(K_SmoothAnimatedImages, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::infoBarFullscreen() {
-    return settingsConf->value("infoBarFullscreen", true).toBool();
+    return load<bool>(K_InfoBarFullscreen);
 }
 
 void Settings::setInfoBarFullscreen(bool mode) {
-    settingsConf->setValue("infoBarFullscreen", mode);
+    store(K_InfoBarFullscreen, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::infoBarWindowed() {
-    return settingsConf->value("infoBarWindowed", false).toBool();
+    return load<bool>(K_InfoBarWindowed);
 }
 
 void Settings::setInfoBarWindowed(bool mode) {
-    settingsConf->setValue("infoBarWindowed", mode);
+    store(K_InfoBarWindowed, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::windowTitleExtendedInfo() {
-    return settingsConf->value("windowTitleExtendedInfo", true).toBool();
+    return load<bool>(K_WindowTitleExtendedInfo);
 }
 
 void Settings::setWindowTitleExtendedInfo(bool mode) {
-    settingsConf->setValue("windowTitleExtendedInfo", mode);
+    store(K_WindowTitleExtendedInfo, mode);
 }
 
 //------------------------------------------------------------------------------
 bool Settings::cursorAutohide() {
-    return settingsConf->value("cursorAutohiding", true).toBool();
+    return load<bool>(K_CursorAutohide);
 }
 
 void Settings::setCursorAutohide(bool mode) {
-    settingsConf->setValue("cursorAutohiding", mode);
+    store(K_CursorAutohide, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::firstRun() {
-    return settingsConf->value("firstRun", true).toBool();
+    return load<bool>(K_FirstRun);
 }
 
 void Settings::setFirstRun(bool mode) {
-    settingsConf->setValue("firstRun", mode);
+    store(K_FirstRun, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::showSaveOverlay() {
-    return settingsConf->value("showSaveOverlay", true).toBool();
+    return load<bool>(K_ShowSaveOverlay);
 }
 
 void Settings::setShowSaveOverlay(bool mode) {
-    settingsConf->setValue("showSaveOverlay", mode);
+    store(K_ShowSaveOverlay, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::confirmDelete() {
-    return settingsConf->value("confirmDelete", true).toBool();
+    return load<bool>(K_ConfirmDelete);
 }
 
 void Settings::setConfirmDelete(bool mode) {
-    settingsConf->setValue("confirmDelete", mode);
+    store(K_ConfirmDelete, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::confirmTrash() {
-    return settingsConf->value("confirmTrash", true).toBool();
+    return load<bool>(K_ConfirmTrash);
 }
 
 void Settings::setConfirmTrash(bool mode) {
-    settingsConf->setValue("confirmTrash", mode);
+    store(K_ConfirmTrash, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::unloadThumbs() {
-    return settingsConf->value("unloadThumbs", true).toBool();
+    return load<bool>(K_UnloadThumbs);
 }
 
 void Settings::setUnloadThumbs(bool mode) {
-    settingsConf->setValue("unloadThumbs", mode);
+    store(K_UnloadThumbs, mode);
 }
 //------------------------------------------------------------------------------
 float Settings::zoomStep() {
@@ -955,7 +1017,7 @@ float Settings::zoomStep() {
 
 void Settings::setZoomStep(float value) {
     value = qBound(0.01f, value, 0.5f);
-    settingsConf->setValue("zoomStep", value);
+    store(K_ZoomStep, value);
 }
 //------------------------------------------------------------------------------
 float Settings::mouseScrollingSpeed() {
@@ -969,11 +1031,11 @@ float Settings::mouseScrollingSpeed() {
 
 void Settings::setMouseScrollingSpeed(float value) {
     value = qBound(0.5f, value, 2.0f);
-    settingsConf->setValue("mouseScrollingSpeed", value);
+    store(K_MouseScrollingSpeed, value);
 }
 //------------------------------------------------------------------------------
 void Settings::setZoomIndicatorMode(ZoomIndicatorMode mode) {
-    settingsConf->setValue("zoomIndicatorMode", mode);
+    store(K_ZoomIndicatorMode, mode);
 }
 
 ZoomIndicatorMode Settings::zoomIndicatorMode() {
@@ -984,7 +1046,7 @@ ZoomIndicatorMode Settings::zoomIndicatorMode() {
 }
 //------------------------------------------------------------------------------
 void Settings::setFocusPointIn1to1Mode(ImageFocusPoint mode) {
-    settingsConf->setValue("focusPointIn1to1Mode", mode);
+    store(K_FocusPointIn1to1Mode, mode);
 }
 
 ImageFocusPoint Settings::focusPointIn1to1Mode() {
@@ -995,7 +1057,7 @@ ImageFocusPoint Settings::focusPointIn1to1Mode() {
 }
 
 void Settings::setDefaultCropAction(DefaultCropAction mode) {
-    settingsConf->setValue("defaultCropAction", mode);
+    store(K_DefaultCropAction, mode);
 }
 
 DefaultCropAction Settings::defaultCropAction() {
@@ -1013,7 +1075,7 @@ ImageScrolling Settings::imageScrolling() {
 }
 
 void Settings::setImageScrolling(ImageScrolling mode) {
-    settingsConf->setValue("imageScrolling", mode);
+    store(K_ImageScrolling, mode);
 }
 //------------------------------------------------------------------------------
 ViewMode Settings::defaultViewMode() {
@@ -1024,7 +1086,7 @@ ViewMode Settings::defaultViewMode() {
 }
 
 void Settings::setDefaultViewMode(ViewMode mode) {
-    settingsConf->setValue("defaultViewMode", mode);
+    store(K_DefaultViewMode, mode);
 }
 //------------------------------------------------------------------------------
 FolderEndAction Settings::folderEndAction() {
@@ -1035,7 +1097,7 @@ FolderEndAction Settings::folderEndAction() {
 }
 
 void Settings::setFolderEndAction(FolderEndAction mode) {
-    settingsConf->setValue("folderEndAction", mode);
+    store(K_FolderEndAction, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::printLandscape() {
@@ -1079,19 +1141,19 @@ void Settings::setLastPrinter(QString name) {
 }
 //------------------------------------------------------------------------------
 bool Settings::jxlAnimation() {
-    return settingsConf->value("jxlAnimation", false).toBool();
+    return load<bool>(K_JxlAnimation);
 }
 
 void Settings::setJxlAnimation(bool mode) {
-    settingsConf->setValue("jxlAnimation", mode);
+    store(K_JxlAnimation, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::autoResizeWindow() {
-    return settingsConf->value("autoResizeWindow", false).toBool();
+    return load<bool>(K_AutoResizeWindow);
 }
 
 void Settings::setAutoResizeWindow(bool mode) {
-    settingsConf->setValue("autoResizeWindow", mode);
+    store(K_AutoResizeWindow, mode);
 }
 //------------------------------------------------------------------------------
 int Settings::autoResizeLimit() {
@@ -1102,7 +1164,7 @@ int Settings::autoResizeLimit() {
 }
 
 void Settings::setAutoResizeLimit(int percent) {
-    settingsConf->setValue("autoResizeLimit", percent);
+    store(K_AutoResizeLimit, percent);
 }
 //------------------------------------------------------------------------------
 int Settings::memoryAllocationLimit() {
@@ -1115,31 +1177,31 @@ int Settings::memoryAllocationLimit() {
 }
 
 void Settings::setMemoryAllocationLimit(int limitMB) {
-    settingsConf->setValue("memoryAllocationLimit", limitMB);
+    store(K_MemoryAllocationLimit, limitMB);
 }
 //------------------------------------------------------------------------------
 bool Settings::panelCenterSelection() {
-    return settingsConf->value("panelCenterSelection", false).toBool();
+    return load<bool>(K_PanelCenterSelection);
 }
 
 void Settings::setPanelCenterSelection(bool mode) {
-    settingsConf->setValue("panelCenterSelection", mode);
+    store(K_PanelCenterSelection, mode);
 }
 //------------------------------------------------------------------------------
 QString Settings::language() {
-    return settingsConf->value("language", "en_US").toString();
+    return load<QString>(K_Language);
 }
 
 void Settings::setLanguage(QString lang) {
-    settingsConf->setValue("language", lang);
+    store(K_Language, lang);
 }
 //------------------------------------------------------------------------------
 bool Settings::useFixedZoomLevels() {
-    return settingsConf->value("useFixedZoomLevels", false).toBool();
+    return load<bool>(K_UseFixedZoomLevels);
 }
 
 void Settings::setUseFixedZoomLevels(bool mode) {
-    settingsConf->setValue("useFixedZoomLevels", mode);
+    store(K_UseFixedZoomLevels, mode);
 }
 //------------------------------------------------------------------------------
 QString Settings::defaultZoomLevels() {
@@ -1154,41 +1216,56 @@ void Settings::setZoomLevels(QString levels) {
 }
 //------------------------------------------------------------------------------
 bool Settings::unlockMinZoom() {
-    return settingsConf->value("unlockMinZoom", true).toBool();
+    return load<bool>(K_UnlockMinZoom);
 }
 
 void Settings::setUnlockMinZoom(bool mode) {
-    settingsConf->setValue("unlockMinZoom", mode);
+    store(K_UnlockMinZoom, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::trackpadDetection() {
-    return settingsConf->value("trackpadDetection", true).toBool();
+    return load<bool>(K_TrackpadDetection);
 }
 
 void Settings::setTrackpadDetection(bool mode) {
-    settingsConf->setValue("trackpadDetection", mode);
+    store(K_TrackpadDetection, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::clickableEdges() {
-    return settingsConf->value("clickableEdges", false).toBool();
+    return load<bool>(K_ClickableEdges);
 }
 
 void Settings::setClickableEdges(bool mode) {
-    settingsConf->setValue("clickableEdges", mode);
+    store(K_ClickableEdges, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::clickableEdgesVisible() {
-    return settingsConf->value("clickableEdgesVisible", true).toBool();
+    return load<bool>(K_ClickableEdgesVisible);
 }
 
 void Settings::setClickableEdgesVisible(bool mode) {
-    settingsConf->setValue("clickableEdgesVisible", mode);
+    store(K_ClickableEdgesVisible, mode);
 }
 //------------------------------------------------------------------------------
 bool Settings::showHiddenFiles() {
-    return settingsConf->value("showHiddenFiles", false).toBool();
+    return load<bool>(K_ShowHiddenFiles);
 }
 
 void Settings::setShowHiddenFiles(bool mode) {
-    settingsConf->setValue("showHiddenFiles", mode);
+    store(K_ShowHiddenFiles, mode);
 }
+
+// explicit instantiations: the templates are defined in this TU, and the
+// table's users (plus the audit test) need the symbols at link time
+template bool Settings::load<bool>(const SettingDesc &) const;
+template int Settings::load<int>(const SettingDesc &) const;
+template qlonglong Settings::load<qlonglong>(const SettingDesc &) const;
+template float Settings::load<float>(const SettingDesc &) const;
+template double Settings::load<double>(const SettingDesc &) const;
+template QString Settings::load<QString>(const SettingDesc &) const;
+template void Settings::store<bool>(const SettingDesc &, const bool &);
+template void Settings::store<int>(const SettingDesc &, const int &);
+template void Settings::store<qlonglong>(const SettingDesc &, const qlonglong &);
+template void Settings::store<float>(const SettingDesc &, const float &);
+template void Settings::store<double>(const SettingDesc &, const double &);
+template void Settings::store<QString>(const SettingDesc &, const QString &);
