@@ -491,12 +491,6 @@ SortingMode DirectoryManager::sortingMode() const {
 
 // Entry management
 
-bool DirectoryManager::insertFileEntry(const QString &filePath) {
-    if(!isSupportedFile(filePath))
-        return false;
-    return forceInsertFileEntry(filePath);
-}
-
 // skips filename regex check
 bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
     if(!this->isFile(filePath) || containsFile(filePath))
@@ -534,52 +528,7 @@ void DirectoryManager::updateFileEntry(const QString &filePath) {
     emit fileModified(filePath);
 }
 
-void DirectoryManager::renameFileEntry(const QString &oldFilePath, const QString &newFileName) {
-    QFileInfo fi(oldFilePath);
-    QString newFilePath = fi.absolutePath() + "/" + newFileName;
-    if(!containsFile(oldFilePath)) {
-        if(containsFile(newFilePath))
-            updateFileEntry(newFilePath);
-        else
-            insertFileEntry(newFilePath);
-        return;
-    }
-    if(!isSupportedFile(newFilePath)) {
-        removeFileEntry(oldFilePath);
-        return;
-    }
-    if(containsFile(newFilePath)) {
-        int replaceIndex = indexOfFile(newFilePath);
-        fileEntryVec.erase(fileEntryVec.begin() + replaceIndex);
-        emit fileRemoved(newFilePath, replaceIndex);
-    }
-    // remove the old one
-    int oldIndex = indexOfFile(oldFilePath);
-    fileEntryVec.erase(fileEntryVec.begin() + oldIndex);
-    // insert
-    std::filesystem::directory_entry stdEntry(toStdString(newFilePath));
-    FSEntry FSEntry(newFilePath, newFileName, stdEntry.file_size(), stdEntry.last_write_time(), stdEntry.is_directory());
-    insert_sorted(fileEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
-    qCDebug(lcWatchPerf) << "fileRen" << oldFilePath << newFilePath;
-    emit fileRenamed(oldFilePath, oldIndex, newFilePath, indexOfFile(newFilePath));
-}
-
 // ---- dir entries
-
-bool DirectoryManager::insertDirEntry(const QString &dirPath) {
-    if(containsDir(dirPath))
-        return false;
-    std::filesystem::directory_entry stdEntry(toStdString(dirPath));
-    QString dirName = QString::fromStdString(stdEntry.path().filename().generic_string()); // isn't it beautiful
-    FSEntry FSEntry;
-    FSEntry.name = dirName;
-    FSEntry.path = dirPath;
-    FSEntry.isDirectory = true;
-    insert_sorted(dirEntryVec, FSEntry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
-    qCDebug(lcWatchPerf) << "dirIns" << dirPath;
-    emit dirAdded(dirPath);
-    return true;
-}
 
 void DirectoryManager::removeDirEntry(const QString &dirPath) {
     if(!containsDir(dirPath))
@@ -588,25 +537,6 @@ void DirectoryManager::removeDirEntry(const QString &dirPath) {
     dirEntryVec.erase(dirEntryVec.begin() + index);
     qCDebug(lcWatchPerf) << "dirRem" << dirPath;
     emit dirRemoved(dirPath, index);
-}
-
-void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &newDirName) {
-    if(!containsDir(oldDirPath))
-        return;
-    QFileInfo fi(oldDirPath);
-    QString newDirPath = fi.absolutePath() + "/" + newDirName;
-    // remove the old one
-    int oldIndex = indexOfDir(oldDirPath);
-    dirEntryVec.erase(dirEntryVec.begin() + oldIndex);
-    // insert
-    std::filesystem::directory_entry stdEntry(toStdString(newDirPath));
-    FSEntry FSEntry;
-    FSEntry.name = newDirName;
-    FSEntry.path = newDirPath;
-    FSEntry.isDirectory = true;
-    insert_sorted(dirEntryVec, FSEntry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
-    qCDebug(lcWatchPerf) << "dirRen" << oldDirPath << newDirPath;
-    emit dirRenamed(oldDirPath, oldIndex, newDirPath, indexOfDir(newDirPath));
 }
 
 

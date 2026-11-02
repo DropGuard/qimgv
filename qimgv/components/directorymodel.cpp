@@ -121,27 +121,18 @@ void DirectoryModel::setSortingMode(SortingMode mode) {
 }
 
 void DirectoryModel::removeFile(const QString &filePath, bool trash, FileOpResult &result) {
+    // no mirror write here: the engine's watch sees the change and the
+    // listing follows via fileRemoved — one writer, no reconciliation
     if(trash)
         FileOperations::moveToTrash(filePath, result);
     else
         FileOperations::removeFile(filePath, result);
-    if(result != FileOpResult::SUCCESS)
-        return;
-    dirManager.removeFileEntry(filePath);
-    return;
 }
 
 void DirectoryModel::renameEntry(const QString &oldPath, const QString &newName, bool force, FileOpResult &result) {
-    bool isDir = dirManager.isDir(oldPath);
+    // the engine watch surfaces a rename as remove+add — an in-app rename now
+    // rides the exact path an external rename takes
     FileOperations::rename(oldPath, newName, force, result);
-    // chew through watcher events so they wont be processed out of order
-    qApp->processEvents();
-    if(result != FileOpResult::SUCCESS)
-        return;
-    if(isDir)
-        dirManager.renameDirEntry(oldPath, newName);
-    else
-        dirManager.renameFileEntry(oldPath, newName);
 }
 
 void DirectoryModel::removeDir(const QString &dirPath, bool trash, bool recursive, FileOpResult &result) {
@@ -152,8 +143,6 @@ void DirectoryModel::removeDir(const QString &dirPath, bool trash, bool recursiv
     }
     if(result != FileOpResult::SUCCESS)
         return;
-    dirManager.removeDirEntry(dirPath);
-    return;
 }
 
 void DirectoryModel::copyFileTo(const QString &srcFile, const QString &destDirPath, bool force, FileOpResult &result) {
@@ -161,13 +150,9 @@ void DirectoryModel::copyFileTo(const QString &srcFile, const QString &destDirPa
 }
 
 void DirectoryModel::moveFileTo(const QString &srcFile, const QString &destDirPath, bool force, FileOpResult &result) {
+    // moving out of the watched directory surfaces as a removal event; the
+    // old processEvents() ordering hack died with the local write path
     FileOperations::moveFileTo(srcFile, destDirPath, force, result);
-    // chew through watcher events so they wont be processed out of order
-    qApp->processEvents();
-    if(result == FileOpResult::SUCCESS) {
-        if(destDirPath != this->directoryPath())
-            dirManager.removeFileEntry(srcFile);
-    }
 }
 // -----------------------------------------------------------------------------
 bool DirectoryModel::setDirectory(QString path) {
@@ -229,19 +214,8 @@ bool DirectoryModel::saveFile(const QString &filePath, const QString &destPath) 
         return false;
     auto img = cache.get(filePath);
     if(img->save(destPath)) {
-        if(filePath == destPath) { // replace
-            dirManager.updateFileEntry(destPath);
-            emit fileModified(destPath);
-        } else { // manually add if we are saving to the same dir
-            QFileInfo fiSrc(filePath);
-            QFileInfo fiDest(destPath);
-            // handle same dir
-            if(fiSrc.absolutePath() == fiDest.absolutePath()) {
-                // overwrite
-                if(!dirManager.containsFile(destPath) && dirManager.insertFileEntry(destPath))
-                    emit fileModified(destPath);
-            }
-        }
+        // listing changes (modified/new) surface through the engine's watch
+        // and arrive via fileModified/fileAdded — same as any external edit
         return true;
     }
     return false;
@@ -345,7 +319,6 @@ void DirectoryModel::load(QString filePath, bool asyncHint, bool scaled) {
 void DirectoryModel::reload(QString filePath) {
     if(cache.contains(filePath)) {
         cache.remove(filePath);
-        dirManager.updateFileEntry(filePath);
         load(filePath, false);
     }
 }

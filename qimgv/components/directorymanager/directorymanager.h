@@ -101,17 +101,10 @@ public:
     QString dirPathAt(int index) const;
     QString dirNameAt(int index) const;
 
-    bool insertFileEntry(const QString &filePath);
     bool forceInsertFileEntry(const QString &filePath);
-    void removeFileEntry(const QString &filePath);
-    void updateFileEntry(const QString &filePath);
-    void renameFileEntry(const QString &oldFilePath, const QString &newName);
 
-    bool insertDirEntry(const QString &dirPath);
     //bool forceInsertDirEntry(const QString &dirPath);
-    void removeDirEntry(const QString &dirPath);
     //void updateDirEntry(const QString &dirPath);
-    void renameDirEntry(const QString &oldDirPath, const QString &newName);
 
     FileListSource source() const;
 
@@ -144,6 +137,11 @@ private:
     QVector<PendingListed> pendingOnListed;
     QHash<QString, QPair<quint64, qint64>> mPrevFileMeta; // engine size/mtime per path
 
+    // low-level mirror writes — reserved for the engine event applier; the
+    // listing has exactly one writer (the engine) and one reader (the mirror)
+    void removeFileEntry(const QString &filePath);
+    void removeDirEntry(const QString &dirPath);
+    void updateFileEntry(const QString &filePath);
     void scheduleRescan();
     void mirrorEngineListing(const QString &dirPath);
     static bool directoryUsable(const QString &dirPath);

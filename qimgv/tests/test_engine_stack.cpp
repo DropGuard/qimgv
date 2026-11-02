@@ -1062,6 +1062,40 @@ private slots:
         QVERIFY(!fired);
         QVERIFY(!dm.cancelListed(token));
     }
+
+    // --- layer 12: single-writer listing ---------------------------------------
+    // In-app file operations touch the disk only; the mirror has exactly one
+    // writer (the engine event applier) and the update arrives through the
+    // watch round trip, the same path an external edit takes.
+
+    void modelFileOperationsRideTheEngineRoundTrip() {
+        resetFixture();
+        DirectoryModel model;
+        QSignalSpy removed(&model, &DirectoryModel::fileRemoved);
+        QSignalSpy added(&model, &DirectoryModel::fileAdded);
+        QVERIFY(model.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 3UL, 10000);
+
+        FileOpResult result;
+        model.removeFile(fixtureDir + "/img2.jpg", false, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        // the removal signal carries the update when the round trip lands,
+        // not synchronously from the operation
+        QTRY_COMPARE_WITH_TIMEOUT(removed.count(), 1, 10000);
+        QCOMPARE(removed.at(0).at(0).toString(), fixtureDir + "/img2.jpg");
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 2UL, 10000);
+
+        // rename in place surfaces as remove+add, exactly like an external one
+        model.renameEntry(fixtureDir + "/img1.jpg", "renamed.jpg", false, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        QTRY_VERIFY_WITH_TIMEOUT(model.containsFile(fixtureDir + "/renamed.jpg"), 10000);
+        QVERIFY(!model.containsFile(fixtureDir + "/img1.jpg"));
+
+        // copy into the watched directory — engine-driven from the start
+        QVERIFY(QFile::copy(fixtureDir + "/renamed.jpg", fixtureDir + "/copy.jpg"));
+        QTRY_VERIFY_WITH_TIMEOUT(model.containsFile(fixtureDir + "/copy.jpg"), 10000);
+        QCOMPARE(model.fileCount(), 2UL + 1UL);
+    }
 };
 
 int main(int argc, char **argv) {
