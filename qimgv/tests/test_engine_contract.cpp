@@ -16,6 +16,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 // Layout pinning — must match #[repr(C)] QimgvEntryMeta (u64,u64,i64,c_int).
 static_assert(sizeof(qimgv_entry_meta) == 32, "qimgv_entry_meta layout drift");
@@ -43,6 +44,11 @@ static_assert(offsetof(qimgv_mutation, is_dir) == 4, "layout drift");
 static_assert(offsetof(qimgv_mutation, size) == 8, "layout drift");
 static_assert(offsetof(qimgv_mutation, mtime_ms) == 16, "layout drift");
 
+// Layout pinning — must match #[repr(C)] QimgvThumbReq (u32,i32).
+static_assert(sizeof(qimgv_thumb_req) == 8, "qimgv_thumb_req layout drift");
+static_assert(offsetof(qimgv_thumb_req, size) == 0, "layout drift");
+static_assert(offsetof(qimgv_thumb_req, crop) == 4, "layout drift");
+
 static int failures = 0;
 #define CHECK(cond)                                                        \
     do {                                                                   \
@@ -60,6 +66,7 @@ static std::string makeFixture() {
     std::ofstream(dir / "a.jpg") << "x";
     std::ofstream(dir / "b.jpg") << "x";
     std::ofstream(dir / "skip.txt") << "x";
+    fs::create_directory(dir / "subdir");
     return dir.string();
 }
 
@@ -118,6 +125,36 @@ int main() {
 
     // undersized name buffer ("a.jpg\0" needs 6 bytes, 1 given)
     CHECK(qimgv_engine_file_entry_at(engine, 0, &meta, name, 1, path, sizeof(path)) == QIMGV_ERR_TRUNCATED);
+
+    // --- remaining exported symbols ---------------------------------------
+    // A symbol nothing calls here drops out of the link check entirely, which
+    // is the one thing this file exists to verify. The semantics behind each
+    // are owned by engine/qimgv-engine-ffi/tests/ffi_contract.rs.
+    CHECK(qimgv_engine_dir_count(engine) == 1);
+    qimgv_entry_meta dmeta{};
+    CHECK(qimgv_engine_dir_entry_at(engine, 0, &dmeta, name, sizeof(name), path, sizeof(path)) == QIMGV_OK);
+    CHECK(std::strcmp(name, "subdir") == 0);
+    CHECK(qimgv_engine_next_dir(engine, dmeta.handle, &next) == QIMGV_ERR_EMPTY);
+    CHECK(qimgv_engine_prev_dir(engine, dmeta.handle, &next) == QIMGV_ERR_EMPTY);
+
+    CHECK(qimgv_engine_set_show_hidden(engine, 1) == QIMGV_OK);
+    CHECK(qimgv_engine_set_show_hidden(engine, 0) == QIMGV_OK);
+    CHECK(qimgv_engine_include_path(engine, (fixture + "/subdir").c_str()) == QIMGV_OK);
+    CHECK(qimgv_engine_stop_watch(engine) == QIMGV_OK);
+
+    CHECK(qimgv_engine_thumb_config(engine, 2) == QIMGV_OK);
+    CHECK(qimgv_engine_thumb_request(engine, (fixture + "/a.jpg").c_str(), 128, 1, 1) == QIMGV_OK);
+    CHECK(qimgv_engine_thumb_done(engine, (fixture + "/a.jpg").c_str(), 128, 1) == QIMGV_OK);
+    CHECK(qimgv_engine_thumb_clear(engine) == QIMGV_OK);
+
+    // bulk export: the cap=0 probe must report the size, then fit exactly
+    uint32_t needed = 0, fc = 0, dc = 0;
+    CHECK(qimgv_engine_export_listing(engine, nullptr, 0, &needed, &fc, &dc) == QIMGV_ERR_TRUNCATED);
+    CHECK(needed > 8);
+    std::vector<unsigned char> arena(needed);
+    CHECK(qimgv_engine_export_listing(engine, arena.data(), arena.size(), &needed, &fc, &dc) == QIMGV_OK);
+    CHECK(fc == 2);
+    CHECK(dc == 1);
 
     qimgv_engine_free(engine);
 
