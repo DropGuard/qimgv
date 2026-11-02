@@ -118,18 +118,11 @@ int main(int argc, char *argv[]) {
     // do we still need this?
     qputenv("QT_AUTO_SCREEN_SCALE_FACTOR","0");
 
-#if (QT_VERSION_MAJOR == 5)
-    QGuiApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-    QGuiApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
-#endif
-
-    // Qt6 hidpi rendering on windows still has artifacts
+    // hidpi rendering on windows still has artifacts
     // This disables it for scale factors < 1.75
     // In this case only fonts are scaled
 #ifdef _WIN32
-#if (QT_VERSION_MAJOR == 6)
     QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::RoundPreferFloor);
-#endif
 #endif
 
     //qDebug() << qgetenv("QT_SCALE_FACTOR");
@@ -153,11 +146,9 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationVersion(appVersion.toString());
     QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false);
 
-# if (QT_VERSION_MAJOR == 6)
+    // no ".desktop" suffix — Qt6 rejects it; the name is matched against the
+    // icon theme and the session desktop either way
     QGuiApplication::setDesktopFileName(QCoreApplication::applicationName());
-# else
-    QGuiApplication::setDesktopFileName(QCoreApplication::applicationName() + ".desktop");
-#endif
 
     qDebug() << "[rustcore] qimgv-engine version:" << qimgv_engine_version();
 
@@ -176,10 +167,6 @@ int main(int argc, char *argv[]) {
     qRegisterMetaType<Script>("Script");
     qRegisterMetaType<std::shared_ptr<Image>>("std::shared_ptr<Image>");
     qRegisterMetaType<std::shared_ptr<Thumbnail>>("std::shared_ptr<Thumbnail>");
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    qRegisterMetaTypeStreamOperators<Script>("Script");
-#endif
-
     // globals
     inputMap = InputMap::getInstance();
     appActions = Actions::getInstance();

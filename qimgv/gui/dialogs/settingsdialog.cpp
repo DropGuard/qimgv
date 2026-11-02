@@ -80,11 +80,6 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
     ui->scalingQualityComboBox->addItem("Bicubic+sharpen (OpenCV)");
 #endif
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    ui->memoryLimitSpinBox->setEnabled(false);
-    ui->memoryLimitLabel->setEnabled(false);
-#endif
-
     if(!settings->supportedFormats().contains("jxl"))
         ui->animatedJxlCheckBox->hide();
 
