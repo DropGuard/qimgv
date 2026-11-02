@@ -1536,13 +1536,6 @@
                      </layout>
                     </item>
                     <item>
-                     <widget class="QCheckBox" name="sortFoldersCheckBox">
-                      <property name="text">
-                       <string>Apply sorting to folders</string>
-                      </property>
-                     </widget>
-                    </item>
-                    <item>
                      <widget class="QWidget" name="widget_31" native="true">
                       <property name="accessibleName">
                        <string notr="true">SLine</string>

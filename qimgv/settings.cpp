@@ -1158,14 +1158,6 @@ void Settings::setUnlockMinZoom(bool mode) {
     settings->settingsConf->setValue("unlockMinZoom", mode);
 }
 //------------------------------------------------------------------------------
-bool Settings::sortFolders() {
-    return settings->settingsConf->value("sortFolders", true).toBool();
-}
-
-void Settings::setSortFolders(bool mode) {
-    settings->settingsConf->setValue("sortFolders", mode);
-}
-//------------------------------------------------------------------------------
 bool Settings::trackpadDetection() {
     return settings->settingsConf->value("trackpadDetection", true).toBool();
 }

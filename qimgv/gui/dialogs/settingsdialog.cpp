@@ -191,7 +191,6 @@ void SettingsDialog::readSettings() {
     ui->confirmDeleteCheckBox->setChecked(settings->confirmDelete());
     ui->confirmTrashCheckBox->setChecked(settings->confirmTrash());
     ui->unlockMinZoomCheckBox->setChecked(settings->unlockMinZoom());
-    ui->sortFoldersCheckBox->setChecked(settings->sortFolders());
     ui->trackpadDetectionCheckBox->setChecked(settings->trackpadDetection());
     ui->clickableEdgesCheckBox->setChecked(settings->clickableEdges());
     ui->clickableEdgesVisibleCheckBox->setChecked(settings->clickableEdgesVisible());
@@ -339,7 +338,6 @@ void SettingsDialog::saveSettings() {
     settings->setConfirmDelete(ui->confirmDeleteCheckBox->isChecked());
     settings->setConfirmTrash(ui->confirmTrashCheckBox->isChecked());
     settings->setUnlockMinZoom(ui->unlockMinZoomCheckBox->isChecked());
-    settings->setSortFolders(ui->sortFoldersCheckBox->isChecked());
     settings->setTrackpadDetection(ui->trackpadDetectionCheckBox->isChecked());
     settings->setClickableEdges(ui->clickableEdgesCheckBox->isChecked());
     settings->setClickableEdgesVisible(ui->clickableEdgesVisibleCheckBox->isChecked());
