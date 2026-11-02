@@ -76,6 +76,11 @@ private:
     // components
     std::shared_ptr<DirectoryModel> model;
 
+    // White-box seam for the navigation test: the direction-aware preload
+    // decision lives in loadFileIndex() and is only observable through the
+    // model's cache, which is deliberately not part of Core's public API.
+    friend class TestCoreNav;
+
     DirectoryPresenter thumbPanelPresenter, folderViewPresenter;
 
     void rotateByDegrees(int degrees);

@@ -3,6 +3,7 @@
 target_sources(qimgv_nongui PRIVATE
     actions.cpp
     cmdoptionsrunner.cpp
+    filelog.cpp
     folderend.cpp
     imagefactory.cpp
     imagelib.cpp

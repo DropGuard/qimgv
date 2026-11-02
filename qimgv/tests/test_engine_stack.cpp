@@ -13,11 +13,17 @@
 #include <QTemporaryDir>
 #include <QDir>
 #include <QFile>
+#include <QPainter>
+#include <QRegularExpression>
+#include <QScreen>
 #include <QStandardPaths>
 
 #include "components/directorymanager/directorymanager.h"
 #include "components/directorymanager/enginebridge.h"
+#include "components/directorymodel.h"
+#include "sourcecontainers/image.h"
 #include "utils/folderend.h"
+#include "utils/filelog.h"
 #include "qimgv_engine.h"
 
 class TestEngineStack : public QObject {
@@ -53,6 +59,9 @@ private slots:
         // isolate Settings/QStandardPaths from the real user config
         qputenv("HOME", homeDir.path().toUtf8());
         QVERIFY(Settings::getInstance() != nullptr);
+        // the two-tier tests catch imageReady through QSignalSpy, whose queued
+        // recording needs the shared_ptr argument registered
+        qRegisterMetaType<std::shared_ptr<Image>>("std::shared_ptr<Image>");
 
         fixtureBase = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
                       + "/qimgv-engine-stack-test";
@@ -525,6 +534,206 @@ private slots:
         // navigation walks the same order
         QCOMPARE(DirectoryManager::adjacentDirectory(fixtureDir + "/mike", true, SORT_TIME),
                  fixtureDir + "/subdir");
+    }
+
+    // --- layer 7: file logging machinery (utils/filelog) -----------------------
+    // install() is thin glue verified by every session's first log lines; the
+    // pieces it composes are drivable here with tiny limits.
+
+    void fileLogFormatCarriesLevelCharAndTimestamp() {
+        QRegularExpression shape("^\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d\\.\\d+ I hello\\n$");
+        QString info = FileLog::formatLine(QtInfoMsg, "hello");
+        if(!shape.match(info).hasMatch())
+            qWarning() << "formatLine produced:" << info;
+        QVERIFY(shape.match(info).hasMatch());
+        QCOMPARE(FileLog::formatLine(QtDebugMsg, "x").section(' ', 2, 2), QStringLiteral("D"));
+        QCOMPARE(FileLog::formatLine(QtWarningMsg, "x").section(' ', 2, 2), QStringLiteral("W"));
+        QCOMPARE(FileLog::formatLine(QtCriticalMsg, "x").section(' ', 2, 2), QStringLiteral("C"));
+        QCOMPARE(FileLog::formatLine(QtFatalMsg, "x").section(' ', 2, 2), QStringLiteral("F"));
+    }
+
+    void fileLogRotatesPartsAndStopsAtTheCap() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        // 31 bytes per line (30 'x' + '\n'); the banner is never counted, so
+        // the rotation boundary is exactly where the handler's bytes land
+        FileLog::SessionLog log(100, 3);
+        QVERIFY(log.open(dir.path() + "/qimgv-test.log"));
+        const QString line(30, 'x');
+        for(int i = 0; i < 3; ++i)
+            log.write(line);
+        QCOMPARE(log.part(), 1);
+        log.write(line);                       // 124 >= 100 -> part 2
+        QCOMPARE(log.part(), 2);
+        QCOMPARE(log.bytesInPart(), qint64(0));
+        for(int i = 0; i < 4; ++i)
+            log.write(line);                   // the 4th write rotates -> part 3
+        QCOMPARE(log.part(), 3);
+        for(int i = 0; i < 4; ++i)
+            log.write(line);                   // at the cap: this write lands, then stop
+        QVERIFY(!log.isWriting());
+        QCOMPARE(QDir(dir.path())
+                     .entryList(QStringList() << "qimgv-test.log*", QDir::Files)
+                     .size(), 3);
+    }
+
+    void fileLogPruneKeepsTheNewestTenSessions() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        for(int i = 1; i <= 12; ++i) {
+            QFile f(dir.path() + QString("/qimgv-0101-%1.log").arg(i, 2, 10, QChar('0')));
+            QVERIFY(f.open(QIODevice::WriteOnly));
+        }
+        FileLog::pruneOldSessions(dir.path(), 10);
+        QStringList left = QDir(dir.path())
+                               .entryList(QStringList() << "qimgv-*.log*", QDir::Files, QDir::Name);
+        QCOMPARE(left.size(), 10);
+        QCOMPARE(left.first(), QStringLiteral("qimgv-0101-03.log"));
+        QCOMPARE(left.last(), QStringLiteral("qimgv-0101-12.log"));
+    }
+
+    // --- layer 8: the two-tier decode pipeline (DirectoryModel + Loader) -------
+    // Slice 4's promises where they live: tier-1 is a screen-sized decode and
+    // JPEG-only (Qt scales every other format AFTER a full decode, which costs
+    // more than it saves — measured, and the reason for the gate); tier-2 is
+    // the full-res upgrade of a tier-1 cached image. The queued upgrade that
+    // the next flip's clearPool kills is deliberately not asserted: an idle
+    // pool thread can start the decode before the flip lands, so that behavior
+    // is a race by construction and belongs to the real-machine logs.
+
+    QSize offscreenScreenPixels() {
+        QScreen *screen = QApplication::primaryScreen();
+        Q_ASSERT(screen != nullptr); // the offscreen platform always provides one
+        return screen->size() * screen->devicePixelRatio();
+    }
+
+    bool writeBigImage(const QString &path, const QString &format, const QSize &size) {
+        QImage img(size, QImage::Format_RGB32);
+        QPainter p(&img);
+        QLinearGradient g(0, 0, size.width(), size.height());
+        g.setColorAt(0.0, Qt::red);
+        g.setColorAt(1.0, Qt::blue);
+        p.fillRect(img.rect(), g);
+        p.end();
+        return img.save(path, format.toStdString().c_str());
+    }
+
+    std::shared_ptr<Image> spyImage(const QSignalSpy &spy, int row) {
+        return spy.at(row).at(0).value<std::shared_ptr<Image>>();
+    }
+
+    void jpegTwoTierDecodesScaledThenUpgradesToFull() {
+        resetFixture();
+        const QSize screen = offscreenScreenPixels();
+        const QSize orig = screen * 2;
+        QVERIFY(writeBigImage(fixtureDir + "/big.jpg", "jpg", orig));
+
+        DirectoryModel model;
+        QSignalSpy ready(&model, &DirectoryModel::imageReady);
+        QVERIFY(ready.isValid());
+        QVERIFY(model.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
+
+        model.load(fixtureDir + "/big.jpg", true); // tier-1 by default
+        QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 1, 10000);
+        QCOMPARE(ready.at(0).at(2).toBool(), true);
+        QCOMPARE(spyImage(ready, 0)->size(), screen);
+
+        model.upgradeToFull(fixtureDir + "/big.jpg");
+        QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 2, 10000);
+        QCOMPARE(ready.at(1).at(2).toBool(), false);
+        QCOMPARE(spyImage(ready, 1)->size(), orig);
+    }
+
+    void pngDecodesFullQualityInOneTier() {
+        // regression: the scaled request once applied to every format. Qt
+        // scales PNG after a full decode, so the "fast" tier was slower than
+        // the thing it replaced (84ms vs 46ms measured). The gate is
+        // JPEG-only, and this pins it.
+        resetFixture();
+        const QSize orig = offscreenScreenPixels() * 2;
+        QVERIFY(writeBigImage(fixtureDir + "/big.png", "png", orig));
+
+        DirectoryModel model;
+        QSignalSpy ready(&model, &DirectoryModel::imageReady);
+        QVERIFY(model.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
+
+        model.load(fixtureDir + "/big.png", true);
+        QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 1, 10000);
+        QTest::qWait(600); // a second tier would have arrived by now
+        QCOMPARE(ready.count(), 1);
+        QCOMPARE(ready.at(0).at(2).toBool(), false);
+        QCOMPARE(spyImage(ready, 0)->size(), orig);
+    }
+
+    void syncLoadIsAlwaysFullQuality() {
+        // the editing path: asyncHint=false bypasses the tiers entirely
+        resetFixture();
+        const QSize orig = offscreenScreenPixels() * 2;
+        QVERIFY(writeBigImage(fixtureDir + "/big.jpg", "jpg", orig));
+
+        DirectoryModel model;
+        QSignalSpy ready(&model, &DirectoryModel::imageReady);
+        QVERIFY(model.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
+
+        model.load(fixtureDir + "/big.jpg", false);
+        // synchronous: the signal has fired by the time load() returned
+        QCOMPARE(ready.count(), 1);
+        QCOMPARE(ready.at(0).at(2).toBool(), false);
+        QCOMPARE(spyImage(ready, 0)->size(), orig);
+    }
+
+    void cachedFullImageReflipsWithoutRedecoding() {
+        resetFixture();
+        const QSize screen = offscreenScreenPixels();
+        QVERIFY(writeBigImage(fixtureDir + "/big.jpg", "jpg", screen * 2));
+
+        DirectoryModel model;
+        QSignalSpy ready(&model, &DirectoryModel::imageReady);
+        QVERIFY(model.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
+
+        model.load(fixtureDir + "/big.jpg", true);
+        QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 1, 10000);
+        model.upgradeToFull(fixtureDir + "/big.jpg");
+        QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 2, 10000);
+        QVERIFY(!ready.at(1).at(2).toBool());
+
+        // flipping back to a fully-cached image serves it from the cache and
+        // schedules nothing: mScaledCache forgot the path at the upgrade
+        ready.clear();
+        model.load(fixtureDir + "/big.jpg", true);
+        QCOMPARE(ready.count(), 1);
+        QCOMPARE(ready.at(0).at(2).toBool(), false);
+        QTest::qWait(300);
+        QCOMPARE(ready.count(), 1);
+    }
+
+    void upgradeToFullRefusesWhatWasNeverScaled() {
+        resetFixture();
+        QVERIFY(writeBigImage(fixtureDir + "/big.png", "png", offscreenScreenPixels() * 2));
+
+        DirectoryModel model;
+        QSignalSpy ready(&model, &DirectoryModel::imageReady);
+        QVERIFY(model.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
+
+        model.load(fixtureDir + "/big.png", true);
+        QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 1, 10000);
+        ready.clear();
+
+        // a full-res image has left mScaledCache: the upgrade is a no-op,
+        // not a third decode of the same file
+        model.upgradeToFull(fixtureDir + "/big.png");
+        QTest::qWait(400);
+        QCOMPARE(ready.count(), 0);
+
+        // and a path outside the listing goes nowhere
+        model.upgradeToFull(fixtureDir + "/missing.jpg");
+        QTest::qWait(200);
+        QCOMPARE(ready.count(), 0);
     }
 };
 

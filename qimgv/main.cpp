@@ -16,74 +16,13 @@
 #include "sharedresources.h"
 #include "proxystyle.h"
 #include "core.h"
+#include "utils/filelog.h"
 
 #include "qimgv_engine.h"
 
 #ifdef __APPLE__
 #include "macosapplication.h"
 #endif
-
-//------------------------------------------------------------------------------
-// file logging: one session file under <cacheDir>/logs, INFO by default
-// (lifecycle lines), QIMGV_DEBUG=1 enables hot lines via qimgv.perf.*.
-// Rotates at 5MB per part, max 4 parts, then stops writing (console keeps).
-static QFile gLogFile;
-static QString gLogBase;
-static qint64 gLogBytes = 0;
-static int gLogPart = 1;
-static bool gLogStop = false;
-static QtMessageHandler gPrevHandler = nullptr;
-static const qint64 kLogPartLimit = 5 * 1024 * 1024;
-static const int kLogMaxParts = 4;
-
-static void qimgvFileLog(QtMsgType type, const QMessageLogContext &ctx, const QString &msg) {
-    if(gPrevHandler)
-        gPrevHandler(type, ctx, msg); // console keeps working
-    if(gLogStop || !gLogFile.isOpen())
-        return;
-    const char lvl[] = "DWCIF"; // Debug Warning Critical Fatal Info
-    QString line = QString("%1 %2 %3\n")
-        .arg(QDateTime::currentDateTime().toString("MM-dd hh:mm:ss.zzz"),
-             QString(QChar(lvl[type])), msg);
-    gLogBytes += gLogFile.write(line.toUtf8());
-    gLogFile.flush();
-    if(gLogBytes >= kLogPartLimit) {
-        if(gLogPart >= kLogMaxParts) {
-            gLogStop = true;
-            return;
-        }
-        ++gLogPart;
-        gLogFile.close();
-        gLogFile.setFileName(gLogBase + QString(".part%1").arg(gLogPart));
-        gLogFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
-        gLogBytes = 0;
-    }
-}
-
-static void setupFileLogging() {
-    if(!settings)
-        return;
-    const QString dir = settings->tmpDir() + "/logs";
-    QDir().mkpath(dir);
-    // per-session files sort by name; keep the newest 10
-    const QStringList logs = QDir(dir).entryList(QStringList() << "qimgv-*.log*", QDir::Files, QDir::Name);
-    for(int i = 0; i + 10 < logs.size(); ++i)
-        QFile::remove(dir + "/" + logs.at(i));
-    gLogBase = dir + "/qimgv-" + QDateTime::currentDateTime().toString("MMdd-hhmmss") + ".log";
-    gLogFile.setFileName(gLogBase);
-    if(!gLogFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) {
-        fprintf(stderr, "[log] open failed: %s\n", gLogFile.errorString().toLocal8Bit().constData());
-        return;
-    }
-    gLogFile.write("=== session start ===\n");
-    gLogFile.flush();
-    fprintf(stderr, "[log] handler installed: %s\n", gLogBase.toLocal8Bit().constData());
-    if(!qEnvironmentVariableIsEmpty("QIMGV_DEBUG"))
-        // only our categories — a bare "*.debug = true" would also flood the
-        // file with Qt-internal plugin scanning noise
-        QLoggingCategory::setFilterRules("qimgv.perf.*.debug = true\n");
-    gPrevHandler = qInstallMessageHandler(qimgvFileLog);
-}
 
 //------------------------------------------------------------------------------
 void saveSettings() {
@@ -176,7 +115,7 @@ int main(int argc, char *argv[]) {
     shrRes = SharedResources::getInstance();
 
     atexit(saveSettings);
-    setupFileLogging();
+    FileLog::install(settings->tmpDir() + "/logs");
     qDebug() << "[probe] message right after install";
 
 // parse args ------------------------------------------------------------------

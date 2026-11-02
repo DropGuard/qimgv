@@ -70,6 +70,56 @@ private slots:
         writeImage(QDir(beta).filePath("b.png"));
     }
 
+    void preloaderFollowsTheDirectionOfTravel() {
+        settings->setUsePreloader(true);
+        QVERIFY(settings->usePreloader());
+
+        // four files so both directions have an uncached neighbor to prove
+        // themselves with: forward from c reaches d, backward from d reaches b
+        QString seq = QDir(base).filePath("seq");
+        QVERIFY(QDir().mkpath(seq));
+        QStringList files;
+        for(const char *n : {"a", "b", "c", "d"})
+            files << QDir(seq).filePath(QString(n) + ".png");
+        for(const QString &f : files)
+            writeImage(f);
+
+        QSignalSpy listed(&EngineBridge::instance(), &EngineBridge::dirListed);
+        QVERIFY(listed.isValid());
+
+        Core core;
+        QVERIFY(core.loadPath(files.at(0)));
+        QTRY_VERIFY_WITH_TIMEOUT(sawDir(listed, seq), 10000);
+        // NOTE: the very first preload after a cold open is a silent no-op —
+        // loadFileIndex() evaluates nextOf() while the listing is still in
+        // flight, gets an empty string, and nothing re-arms it once the
+        // listing lands. Documented gap, not asserted here; every flip below
+        // runs against a landed listing, which is the path that works.
+
+        // one flip forward: from b the forward neighbor c decodes
+        actionManager->nextImage();
+        QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(1), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(2)), 10000);
+
+        // another flip forward: from c the forward neighbor is d
+        actionManager->nextImage();
+        QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(2), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(3)), 10000);
+
+        // jump to the last file: still a forward move, so the backward
+        // neighbor b must not decode — and the cache trim drops it
+        QVERIFY(core.loadPath(files.at(3)));
+        QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(3), 10000);
+        QTest::qWait(400);
+        QVERIFY(!core.model->isLoaded(files.at(1)));
+
+        // one backward move: the preload must follow the travel direction and
+        // decode b, which a forward-facing policy would never have touched
+        actionManager->prevImage();
+        QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(2), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(1)), 10000);
+    }
+
     void gotoAdjacentAtFolderEndEntersNextFolder() {
         settings->setFolderEndAction(FOLDER_END_GOTO_ADJACENT);
         QVERIFY(settings->folderEndAction() == FOLDER_END_GOTO_ADJACENT);
