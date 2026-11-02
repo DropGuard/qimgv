@@ -1136,6 +1136,17 @@ void Core::runScript(const QString &scriptName) {
 
 // Linux implementation is KDE Plasma only (plasma-apply-wallpaperimage /
 // qdbus) — deliberate fork scope, see the context menu entry.
+// Pure dispatch: session -> program + arguments. An empty program means the
+// session is unsupported. Arguments pass verbatim — QProcess takes them
+// without a shell, so filenames with spaces or quotes survive intact.
+QPair<QString, QStringList> Core::wallpaperCommand(const QString &session, const QString &path) {
+    if(session.contains("plasma"))
+        return {"plasma-apply-wallpaperimage", {path}};
+    if(session.contains("gnome"))
+        return {"gsettings", {"set", "org.gnome.desktop.background", "picture-uri", path}};
+    return {};
+}
+
 void Core::setWallpaper() {
     if(model->isEmpty() || selectedPath().isEmpty())
         return;
@@ -1158,13 +1169,15 @@ void Core::setWallpaper() {
     // set wallpaper path
     SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, (char*)(selectedPath().toStdWString().c_str()), SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE);
 #else
-    auto session = qgetenv("DESKTOP_SESSION").toLower();
-    if(session.contains("plasma"))
-        ScriptManager::runCommand("plasma-apply-wallpaperimage \"" + selectedPath() + "\"");
-    else if(session.contains("gnome"))
-        ScriptManager::runCommand("gsettings set org.gnome.desktop.background picture-uri \"" + selectedPath() + "\"");
-    else
+    // detached, not ScriptManager::runCommand: the blocking variant froze the
+    // UI thread for up to two seconds on a value nobody reads
+    const QString session = qgetenv("DESKTOP_SESSION").toLower();
+    auto [program, args] = wallpaperCommand(session, selectedPath());
+    if(program.isEmpty()) {
         mw->showMessage("Action is not supported in your desktop session (\"" + session + "\")", 3000);
+        return;
+    }
+    QProcess::startDetached(program, args);
 #endif
 }
 

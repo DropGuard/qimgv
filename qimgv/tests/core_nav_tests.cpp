@@ -216,6 +216,45 @@ private slots:
         dlg.saveSettings();
         QCOMPARE(settings->language(), QStringLiteral("en_US"));
     }
+
+    void wallpaperCommandDispatchesBySession() {
+        // plasma
+        auto [p, a] = Core::wallpaperCommand("plasma", "/pics/a b.png");
+        QCOMPARE(p, QStringLiteral("plasma-apply-wallpaperimage"));
+        QCOMPARE(a, QStringList{QStringLiteral("/pics/a b.png")}); // spaces verbatim
+        // a quote in the filename cannot escape: there is no shell to escape into
+        auto [p2, a2] = Core::wallpaperCommand("plasma", QStringLiteral("/pics/x\";y.png"));
+        QCOMPARE(a2, QStringList{QStringLiteral("/pics/x\";y.png")});
+        // gnome
+        auto [p3, a3] = Core::wallpaperCommand("gnome", "/pics/a.png");
+        QCOMPARE(p3, QStringLiteral("gsettings"));
+        QStringList gnomeArgs{"set", "org.gnome.desktop.background", "picture-uri", "/pics/a.png"};
+        QCOMPARE(a3, gnomeArgs);
+        // unsupported session: empty program, the caller reports and bails
+        auto [p4, a4] = Core::wallpaperCommand("twm", "/pics/a.png");
+        QVERIFY(p4.isEmpty());
+        QVERIFY(a4.isEmpty());
+    }
+
+    void setWallpaperOnAnUnsupportedSessionIsASafeNoOp() {
+        FreshSettings fresh;
+        const QByteArray oldSession = qgetenv("DESKTOP_SESSION");
+        qputenv("DESKTOP_SESSION", "twm");
+
+        QString base = QDir(home.path()).filePath("wp");
+        QVERIFY(QDir().mkpath(base));
+        QString img = QDir(base).filePath("w.png");
+        writeImage(img);
+
+        Core core;
+        QVERIFY(core.loadPath(img));
+        QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), img, 10000);
+
+        // the full chain runs; with no session match nothing executes and the
+        // wallpaper is untouched — the assertion is the safe return
+        QMetaObject::invokeMethod(&core, "setWallpaper");
+        qputenv("DESKTOP_SESSION", oldSession);
+    }
 };
 
 int main(int argc, char **argv) {

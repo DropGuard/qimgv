@@ -150,6 +150,8 @@ private slots:
     void saveCurrentFileAs(QString);
     void runScript(const QString&);
     void setWallpaper();
+    // the wallpaperCommand dispatch, exposed for the audit test
+    static QPair<QString, QStringList> wallpaperCommand(const QString &session, const QString &path);
     void removePermanent();
     void moveToTrash();
     void reloadImage();
