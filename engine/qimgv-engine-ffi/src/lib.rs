@@ -205,12 +205,13 @@ pub unsafe extern "C" fn qimgv_engine_new(
 ) -> *mut QimgvEngine {
     let attempt = || -> Result<QimgvEngine, String> {
         let filter = if formats_extensions_utf8.is_null() {
-            NameFilter::from_extensions([""])
+            // documented as "NULL to accept everything" in qimgv_engine.h
+            NameFilter::from_extensions(std::iter::empty::<&str>())
         } else {
             let joined = unsafe { CStr::from_ptr(formats_extensions_utf8) }
                 .to_str()
                 .map_err(|_| "extension list is not valid UTF-8".to_string())?;
-            NameFilter::from_extensions(joined.split('\n').filter(|s| !s.is_empty()))
+            NameFilter::from_extensions(joined.split('\n'))
         };
         let notify_fn: Notify = match notify {
             Some(cb) => {

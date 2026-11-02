@@ -62,6 +62,26 @@ fn open_dir_lists_filtered_files() {
 }
 
 #[test]
+fn empty_extension_list_accepts_everything() {
+    // qimgv_engine.h documents a NULL / empty whitelist as "accept everything".
+    // Reading it as "accept nothing" makes every folder look empty instead.
+    let engine = Engine::spawn(config(&[]), Arc::new(|| {}));
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.xyz"), b"x").unwrap();
+    std::fs::write(dir.path().join("b.jpg"), b"x").unwrap();
+    std::fs::write(dir.path().join("noextension"), b"x").unwrap();
+
+    engine.send(Command::OpenDir {
+        path: dir.path().to_owned(),
+        sort: None,
+        epoch: engine.next_epoch(),
+    })
+    .unwrap();
+    wait_for(&engine, |st| st.file_count() == 3);
+    assert_eq!(engine.state.read().unwrap().file_count(), 3);
+}
+
+#[test]
 fn open_failed_event_on_missing_dir() {
     let (notify_tx, notify_rx) = mpsc::channel::<()>();
     let engine = Engine::spawn(
