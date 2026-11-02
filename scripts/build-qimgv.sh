@@ -178,7 +178,9 @@ cp -r $BUILD_DIR/qimgv/translations/ $PACKAGE_DIR/
 
 # 2 - copy qt dlls
 cd $CUSTOM_QT_DIR/bin
-cp Qt5Core.dll Qt5Gui.dll Qt5PrintSupport.dll Qt5Svg.dll Qt5Widgets.dll $PACKAGE_DIR
+# Qt6OpenGL* is required now that Qt6::OpenGLWidgets is linked unconditionally
+# (the viewer widget tree needs it at startup, not just at build time)
+cp Qt6Core.dll Qt6Gui.dll Qt6PrintSupport.dll Qt6Svg.dll Qt6Widgets.dll Qt6OpenGL.dll Qt6OpenGLWidgets.dll $PACKAGE_DIR
 cd $CUSTOM_QT_DIR/plugins
 cp -r iconengines imageformats printsupport styles $PACKAGE_DIR
 mkdir $PACKAGE_DIR/platforms

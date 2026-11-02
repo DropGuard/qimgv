@@ -8,7 +8,7 @@ if(APPLE)
 endif()
 
 # TRANSLATIONS
-find_package(Qt${QT_VERSION_MAJOR} COMPONENTS LinguistTools)
+find_package(Qt6 COMPONENTS LinguistTools)
 # Example of creating a new translation file.
 # 1. cd into qimgv directory and run:
 #   lupdate -recursive . -ts res/translations/qimgv_en_US.ts    [replace "en_US" with your locale]
@@ -26,14 +26,6 @@ set(TS_FILES
 list(TRANSFORM TS_FILES PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/res/translations/)
 set_source_files_properties(${TS_FILES} PROPERTIES OUTPUT_LOCATION ${PROJECT_BINARY_DIR}/qimgv/translations)
 
-# 1. Create 'qimgv_lupdate' target to update .ts files (needs to be called manually)
-# 2. Compile .ts > .qm
-if(${QT_VERSION_MAJOR} EQUAL 5)
-    add_custom_target(qimgv_lupdate COMMAND ${Qt5_LUPDATE_EXECUTABLE} -recursive
-        ${CMAKE_CURRENT_SOURCE_DIR} -ts ${TS_FILES})
-    qt5_add_translation(QM_FILES ${TS_FILES})
-endif()
-
 # ADD EXECUTABLE
 # Everything that does not need the widget tree lives in the qimgv_nongui object
 # library below, so test binaries can link the real components instead of a
@@ -46,11 +38,10 @@ add_executable(qimgv
     ${QM_FILES}
 )
 
-# update .ts, compile .qm (qt6 case)
-if(${QT_VERSION_MAJOR} EQUAL 6)
-    qt_add_lupdate(qimgv TS_FILES ${TS_FILES})
-    qt_add_lrelease(qimgv TS_FILES ${TS_FILES})
-endif()
+# 1. 'qimgv_lupdate' updates the .ts files (run it manually)
+# 2. .ts are compiled to .qm by qt_add_lrelease
+qt_add_lupdate(qimgv TS_FILES ${TS_FILES})
+qt_add_lrelease(qimgv TS_FILES ${TS_FILES})
 
 # ADD SOURCES
 # An OBJECT library rather than a static one: the sources below stay compiled
@@ -71,11 +62,11 @@ target_include_directories(qimgv_nongui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../engine/qimgv-engine-ffi/include)
 target_link_libraries(qimgv_nongui PUBLIC
-    Qt${QT_VERSION_MAJOR}::Core
-    Qt${QT_VERSION_MAJOR}::Gui
-    Qt${QT_VERSION_MAJOR}::Widgets
-    Qt${QT_VERSION_MAJOR}::Svg
-    Qt${QT_VERSION_MAJOR}::PrintSupport
+    Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
+    Qt6::Svg
+    Qt6::PrintSupport
     qimgv_engine_ffi)
 
 # OPTION DEFINITIONS, LINKING (mirrored from the executable below: these are the
@@ -106,7 +97,7 @@ target_sources(qimgv_gui PRIVATE
 )
 target_compile_features(qimgv_gui PRIVATE cxx_std_17)
 set_target_properties(qimgv_gui PROPERTIES CXX_EXTENSIONS OFF)
-target_link_libraries(qimgv_gui PUBLIC qimgv_nongui Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
+target_link_libraries(qimgv_gui PUBLIC qimgv_nongui Qt6::OpenGLWidgets)
 if(EXIV2)
     target_compile_definitions(qimgv_gui PRIVATE USE_EXIV2)
 endif()
@@ -135,14 +126,10 @@ set_target_properties(qimgv PROPERTIES CXX_EXTENSIONS OFF)
 
 # LINK STUFF
 target_link_libraries(qimgv PRIVATE qimgv_gui qimgv_nongui)
-target_link_libraries(qimgv PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg Qt${QT_VERSION_MAJOR}::PrintSupport)
+target_link_libraries(qimgv PRIVATE Qt6::Core Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
 # Rust engine (corrosion-imported; target name normalized to underscores)
 target_link_libraries(qimgv PRIVATE qimgv_engine_ffi)
 target_include_directories(qimgv PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../engine/qimgv-engine-ffi/include)
-if(QT_VERSION_MAJOR GREATER_EQUAL 6)
-    target_link_libraries(qimgv PRIVATE Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
-endif()
-
 # OPTION DEFINITIONS, LINKING
 if(EXIV2)
     target_link_libraries(qimgv PRIVATE PkgConfig::Exiv2)
