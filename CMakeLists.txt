@@ -86,8 +86,25 @@ corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/engine/qimgv-en
 
 ##############################################################
 
+# Must be at the top level: enable_testing() only generates a CTestTestfile for
+# the directory it is called in and below, so calling it from qimgv/tests left
+# `ctest` in the build root discovering zero tests.
+enable_testing()
+
 add_subdirectory(qimgv)
 
 if(VIDEO_SUPPORT)
     add_subdirectory(plugins/player_mpv)
 endif()
+
+# Rust-side tests run from cargo, not cmake: corrosion only builds the cdylib/
+# staticlib, so without this the engine's unit/integration tests are invisible
+# to ctest and pass unnoticed when a developer forgets `cargo test`.
+# Runs in the default workspace target dir (gitignored) so it reuses the warm
+# cache an editor's `cargo test` already built — a private target dir would
+# force a cold rebuild on every ctest run.
+find_program(CARGO_EXECUTABLE cargo REQUIRED)
+add_test(NAME ENGINE_RUST
+         COMMAND ${CARGO_EXECUTABLE} test --workspace
+         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set_tests_properties(ENGINE_RUST PROPERTIES TIMEOUT 600)
