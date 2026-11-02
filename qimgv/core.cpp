@@ -7,6 +7,8 @@
 
 #include "core.h"
 
+#include "utils/folderend.h"
+
 #ifdef __WIN32
 #include <tchar.h>
 #endif
@@ -327,6 +329,15 @@ void Core::onModelLoaded() {
     folderViewPresenter.selectAndFocus(state.currentFilePath);
     if(shuffle)
         syncRandomizer();
+    // a folder transition had to defer this: which image to open is only
+    // knowable once the new directory's listing exists
+    if(state.pendingFolderFile != NO_PENDING_FILE) {
+        bool selectLast = (state.pendingFolderFile == PENDING_LAST_FILE);
+        state.pendingFolderFile = NO_PENDING_FILE;
+        unsigned long count = model->fileCount();
+        if(count)
+            loadFileIndex(selectLast ? static_cast<int>(count - 1) : 0, false, true);
+    }
 }
 
 void Core::onDirectoryViewFileActivated(QString filePath) {
@@ -1206,6 +1217,7 @@ void Core::onScalingFinished(QPixmap *scaled, ScalerRequest req) {
 void Core::reset() {
     state.hasActiveImage = false;
     state.currentFilePath = "";
+    state.pendingFolderFile = NO_PENDING_FILE;
     model->setDirectory("");
 }
 
@@ -1267,9 +1279,15 @@ bool Core::setDirectory(QString path) {
     return true;
 }
 
+QString Core::currentFilePath() const {
+    return state.currentFilePath;
+}
+
 bool Core::loadFileIndex(int index, bool async, bool preload) {
     if(!model)
         return false;
+    // an explicit choice of file outranks the deferred folder-boundary load
+    state.pendingFolderFile = NO_PENDING_FILE;
     auto entry = model->fileEntryAt(index);
     if(entry.path.isEmpty())
         return false;
@@ -1306,50 +1324,31 @@ void Core::nextDirectory() {
     if(model->directoryPath().isEmpty() || mw->currentViewMode() != MODE_DOCUMENT)
         return;
     stopSlideshow();
-    QFileInfo currentDir(model->directoryPath());
-    QFileInfo parentDir(currentDir.absolutePath());
-    if(parentDir.exists() && parentDir.isReadable()) {
-        DirectoryManager dm;
-        if(!dm.setDirectory(parentDir.absoluteFilePath()))
-            return;
-        QString next = dm.nextOfDir(model->directoryPath());
-        if(!next.isEmpty()) {
-            if(!setDirectory(next))
-                return;
-            QFileInfo fi(next);
-            mw->showMessageDirectory(fi.baseName());
-            if(model->fileCount())
-                loadFileIndex(0, false, true);
-        } else {
-            mw->showMessageDirectoryEnd();
-        }
+    QString next = DirectoryManager::adjacentDirectory(model->directoryPath(), true, model->sortingMode());
+    if(next.isEmpty()) {
+        mw->showMessageDirectoryEnd();
+        return;
     }
+    if(!setDirectory(next))
+        return;
+    mw->showMessageDirectory(QFileInfo(next).baseName());
+    // the new folder's listing is in flight; loading index 0 here would show a
+    // file of the folder we just left
+    state.pendingFolderFile = PENDING_FIRST_FILE;
 }
 
 void Core::prevDirectory(bool selectLast) {
     if(model->directoryPath().isEmpty() || mw->currentViewMode() != MODE_DOCUMENT)
         return;
-    QFileInfo currentDir(model->directoryPath());
-    QFileInfo parentDir(currentDir.absolutePath());
-    if(parentDir.exists() && parentDir.isReadable()) {
-        DirectoryManager dm;
-        dm.setDirectory(parentDir.absoluteFilePath());
-        QString prev = dm.prevOfDir(model->directoryPath());
-        if(!prev.isEmpty()) {
-            if(!setDirectory(prev))
-                return;
-            QFileInfo fi(prev);
-            mw->showMessageDirectory(fi.baseName());
-            if(model->fileCount()) {
-                if(selectLast)
-                    loadFileIndex(model->fileCount() - 1, false, true);
-                else
-                    loadFileIndex(0, false, true);
-            }
-        } else {
-            mw->showMessageDirectoryStart();
-        }
+    QString prev = DirectoryManager::adjacentDirectory(model->directoryPath(), false, model->sortingMode());
+    if(prev.isEmpty()) {
+        mw->showMessageDirectoryStart();
+        return;
     }
+    if(!setDirectory(prev))
+        return;
+    mw->showMessageDirectory(QFileInfo(prev).baseName());
+    state.pendingFolderFile = selectLast ? PENDING_LAST_FILE : PENDING_FIRST_FILE;
 }
 
 void Core::prevDirectory() {
@@ -1365,19 +1364,19 @@ void Core::nextImage() {
         return;
     }
     int newIndex = model->indexOfFile(state.currentFilePath) + 1;
-    if(newIndex >= model->fileCount()) {
-        if(folderEndAction == FOLDER_END_LOOP) {
-            newIndex = 0;
-        } else if (folderEndAction == FOLDER_END_GOTO_ADJACENT) {
-            nextDirectory();
-            return;
-        } else {
-            if(!model->loaderBusy())
-                mw->showMessageDirectoryEnd();
-            return;
-        }
+    auto decision = FolderEnd::decide(folderEndAction, newIndex, model->fileCount());
+    switch(decision.outcome) {
+    case FolderEnd::Outcome::LoadIndex:
+        loadFileIndex(decision.index, true, settings->usePreloader());
+        return;
+    case FolderEnd::Outcome::EnterAdjacentFolder:
+        nextDirectory();
+        return;
+    case FolderEnd::Outcome::ReportBoundary:
+        if(!model->loaderBusy())
+            mw->showMessageDirectoryEnd();
+        return;
     }
-    loadFileIndex(newIndex, true, settings->usePreloader());
 }
 
 void Core::prevImage() {
@@ -1390,19 +1389,19 @@ void Core::prevImage() {
     }
 
     int newIndex = model->indexOfFile(state.currentFilePath) - 1;
-    if(newIndex < 0) {
-        if(folderEndAction == FOLDER_END_LOOP) {
-            newIndex = model->fileCount() - 1;
-        } else if (folderEndAction == FOLDER_END_GOTO_ADJACENT) {
-            prevDirectory(true);
-            return;
-        } else {
-            if(!model->loaderBusy())
-                mw->showMessageDirectoryStart();
-            return;
-        }
+    auto decision = FolderEnd::decide(folderEndAction, newIndex, model->fileCount());
+    switch(decision.outcome) {
+    case FolderEnd::Outcome::LoadIndex:
+        loadFileIndex(decision.index, true, settings->usePreloader());
+        return;
+    case FolderEnd::Outcome::EnterAdjacentFolder:
+        prevDirectory(true);
+        return;
+    case FolderEnd::Outcome::ReportBoundary:
+        if(!model->loaderBusy())
+            mw->showMessageDirectoryStart();
+        return;
     }
-    loadFileIndex(newIndex, true, settings->usePreloader());
 }
 
 void Core::nextImageSlideshow() {

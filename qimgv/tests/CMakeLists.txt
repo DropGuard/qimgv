@@ -1,4 +1,3 @@
-enable_testing()
 find_package(Qt6 REQUIRED COMPONENTS Test Widgets)
 
 include_directories(${CMAKE_SOURCE_DIR})
@@ -19,33 +18,15 @@ target_include_directories(engine_contract_tests PRIVATE ${CMAKE_SOURCE_DIR}/eng
 add_test(NAME ENGINE_CONTRACT COMMAND engine_contract_tests)
 
 # Engine stack integration: EngineBridge pump + DirectoryManager async wiring.
-# Sources are listed explicitly (deliberately: keeps the test from dragging in
-# the whole app until a proper object-library split exists).
-add_executable(engine_stack_tests test_engine_stack.cpp
-    ../components/directorymanager/directorymanager.cpp
-    ../components/directorymanager/enginebridge.cpp
-    ../components/directorymanager/watchers/directorywatcher.cpp
-    ../components/directorymanager/watchers/dummywatcher.cpp
-    ../components/directorymanager/watchers/watcherevent.cpp
-    ../components/directorymanager/watchers/watcherworker.cpp
-    ../sourcecontainers/fsentry.cpp
-    ../settings.cpp
-    ../themestore.cpp
-    ../utils/stuff.cpp
-    ../utils/script.cpp
-)
-if(UNIX AND NOT APPLE)
-    target_sources(engine_stack_tests PRIVATE
-        ../components/directorymanager/watchers/linux/linuxwatcher.cpp
-        ../components/directorymanager/watchers/linux/linuxworker.cpp
-        ../components/directorymanager/watchers/linux/linuxfsevent.cpp)
-elseif(WIN32)
-    target_sources(engine_stack_tests PRIVATE
-        ../components/directorymanager/watchers/windows/windowswatcher.cpp
-        ../components/directorymanager/watchers/windows/windowsworker.cpp)
-endif()
-target_include_directories(engine_stack_tests PRIVATE
-    ${CMAKE_SOURCE_DIR}/qimgv
-    ${CMAKE_SOURCE_DIR}/engine/qimgv-engine-ffi/include)
-target_link_libraries(engine_stack_tests PRIVATE Qt6::Test Qt6::Gui Qt6::Widgets qimgv_engine_ffi)
+# Links qimgv_nongui — the same objects the executable is built from — so a test
+# that touches another component costs nothing to add.
+add_executable(engine_stack_tests test_engine_stack.cpp)
+target_link_libraries(engine_stack_tests PRIVATE Qt6::Test qimgv_nongui)
 add_test(NAME ENGINE_STACK COMMAND engine_stack_tests)
+
+# Core-level navigation: links the widget tree too, so a real Core can be built
+# and driven under the offscreen platform. OBJECT libraries do not re-export each
+# other's objects, so both are listed — the same pair the executable links.
+add_executable(core_nav_tests core_nav_tests.cpp)
+target_link_libraries(core_nav_tests PRIVATE Qt6::Test qimgv_gui qimgv_nongui)
+add_test(NAME CORE_NAV COMMAND core_nav_tests)

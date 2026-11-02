@@ -3,6 +3,8 @@
 #include <QObject>
 #include <QString>
 
+#include <vector>
+
 struct qimgv_engine;
 class QSocketNotifier;
 
@@ -39,6 +41,13 @@ public:
     bool entryAt(int index, bool dirs, EngineEntry &out) const;
     // bulk pull: the whole listing serialized in one engine lock pass
     bool exportListing(QByteArray &out, quint32 &fileCount, quint32 &dirCount);
+    // Decodes the arena produced by exportListing (wire format documented in
+    // model.rs::write_listing). Static and side-effect free so the producer and
+    // this consumer can be round-tripped against each other in a test.
+    // Returns false unless the record counts and the arena agree exactly —
+    // a truncated tail or producer/consumer drift.
+    static bool parseListing(const QByteArray &arena, std::vector<EngineEntry> &files,
+                             std::vector<EngineEntry> &dirs);
 
     static bool supportsWatching();
     bool includePath(const QString &path);

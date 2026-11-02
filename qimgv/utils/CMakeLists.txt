@@ -1,8 +1,9 @@
 ## SOURCES FOR QIMGV UTILITY CLASSES
 
-target_sources(qimgv PRIVATE
+target_sources(qimgv_nongui PRIVATE
     actions.cpp
     cmdoptionsrunner.cpp
+    folderend.cpp
     imagefactory.cpp
     imagelib.cpp
     inputmap.cpp

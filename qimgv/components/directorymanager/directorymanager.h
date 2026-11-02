@@ -48,6 +48,20 @@ public:
     DirectoryManager();
     // ignored if the same dir is already opened
     bool setDirectory(QString);
+    // Blocking SUBDIRECTORIES-only scan into this instance, for callers that read
+    // the sibling order on the very next line (Core's folder-boundary navigation).
+    // setDirectory() cannot serve them: its listing is asynchronous, so the read
+    // would see an empty mirror. Files stay empty on purpose — this runs on the UI
+    // thread and only needs the folder order.
+    bool setSubdirsSync(const QString &dirPath);
+    // The folder a folder-boundary transition should enter: this folder's place in
+    // its parent's order, resolved synchronously because a folder-boundary keypress
+    // needs the answer right there. Empty result means there is nowhere to go and
+    // the caller shows its boundary message. Never touches the shared engine.
+    // mode is the caller listing's own sort mode: the answer has to follow the
+    // order the user is looking at, not the persisted setting (a manager can be
+    // resorted at runtime without the setting moving)
+    static QString adjacentDirectory(const QString &dirPath, bool forward, SortingMode mode);
     bool setDirectoryRecursive(QString);
     QString directoryPath() const;
     int indexOfFile(QString filePath) const;
@@ -96,6 +110,11 @@ public:
 
     QStringList fileList() const;
 
+    // The one place qimgv's SortingMode becomes a QIMGV_SORT_* code. Public so a
+    // test can pin it against the header constants: the two enums are ordered
+    // differently, so a positional mistake sorts by the wrong column silently.
+    static int engineSortMode(SortingMode mode);
+
 private:
     QRegularExpression regex;
     QCollator collator;
@@ -114,7 +133,7 @@ private:
 
     void scheduleRescan();
     void mirrorEngineListing(const QString &dirPath);
-    static int engineSortMode(SortingMode mode);
+    static bool directoryUsable(const QString &dirPath);
     static std::filesystem::file_time_type fileTimeFromMs(qint64 ms);
 
     DirectoryWatcher* watcher;
@@ -130,12 +149,18 @@ private:
     bool date_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
     bool date_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
     CompareFunction compareFunction();
+    // Directories only ever order by name: compareFunction() can pick a time or
+    // size comparator, and those are meaningless for directories because scan.rs
+    // gives every one of them the same size/mtime defaults. Sorting and inserting
+    // have to use the same rule, so both ask for this one.
+    CompareFunction dirComparator() const;
     bool size_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
     bool size_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
     void startFileWatcher(QString directoryPath);
     void stopFileWatcher();
 
     void addEntriesFromDirectory(std::vector<FSEntry> &entryVec, QString directoryPath);
+    void addSubdirsFromDirectory(const QString &directoryPath);
     void addEntriesFromDirectoryRecursive(std::vector<FSEntry> &entryVec, QString directoryPath);
     bool checkFileRange(int index) const;
     bool checkDirRange(int index) const;

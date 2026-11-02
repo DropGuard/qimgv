@@ -1,3 +1,3 @@
-target_sources(qimgv PRIVATE
+target_sources(qimgv_nongui PRIVATE
     cvmatandqimage.cpp
 )

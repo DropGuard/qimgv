@@ -7,7 +7,6 @@
 Q_LOGGING_CATEGORY(lcWatchPerf, "qimgv.perf.watch", QtInfoMsg)
 
 #include <QTimer>
-#include <QtEndian>
 #include <chrono>
 
 namespace fs = std::filesystem;
@@ -71,6 +70,12 @@ bool DirectoryManager::size_entry_compare_reverse(const FSEntry& e1, const FSEnt
     return e1.size > e2.size;
 }
 
+CompareFunction DirectoryManager::dirComparator() const {
+    return (mSortingMode == SortingMode::SORT_NAME_DESC)
+        ? &DirectoryManager::path_entry_compare_reverse
+        : &DirectoryManager::path_entry_compare;
+}
+
 CompareFunction DirectoryManager::compareFunction() {
     CompareFunction cmpFn = &DirectoryManager::path_entry_compare;
     if(mSortingMode == SortingMode::SORT_NAME_DESC)
@@ -130,6 +135,78 @@ bool DirectoryManager::setDirectory(QString dirPath) {
             EngineBridge::instance().stopWatch();
         return false;
     }
+    if(!directoryUsable(dirPath))
+        return false;
+
+    // The listing is asynchronous — it arrives via onEngineDirListed(), and the
+    // vectors keep serving the previous directory until then. A *refused* request
+    // is not asynchronous though: nothing will ever arrive, so it has to fail
+    // here rather than leave the caller staring at a silently empty folder.
+    if(!EngineBridge::instance().openDir(dirPath, engineSortMode(mSortingMode),
+                                         settings->showHiddenFiles())) {
+        qWarning() << "[DirectoryManager] engine refused" << dirPath
+                   << (qimgv_last_error() ? qimgv_last_error() : "");
+        return false;
+    }
+    mListSource = SOURCE_DIRECTORY;
+    mDirectoryPath = dirPath;
+    mEngineDir = dirPath;
+    mAppliedSort = mSortingMode;
+    if (!mEngineWatching)
+        startFileWatcher(dirPath); // engine watcher handles it on Linux
+    return true;
+}
+
+// See the header: a dirs-only scan into this instance's own vectors, for callers
+// that read the sibling order on the next line. Deliberately leaves the shared
+// engine alone — an openDir() here would repoint the process-wide inotify watch
+// away from the directory the user is actually in.
+//
+// Directories only, and that is the whole point: this runs on the UI thread, and
+// walking the 100k-entry bench fixture costs 35 ms, while also regex-matching and
+// collator-sorting every file in it costs 956 ms (measured). A folder-boundary
+// keypress must not freeze for a second.
+bool DirectoryManager::setSubdirsSync(const QString &dirPath) {
+    if(dirPath.isEmpty() || !directoryUsable(dirPath))
+        return false;
+    mListSource = SOURCE_DIRECTORY;
+    mDirectoryPath = dirPath;
+    dirEntryVec.clear();
+    fileEntryVec.clear();
+    addSubdirsFromDirectory(dirPath);
+    // same comparator the listing uses, so the sibling order matches the folder
+    // view; sorting an empty file list costs nothing
+    sortEntryLists();
+    return true;
+}
+
+void DirectoryManager::addSubdirsFromDirectory(const QString &directoryPath) {
+    for(const auto &entry : fs::directory_iterator(toStdString(directoryPath))) {
+        QString name = QString::fromStdString(entry.path().filename().generic_string());
+        if(!settings->showHiddenFiles() && name.startsWith(QLatin1Char('.')))
+            continue;
+        if(!entry.is_directory())
+            continue;
+        FSEntry newEntry;
+        newEntry.name = name;
+        newEntry.path = QString::fromStdString(entry.path().generic_string());
+        newEntry.isDirectory = true;
+        dirEntryVec.push_back(std::move(newEntry));
+    }
+}
+
+QString DirectoryManager::adjacentDirectory(const QString &dirPath, bool forward, SortingMode mode) {
+    if(dirPath.isEmpty())
+        return QString();
+    // the parent's folder order, read synchronously: this answers a keypress
+    DirectoryManager lookup;
+    lookup.setSortingMode(mode);
+    if(!lookup.setSubdirsSync(QFileInfo(dirPath).absolutePath()))
+        return QString();
+    return forward ? lookup.nextOfDir(dirPath) : lookup.prevOfDir(dirPath);
+}
+
+bool DirectoryManager::directoryUsable(const QString &dirPath) {
     if(!std::filesystem::exists(toStdString(dirPath))) {
         qDebug() << "[DirectoryManager] Error - path does not exist.";
         return false;
@@ -143,17 +220,6 @@ bool DirectoryManager::setDirectory(QString dirPath) {
         qDebug() << "[DirectoryManager] Error - cannot read directory.";
         return false;
     }
-    mListSource = SOURCE_DIRECTORY;
-    mDirectoryPath = dirPath;
-
-    // async: the listing arrives via onEngineDirListed(); the vectors keep
-    // serving the previous directory until then
-    EngineBridge::instance().openDir(dirPath, engineSortMode(mSortingMode),
-                                     settings->showHiddenFiles());
-    mEngineDir = dirPath;
-    mAppliedSort = mSortingMode;
-    if (!mEngineWatching)
-        startFileWatcher(dirPath); // engine watcher handles it on Linux
     return true;
 }
 
@@ -418,10 +484,17 @@ void DirectoryManager::addEntriesFromDirectoryRecursive(std::vector<FSEntry> &en
 }
 
 void DirectoryManager::sortEntryLists() {
-    if(settings->sortFolders())
-        std::sort(dirEntryVec.begin(), dirEntryVec.end(), std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
-    else
-        std::sort(dirEntryVec.begin(), dirEntryVec.end(), std::bind(&DirectoryManager::path_entry_compare, this, std::placeholders::_1, std::placeholders::_2));
+    // Directories always order by name. Two producers have to agree on that, and
+    // only one of them is configurable by the sort mode:
+    //   - scan.rs gives every directory size 0 and mtime UNIX_EPOCH, so the
+    //     engine's comparator lands on its name tiebreak for TIME and SIZE modes;
+    //   - the mirror keeps the arena's order instead of re-sorting, so the folder
+    //     view *is* the engine's order.
+    // Sorting dirs here on those equal fields would hand an all-equivalent range
+    // to std::sort (not stable) and let "go to next folder" walk siblings in an
+    // order the view does not show. Only NAME_DESC reverses dirs, because that is
+    // the one mode whose engine comparator reverses them.
+    std::sort(dirEntryVec.begin(), dirEntryVec.end(), std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
     std::sort(fileEntryVec.begin(), fileEntryVec.end(), std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
 }
 
@@ -539,7 +612,7 @@ bool DirectoryManager::insertDirEntry(const QString &dirPath) {
     FSEntry.name = dirName;
     FSEntry.path = dirPath;
     FSEntry.isDirectory = true;
-    insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
+    insert_sorted(dirEntryVec, FSEntry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
     qCDebug(lcWatchPerf) << "dirIns" << dirPath;
     emit dirAdded(dirPath);
     if(!mEngineWatching)
@@ -572,7 +645,7 @@ void DirectoryManager::renameDirEntry(const QString &oldDirPath, const QString &
     FSEntry.name = newDirName;
     FSEntry.path = newDirPath;
     FSEntry.isDirectory = true;
-    insert_sorted(dirEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
+    insert_sorted(dirEntryVec, FSEntry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
     qCDebug(lcWatchPerf) << "dirRen" << oldDirPath << newDirPath;
     emit dirRenamed(oldDirPath, oldIndex, newDirPath, indexOfDir(newDirPath));
     if(!mEngineWatching)
@@ -634,14 +707,14 @@ void DirectoryManager::onFileModifiedExternal(QString fileName) {
 // explicitly, never positionally.
 int DirectoryManager::engineSortMode(SortingMode mode) {
     switch(mode) {
-        case SORT_NAME:       return 0;
-        case SORT_NAME_DESC:  return 1;
-        case SORT_SIZE:       return 4;
-        case SORT_SIZE_DESC:  return 5;
-        case SORT_TIME:       return 2;
-        case SORT_TIME_DESC:  return 3;
+        case SORT_NAME:       return QIMGV_SORT_NAME;
+        case SORT_NAME_DESC:  return QIMGV_SORT_NAME_DESC;
+        case SORT_SIZE:       return QIMGV_SORT_SIZE;
+        case SORT_SIZE_DESC:  return QIMGV_SORT_SIZE_DESC;
+        case SORT_TIME:       return QIMGV_SORT_TIME;
+        case SORT_TIME_DESC:  return QIMGV_SORT_TIME_DESC;
     }
-    return 0;
+    return QIMGV_SORT_NAME;
 }
 
 // C++17 has no clock_cast; anchor the file clock against the system clock.
@@ -702,7 +775,7 @@ void DirectoryManager::onEngineMutated(int kind, QString path, bool isDir, quint
             else
                 entry.modifyTime = fileTimeFromMs(mtimeMs);
             if(isDir) {
-                insert_sorted(dirEntryVec, entry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
+                insert_sorted(dirEntryVec, entry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
                 emit dirAdded(path);
             } else {
                 insert_sorted(fileEntryVec, entry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
@@ -742,54 +815,12 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     QElapsedTimer parseTimer;
     parseTimer.start();
     std::vector<EngineBridge::EngineEntry> files, dirs;
-    files.reserve(newFileCount);
-    dirs.reserve(newDirCount);
-    {
-        const unsigned char *p = reinterpret_cast<const unsigned char *>(listing.constData());
-        const unsigned char *end = p + listing.size();
-        auto rd32 = [&p]() -> quint32 { quint32 v = qFromLittleEndian<quint32>(p); p += 4; return v; };
-        auto rd64 = [&p]() -> quint64 { quint64 v = qFromLittleEndian<quint64>(p); p += 8; return v; };
-        const quint32 fc = rd32();
-        const quint32 dc = rd32();
-        for(quint32 i = 0; i < fc && p + 32 <= end; ++i) {
-            const quint64 handle = rd64();
-            const quint64 size = rd64();
-            const qint64 mtimeMs = qint64(rd64());
-            const quint32 nlen = rd32();
-            const quint32 plen = rd32();
-            if(p + nlen + plen > end)
-                break;
-            EngineBridge::EngineEntry e;
-            e.name = QString::fromUtf8(reinterpret_cast<const char *>(p), int(nlen));
-            p += nlen;
-            e.path = QString::fromUtf8(reinterpret_cast<const char *>(p), int(plen));
-            p += plen;
-            e.size = size;
-            e.mtimeMs = mtimeMs;
-            e.isDir = false;
-            files.push_back(std::move(e));
-        }
-        for(quint32 i = 0; i < dc && p + 32 <= end; ++i) {
-            const quint64 handle = rd64();
-            const quint64 size = rd64();
-            const qint64 mtimeMs = qint64(rd64());
-            const quint32 nlen = rd32();
-            const quint32 plen = rd32();
-            if(p + nlen + plen > end)
-                break;
-            EngineBridge::EngineEntry e;
-            e.name = QString::fromUtf8(reinterpret_cast<const char *>(p), int(nlen));
-            p += nlen;
-            e.path = QString::fromUtf8(reinterpret_cast<const char *>(p), int(plen));
-            p += plen;
-            e.size = size;
-            e.mtimeMs = mtimeMs;
-            e.isDir = true;
-            dirs.push_back(std::move(e));
-        }
-        qDebug() << "[DirectoryManager] arena pull+parse" << parseTimer.elapsed() << "ms; parsed"
-                 << files.size() << "files" << dirs.size() << "dirs; arena" << listing.size() << "bytes";
-    }
+    if(!EngineBridge::parseListing(listing, files, dirs))
+        qWarning() << "[DirectoryManager] listing arena not consumed exactly:" << files.size()
+                   << "files" << dirs.size() << "dirs from" << listing.size() << "bytes (counts"
+                   << newFileCount << "+" << newDirCount << ")";
+    qDebug() << "[DirectoryManager] arena pull+parse" << parseTimer.elapsed() << "ms; parsed"
+             << files.size() << "files" << dirs.size() << "dirs; arena" << listing.size() << "bytes";
 
     QElapsedTimer hashTimer;
     hashTimer.start();

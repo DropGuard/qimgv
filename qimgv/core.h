@@ -21,9 +21,18 @@
 #include <malloc.h>
 #endif
 
+// A folder-boundary transition opens a directory whose listing is still in
+// flight, so the image to show has to be decided when the listing lands.
+enum PendingFolderFile {
+    NO_PENDING_FILE,
+    PENDING_FIRST_FILE,
+    PENDING_LAST_FILE
+};
+
 struct State {
     bool hasActiveImage = false;
     bool delayModel = false;
+    PendingFolderFile pendingFolderFile = NO_PENDING_FILE;
     QString currentFilePath = "";
     QString directoryPath = "";
     std::shared_ptr<Image> currentImg;
@@ -39,6 +48,8 @@ class Core : public QObject {
 public:
     Core();
     void showGui();
+    // the file on screen; the state Core owns and every navigation decision reads
+    QString currentFilePath() const;
 
 public slots:
     void updateInfoString();

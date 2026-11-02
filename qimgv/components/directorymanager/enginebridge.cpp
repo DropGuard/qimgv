@@ -2,6 +2,8 @@
 
 #include <QSocketNotifier>
 #include <QDebug>
+#include <QtEndian>
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 
@@ -172,6 +174,61 @@ bool EngineBridge::exportListing(QByteArray &out, quint32 &fileCount, quint32 &d
     fileCount = fc;
     dirCount = dc;
     return true;
+}
+
+// Decodes the arena written by DirectoryState::write_listing (model.rs).
+// Little-endian: u32 file_count, u32 dir_count, then file_count + dir_count
+// records of u64 handle, u64 size, i64 mtime_ms, u32 name_len, u32 path_len,
+// name bytes, path bytes (no NUL) — files first. The handle is skipped: the
+// mirror keys on path. A record that does not fit ends the parse early, so a
+// truncated arena yields a short listing rather than a crash.
+//
+// Returns false unless the arena held exactly file_count file records plus
+// dir_count dir records and was consumed to the last byte. Both checks matter:
+// the header counts are the only place where producer and consumer agree on how
+// much data SHOULD be here, so a disagreeing count is drift, not an empty list.
+bool EngineBridge::parseListing(const QByteArray &arena, std::vector<EngineEntry> &files,
+                                std::vector<EngineEntry> &dirs) {
+    if (arena.size() < 8)
+        return false;
+    const unsigned char *p = reinterpret_cast<const unsigned char *>(arena.constData());
+    const unsigned char *end = p + arena.size();
+    auto rd32 = [&p]() -> quint32 { quint32 v = qFromLittleEndian<quint32>(p); p += 4; return v; };
+    auto rd64 = [&p]() -> quint64 { quint64 v = qFromLittleEndian<quint64>(p); p += 8; return v; };
+
+    const quint32 fc = rd32();
+    const quint32 dc = rd32();
+    files.clear();
+    dirs.clear();
+    // cap the reservation by the byte budget: a header that disagrees with the
+    // arena must not drive a huge allocation
+    const size_t maxRecords = size_t(arena.size()) / 32;
+    files.reserve(std::min<size_t>(fc, maxRecords));
+    dirs.reserve(std::min<size_t>(dc, maxRecords));
+
+    auto readRun = [&](quint32 count, bool isDir) {
+        for (quint32 i = 0; i < count && p + 32 <= end; ++i) {
+            p += 8; // handle
+            const quint64 size = rd64();
+            const qint64 mtimeMs = static_cast<qint64>(rd64());
+            const quint32 nlen = rd32();
+            const quint32 plen = rd32();
+            if (p + nlen + plen > end)
+                break;
+            EngineEntry e;
+            e.name = QString::fromUtf8(reinterpret_cast<const char *>(p), int(nlen));
+            p += nlen;
+            e.path = QString::fromUtf8(reinterpret_cast<const char *>(p), int(plen));
+            p += plen;
+            e.size = size;
+            e.mtimeMs = mtimeMs;
+            e.isDir = isDir;
+            (isDir ? dirs : files).push_back(std::move(e));
+        }
+    };
+    readRun(fc, false);
+    readRun(dc, true);
+    return p == end && files.size() == fc && dirs.size() == dc;
 }
 
 bool EngineBridge::entryAt(int index, bool dirs, EngineEntry &out) const {

@@ -35,17 +35,12 @@ if(${QT_VERSION_MAJOR} EQUAL 5)
 endif()
 
 # ADD EXECUTABLE
+# Everything that does not need the widget tree lives in the qimgv_nongui object
+# library below, so test binaries can link the real components instead of a
+# hand-copied list of source files.
 add_executable(qimgv
-    appversion.cpp
-    core.cpp
     main.cpp
-    settings.cpp
-    themestore.cpp
-    sharedresources.cpp
-    shortcutbuilder.cpp
-    proxystyle.cpp
     macosapplication.cpp
-    resources.qrc
     qimgv.rc
     ${APPLE_ICON_PATH}
     ${QM_FILES}
@@ -58,10 +53,77 @@ if(${QT_VERSION_MAJOR} EQUAL 6)
 endif()
 
 # ADD SOURCES
+# An OBJECT library rather than a static one: the sources below stay compiled
+# once and are consumed directly by both the executable and the test binaries.
+add_library(qimgv_nongui OBJECT)
+
+target_sources(qimgv_nongui PRIVATE
+    appversion.cpp
+    settings.cpp
+    sharedresources.cpp
+    shortcutbuilder.cpp
+    themestore.cpp
+)
+
+target_compile_features(qimgv_nongui PRIVATE cxx_std_17)
+set_target_properties(qimgv_nongui PROPERTIES CXX_EXTENSIONS OFF)
+target_include_directories(qimgv_nongui PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../engine/qimgv-engine-ffi/include)
+target_link_libraries(qimgv_nongui PUBLIC
+    Qt${QT_VERSION_MAJOR}::Core
+    Qt${QT_VERSION_MAJOR}::Gui
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Svg
+    Qt${QT_VERSION_MAJOR}::PrintSupport
+    qimgv_engine_ffi)
+
+# OPTION DEFINITIONS, LINKING (mirrored from the executable below: these are the
+# same translation units that used to be compiled as part of the qimgv target)
+if(EXIV2)
+    target_link_libraries(qimgv_nongui PUBLIC PkgConfig::Exiv2)
+    target_compile_definitions(qimgv_nongui PRIVATE USE_EXIV2)
+endif()
+if(KDE_SUPPORT)
+    target_link_libraries(qimgv_nongui PUBLIC KF6::WindowSystem)
+    target_compile_definitions(qimgv_nongui PRIVATE USE_KDE_BLUR)
+endif()
+if(VIDEO_SUPPORT)
+    target_compile_definitions(qimgv_nongui PRIVATE USE_MPV)
+endif()
+if(OPENCV_SUPPORT)
+    target_link_libraries(qimgv_nongui PUBLIC ${OpenCV_LIBS})
+    target_compile_definitions(qimgv_nongui PRIVATE USE_OPENCV)
+endif()
+
+# The widget tree plus Core: its own object library so that a test binary can
+# construct a real Core and drive its navigation without a display server.
+add_library(qimgv_gui OBJECT)
+target_sources(qimgv_gui PRIVATE
+    core.cpp
+    proxystyle.cpp
+    resources.qrc
+)
+target_compile_features(qimgv_gui PRIVATE cxx_std_17)
+set_target_properties(qimgv_gui PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(qimgv_gui PUBLIC qimgv_nongui Qt${QT_VERSION_MAJOR}::OpenGLWidgets)
+if(EXIV2)
+    target_compile_definitions(qimgv_gui PRIVATE USE_EXIV2)
+endif()
+if(KDE_SUPPORT)
+    target_compile_definitions(qimgv_gui PRIVATE USE_KDE_BLUR)
+endif()
+if(VIDEO_SUPPORT)
+    target_compile_definitions(qimgv_gui PRIVATE USE_MPV)
+endif()
+if(OPENCV_SUPPORT)
+    target_compile_definitions(qimgv_gui PRIVATE USE_OPENCV)
+endif()
+
 add_subdirectory(components)
 add_subdirectory(sourcecontainers)
-add_subdirectory(gui)
 add_subdirectory(utils)
+add_subdirectory(gui)
 add_subdirectory(tests)
 if(OPENCV_SUPPORT)
     add_subdirectory(3rdparty/QtOpenCV)
@@ -72,6 +134,7 @@ target_compile_features(qimgv PRIVATE cxx_std_17)
 set_target_properties(qimgv PROPERTIES CXX_EXTENSIONS OFF)
 
 # LINK STUFF
+target_link_libraries(qimgv PRIVATE qimgv_gui qimgv_nongui)
 target_link_libraries(qimgv PRIVATE Qt${QT_VERSION_MAJOR}::Core Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg Qt${QT_VERSION_MAJOR}::PrintSupport)
 # Rust engine (corrosion-imported; target name normalized to underscores)
 target_link_libraries(qimgv PRIVATE qimgv_engine_ffi)
