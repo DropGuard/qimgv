@@ -1,8 +1,7 @@
 #include "directorymodel.h"
 
 DirectoryModel::DirectoryModel(QObject *parent) :
-    QObject(parent),
-    fileListSource(SOURCE_DIRECTORY)
+    QObject(parent)
 {
     scaler = new Scaler(&cache);
 
@@ -70,8 +69,8 @@ QString DirectoryModel::dirPathAt(int index) const {
 }
 
 
-FileListSource DirectoryModel::source() {
-    return dirManager.source();
+bool DirectoryModel::listingOpen() const {
+    return dirManager.listingOpen();
 }
 
 QString DirectoryModel::directoryPath() const {

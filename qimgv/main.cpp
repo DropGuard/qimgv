@@ -128,12 +128,6 @@ int main(int argc, char *argv[]) {
     parser.addVersionOption();
     parser.addPositionalArgument("path", QCoreApplication::translate("main", "File or directory path."));
     parser.addOptions({
-        {"gen-thumbs",
-            QCoreApplication::translate("main", "Generate all thumbnails for directory."),
-            QCoreApplication::translate("main", "directory-path")},
-        {"gen-thumbs-size",
-            QCoreApplication::translate("main", "Thumbnail size. Current size is used if not specified."),
-            QCoreApplication::translate("main", "thumbnail-size")},
         {"build-options",
             QCoreApplication::translate("main", "Show build options.")},
     });
@@ -142,15 +136,6 @@ int main(int argc, char *argv[]) {
     if(parser.isSet("build-options")) {
         CmdOptionsRunner r;
         QTimer::singleShot(0, &r, &CmdOptionsRunner::showBuildOptions);
-        return a.exec();
-    } else if(parser.isSet("gen-thumbs")) {
-        int size = settings->folderViewIconSize();
-        if(parser.isSet("gen-thumbs-size"))
-            size = parser.value("gen-thumbs-size").toInt();
-
-        CmdOptionsRunner r;
-        QTimer::singleShot(0, &r,
-                           std::bind(&CmdOptionsRunner::generateThumbs, &r, parser.value("gen-thumbs"), size));
         return a.exec();
     }
 

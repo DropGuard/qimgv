@@ -31,11 +31,6 @@ class QTimer;
 #include "windows.h"
 #endif
 
-enum FileListSource { // rename? wip
-    SOURCE_DIRECTORY,
-    SOURCE_DIRECTORY_RECURSIVE,
-    SOURCE_LIST
-};
 
 class DirectoryManager;
 
@@ -70,7 +65,6 @@ public:
     // exists (Core's folder-boundary load). Returns the cancel token.
     qint64 whenListed(const QString &dirPath, std::function<void()> action);
     bool cancelListed(qint64 token);
-    bool setDirectoryRecursive(QString);
     QString directoryPath() const;
     int indexOfFile(QString filePath) const;
     int indexOfDir(QString dirPath) const;
@@ -106,7 +100,7 @@ public:
     //bool forceInsertDirEntry(const QString &dirPath);
     //void updateDirEntry(const QString &dirPath);
 
-    FileListSource source() const;
+    bool listingOpen() const;
 
     QStringList fileList() const;
 
@@ -149,8 +143,9 @@ private:
 
     void readSettings();
     SortingMode mSortingMode;
-    FileListSource mListSource;
-    void loadEntryList(QString directoryPath, bool recursive);
+    // true once an entry list exists in this instance (engine-opened or the
+    // local dirs-only scan); replaces a one-value enum
+    bool mListOpen = false;
 
     bool path_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
     bool path_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
@@ -167,9 +162,7 @@ private:
     bool size_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
     bool size_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
 
-    void addEntriesFromDirectory(std::vector<FSEntry> &entryVec, QString directoryPath);
     void addSubdirsFromDirectory(const QString &directoryPath);
-    void addEntriesFromDirectoryRecursive(std::vector<FSEntry> &entryVec, QString directoryPath);
     bool checkFileRange(int index) const;
     bool checkDirRange(int index) const;
 

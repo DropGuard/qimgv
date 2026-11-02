@@ -250,7 +250,7 @@ void DirectoryPresenter::onDraggedOver(int index) {
 }
 
 void DirectoryPresenter::onDroppedInto(const QMimeData *data, QObject *source, int targetIndex) {
-    if(!data->hasUrls() || model->source() != SOURCE_DIRECTORY)
+    if(!data->hasUrls() || !model->listingOpen())
         return;
 
     // ignore drops into selected / current folder when we are the source of dropEvent

@@ -75,7 +75,7 @@ public:
     bool saveFile(const QString &filePath, const QString &destPath);
 
     bool containsDir(QString dirPath) const;
-    FileListSource source();
+    bool listingOpen() const;
 signals:
     void fileRemoved(QString filePath, int index);
     void fileRenamed(QString fromPath, int indexFrom, QString toPath, int indexTo);
@@ -96,7 +96,6 @@ private:
     Loader loader;
     QSet<QString> mScaledCache; // paths whose cached image is tier-1 (scaled)
     Cache cache;
-    FileListSource fileListSource;
 
 private slots:
     void onImageReady(std::shared_ptr<Image> img, const QString &path, bool scaled);

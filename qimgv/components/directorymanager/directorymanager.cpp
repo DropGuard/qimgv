@@ -120,7 +120,7 @@ bool DirectoryManager::setDirectory(QString dirPath) {
                    << (qimgv_last_error() ? qimgv_last_error() : "");
         return false;
     }
-    mListSource = SOURCE_DIRECTORY;
+    mListOpen = true;
     mDirectoryPath = dirPath;
     mEngineDir = dirPath;
     mAppliedSort = mSortingMode;
@@ -141,7 +141,7 @@ bool DirectoryManager::setDirectory(QString dirPath) {
 bool DirectoryManager::setSubdirsSync(const QString &dirPath) {
     if(dirPath.isEmpty() || !directoryUsable(dirPath))
         return false;
-    mListSource = SOURCE_DIRECTORY;
+    mListOpen = true;
     mDirectoryPath = dirPath;
     dirEntryVec.clear();
     fileEntryVec.clear();
@@ -195,30 +195,12 @@ bool DirectoryManager::directoryUsable(const QString &dirPath) {
     return true;
 }
 
-bool DirectoryManager::setDirectoryRecursive(QString dirPath) {
-    if(dirPath.isEmpty()) {
-        return false;
-    }
-    if(!std::filesystem::exists(toStdString(dirPath))) {
-        qDebug() << "[DirectoryManager] Error - path does not exist.";
-        return false;
-    }
-    if(!std::filesystem::is_directory(toStdString(dirPath))) {
-        qDebug() << "[DirectoryManager] Error - path is not a directory.";
-        return false;
-    }
-    mListSource = SOURCE_DIRECTORY_RECURSIVE;
-    mEngineDir.clear();
-    mMirroredDir.clear();
-    mDirectoryPath = dirPath;
-    loadEntryList(dirPath, true);
-    sortEntryLists();
-    emit loaded(dirPath);
-    return true;
+bool DirectoryManager::listingOpen() const {
+    return mListOpen;
 }
 
 QString DirectoryManager::directoryPath() const {
-    if(mListSource == SOURCE_DIRECTORY || mListSource == SOURCE_DIRECTORY_RECURSIVE)
+    if(mListOpen)
         return mDirectoryPath;
     else
         return "";
@@ -375,85 +357,7 @@ bool DirectoryManager::containsDir(QString dirPath) const {
 // ##############################################################
 // ###################### PRIVATE METHODS #######################
 // ##############################################################
-void DirectoryManager::loadEntryList(QString directoryPath, bool recursive) {
-    dirEntryVec.clear();
-    fileEntryVec.clear();
-    if(recursive) { // load files only
-        addEntriesFromDirectoryRecursive(fileEntryVec, directoryPath);
-    } else { // load dirs & files
-        addEntriesFromDirectory(fileEntryVec, directoryPath);
-    }
-}
-
 // both directories & files
-void DirectoryManager::addEntriesFromDirectory(std::vector<FSEntry> &entryVec, QString directoryPath) {
-    QRegularExpressionMatch match;
-    for(const auto & entry : fs::directory_iterator(toStdString(directoryPath))) {
-        QString name = QString::fromStdString(entry.path().filename().generic_string());
-#ifndef Q_OS_WIN32
-        // ignore hidden files
-        if(!settings->showHiddenFiles() && name.startsWith("."))
-            continue;
-#else
-        DWORD attributes = GetFileAttributes(entry.path().generic_string().c_str());
-        if(!settings->showHiddenFiles() && attributes & FILE_ATTRIBUTE_HIDDEN)
-            continue;
-#endif
-        QString path = QString::fromStdString(entry.path().generic_string());
-        match = regex.match(name);
-        if(entry.is_directory()) { // this can still throw std::bad_alloc ..
-            FSEntry newEntry;
-            try {
-                newEntry.name = name;
-                newEntry.path = path;
-                newEntry.isDirectory = true;
-                //newEntry.size = entry.file_size();
-                //newEntry.modifyTime = entry.last_write_time();
-            } catch (const std::filesystem::filesystem_error &err) {
-                qDebug() << "[DirectoryManager]" << err.what();
-                continue;
-            }
-            dirEntryVec.emplace_back(newEntry);
-        } else if (match.hasMatch()) {
-            FSEntry newEntry;
-            try {
-                newEntry.name = name;
-                newEntry.path = path;
-                newEntry.isDirectory = false;
-                newEntry.size = entry.file_size();
-                newEntry.modifyTime = entry.last_write_time();
-            } catch (const std::filesystem::filesystem_error &err) {
-                qDebug() << "[DirectoryManager]" << err.what();
-                continue;
-            }
-            entryVec.emplace_back(newEntry);
-        }
-    }
-}
-
-void DirectoryManager::addEntriesFromDirectoryRecursive(std::vector<FSEntry> &entryVec, QString directoryPath) {
-    QRegularExpressionMatch match;
-    for(const auto & entry : fs::recursive_directory_iterator(toStdString(directoryPath))) {
-        QString name = QString::fromStdString(entry.path().filename().generic_string());
-        QString path = QString::fromStdString(entry.path().generic_string());
-        match = regex.match(name);
-        if(!entry.is_directory() && match.hasMatch()) {
-            FSEntry newEntry;
-            try {
-                newEntry.name = name;
-                newEntry.path = path;
-                newEntry.isDirectory = false;
-                newEntry.size = entry.file_size();
-                newEntry.modifyTime = entry.last_write_time();
-            } catch (const std::filesystem::filesystem_error &err) {
-                qDebug() << "[DirectoryManager]" << err.what();
-                continue;
-            }
-            entryVec.emplace_back(newEntry);
-        }
-    }
-}
-
 void DirectoryManager::sortEntryLists() {
     // Directories always order by name. Two producers have to agree on that, and
     // only one of them is configurable by the sort mode:
@@ -472,7 +376,7 @@ void DirectoryManager::sortEntryLists() {
 void DirectoryManager::setSortingMode(SortingMode mode) {
     if(mode != mSortingMode) {
         mSortingMode = mode;
-        if(mListSource == SOURCE_DIRECTORY && !mEngineDir.isEmpty()) {
+        if(mListOpen && !mEngineDir.isEmpty()) {
             // engine resorts and reports back via onEngineDirListed()
             EngineBridge::instance().setSort(engineSortMode(mode));
             return;
@@ -540,10 +444,6 @@ void DirectoryManager::removeDirEntry(const QString &dirPath) {
 }
 
 
-FileListSource DirectoryManager::source() const {
-    return mListSource;
-}
-
 QStringList DirectoryManager::fileList() const {
     QStringList list;
     for(auto const& value : fileEntryVec)
@@ -586,14 +486,14 @@ std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
 void DirectoryManager::scheduleRescan() {
     if(mResyncing)
         return;
-    if(mListSource != SOURCE_DIRECTORY || mDirectoryPath.isEmpty())
+    if(!mListOpen || mDirectoryPath.isEmpty())
         return;
     if(!rescanTimer) {
         rescanTimer = new QTimer(this);
         rescanTimer->setSingleShot(true);
         rescanTimer->setInterval(150);
         connect(rescanTimer, &QTimer::timeout, this, [this]() {
-            if(!mResyncing && mListSource == SOURCE_DIRECTORY && !mDirectoryPath.isEmpty())
+            if(!mResyncing && mListOpen && !mDirectoryPath.isEmpty())
                 EngineBridge::instance().openDir(mDirectoryPath, engineSortMode(mSortingMode),
                                                  settings->showHiddenFiles());
         });
@@ -602,7 +502,7 @@ void DirectoryManager::scheduleRescan() {
 }
 
 void DirectoryManager::onEngineDirListed(QString dirPath) {
-    if(mResyncing || dirPath != mEngineDir || mListSource != SOURCE_DIRECTORY)
+    if(mResyncing || dirPath != mEngineDir || !mListOpen)
         return;
     if(mDirectoryPath != dirPath)
         return;
@@ -621,7 +521,7 @@ void DirectoryManager::onEngineDirListed(QString dirPath) {
 }
 
 void DirectoryManager::onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs) {
-    if(mListSource != SOURCE_DIRECTORY || mResyncing)
+    if(!mListOpen || mResyncing)
         return;
     switch(kind) {
         case QIMGV_MUT_ADDED: {
@@ -672,7 +572,7 @@ bool DirectoryManager::cancelListed(qint64 token) {
 }
 
 void DirectoryManager::onEngineOpenFailed(QString dirPath, int code) {
-    if(dirPath != mEngineDir || mListSource != SOURCE_DIRECTORY)
+    if(dirPath != mEngineDir || !mListOpen)
         return;
     qWarning() << "[DirectoryManager] engine open failed:" << dirPath << "code" << code;
     // an open that failed will never produce the listing its actions wait for
