@@ -29,11 +29,12 @@
 #include "utils/filelog.h"
 #include "utils/imagefactory.h"
 #include "utils/randomizer.h"
+#include "testhelpers.h"
 #include "qimgv_engine.h"
 
 class TestEngineStack : public QObject {
     Q_OBJECT
-    QTemporaryDir homeDir;
+    IsolatedHome home;
     QString fixtureBase;
     QString fixtureDir;
     int slotSeq = 0;
@@ -60,9 +61,8 @@ class TestEngineStack : public QObject {
 
 private slots:
     void initTestCase() {
-        QVERIFY(homeDir.isValid());
-        // isolate Settings/QStandardPaths from the real user config
-        qputenv("HOME", homeDir.path().toUtf8());
+        QVERIFY(home.path() != nullptr);
+        // IsolatedHome already redirected HOME and the config identity
         QVERIFY(Settings::getInstance() != nullptr);
         // the two-tier tests catch imageReady through QSignalSpy, whose queued
         // recording needs the shared_ptr argument registered
@@ -959,6 +959,59 @@ private slots:
         thumb.getThumbnailAsync(fixtureDir + "/img1.jpg", 64, false, false);
         QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 3, 10000);
         thumb.waitForDone();
+    }
+
+    // --- layer 10: the seams the test infra itself stands on -------------------
+
+    void bridgeInstancesAreIsolated() {
+        // the old singleton forced every test through one engine, one watch
+        // target and one session epoch — the per-slot fixture dirs exist only
+        // because of that. Two plain instances now get independent engines:
+        resetFixture();
+        QVERIFY(QDir(fixtureDir).mkdir("other"));
+        QFile other(fixtureDir + "/other/z.jpg");
+        QVERIFY(other.open(QIODevice::WriteOnly));
+
+        EngineBridge bridgeA;
+        EngineBridge bridgeB;
+        QSignalSpy listedA(&bridgeA, &EngineBridge::dirListed);
+        QSignalSpy listedB(&bridgeB, &EngineBridge::dirListed);
+        QVERIFY(listedA.isValid());
+        QVERIFY(listedB.isValid());
+
+        QVERIFY(bridgeA.openDir(fixtureDir, 0, false));
+        QVERIFY(bridgeB.openDir(fixtureDir + "/other", 0, false));
+
+        QTRY_COMPARE_WITH_TIMEOUT(listedA.count(), 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(listedB.count(), 1, 10000);
+        QCOMPARE(listedA.at(0).at(0).toString(), fixtureDir);
+        QCOMPARE(listedB.at(0).at(0).toString(), fixtureDir + "/other");
+        // and the listings do not cross: each instance reports its own engine
+        QCOMPARE(bridgeA.fileCount(), 3);
+        QCOMPARE(bridgeB.fileCount(), 1);
+    }
+
+    void extensionListForJoinsFormatsAndEmptiesToAcceptAll() {
+        // the seam where an empty whitelist once meant "accept nothing"
+        // against the header's documented NULL contract
+        QCOMPARE(EngineBridge::extensionListFor({QByteArray("jpg"), QByteArray("png")}),
+                 QByteArray("jpg\npng"));
+        QCOMPARE(EngineBridge::extensionListFor({}), QByteArray());
+    }
+
+    void freshSettingsGuardIsolatesConfigState() {
+        // without the guard, every test had to reset the keys it depends on
+        // and the suite was silently order-sensitive
+        settings->setSortingMode(SORT_TIME);
+        QVERIFY(settings->sortingMode() == SORT_TIME);
+        {
+            FreshSettings fresh; // swaps the global to a defaults-only instance
+            QVERIFY(settings->sortingMode() == SORT_NAME);
+            settings->setSortingMode(SORT_SIZE_DESC);
+            QVERIFY(settings->sortingMode() == SORT_SIZE_DESC);
+        }
+        // the original instance and its in-memory state are back
+        QVERIFY(settings->sortingMode() == SORT_TIME);
     }
 };
 

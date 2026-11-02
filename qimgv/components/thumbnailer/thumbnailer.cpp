@@ -2,8 +2,10 @@
 
 #include "../directorymanager/enginebridge.h"
 
-Thumbnailer::Thumbnailer() {
-    connect(&EngineBridge::instance(), &EngineBridge::thumbNext,
+Thumbnailer::Thumbnailer(EngineBridge &bridge)
+    : mBridge(bridge)
+{
+    connect(&mBridge, &EngineBridge::thumbNext,
             this, &Thumbnailer::onThumbNext);
     cache = new ThumbnailCache();
     pool = new QThreadPool(this);
@@ -27,7 +29,7 @@ void Thumbnailer::clearTasks() {
     // pool->clear() kills queued runnables whose taskEnd will never fire —
     // report every dispatched request as done so the engine's in-flight
     // accounting doesn't leak, then drop the pending batch
-    auto &bridge = EngineBridge::instance();
+    auto &bridge = mBridge;
     for (auto it = dispatched.begin(); it != dispatched.end(); ++it)
         bridge.thumbDone(it.key(), it.value().first, it.value().second);
     dispatched.clear();
@@ -47,7 +49,7 @@ void Thumbnailer::getThumbnailAsync(QString path, int size, bool crop, bool forc
     // viewport priority lives in the engine; the runnable starts on ThumbNext.
     // `force` (cache bypass) is C++-side state — it only matters at decode time.
     mPendingForce.insert(key, force);
-    EngineBridge::instance().thumbRequest(path, size, crop, mBatchStart);
+    mBridge.thumbRequest(path, size, crop, mBatchStart);
     mBatchStart = false;
     dispatched.insert(path, qMakePair(size, crop));
 }
@@ -67,7 +69,7 @@ void Thumbnailer::onTaskStart(QString filePath, int size) {
 void Thumbnailer::onTaskEnd(std::shared_ptr<Thumbnail> thumbnail, QString filePath, bool crop) {
     runningTasks.remove(filePath, thumbnail->size());
     dispatched.remove(filePath, qMakePair(thumbnail->size(), crop));
-    EngineBridge::instance().thumbDone(filePath, thumbnail->size(), crop);
+    mBridge.thumbDone(filePath, thumbnail->size(), crop);
     emit thumbnailReady(thumbnail, filePath);
 }
 

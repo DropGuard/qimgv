@@ -13,22 +13,16 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-namespace {
-
-// '\n'-joined extension whitelist, sourced from the deployed QImageReader
-// plugins — the same list Settings::supportedFormatsRegex() builds its
-// pattern from. Empty means "accept everything" (FFI contract: NULL).
-QByteArray extensionList() {
-    if (!settings)
-        return QByteArray();
+QByteArray EngineBridge::extensionListFor(const QList<QByteArray> &formats) {
+    // the '\n'-joined extension whitelist for the engine, sourced from the
+    // deployed QImageReader plugins — the same list
+    // Settings::supportedFormatsRegex() builds its pattern from. Empty means
+    // "accept everything" (FFI contract: NULL).
     QStringList out;
-    const auto formats = settings->supportedFormats();
     for (const auto &f : formats)
         out << QString::fromUtf8(f);
     return out.join('\n').toUtf8();
 }
-
-} // namespace
 
 void EngineBridge::notifyCb(void *user) {
     // Runs on an engine thread. eventfd writes coalesce; the read side drains.
@@ -45,13 +39,14 @@ EngineBridge &EngineBridge::instance() {
     return bridge;
 }
 
-EngineBridge::EngineBridge() {
+EngineBridge::EngineBridge(QObject *parent) : QObject(parent) {
     eventFd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (eventFd == -1) {
         qWarning() << "[EngineBridge] eventfd failed:" << std::strerror(errno);
         return;
     }
-    const QByteArray exts = extensionList();
+    const QByteArray exts = settings ? extensionListFor(settings->supportedFormats())
+                                     : QByteArray();
     engine = qimgv_engine_new(&EngineBridge::notifyCb, &eventFd, 2,
                               exts.isEmpty() ? nullptr : exts.constData());
     if (!engine) {

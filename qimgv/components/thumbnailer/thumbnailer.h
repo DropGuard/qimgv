@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QThreadPool>
+#include "components/directorymanager/enginebridge.h"
 #include "components/thumbnailer/thumbnailerrunnable.h"
 #include "components/cache/thumbnailcache.h"
 #include "settings.h"
@@ -9,7 +10,9 @@ class Thumbnailer : public QObject
 {
     Q_OBJECT
 public:
-    explicit Thumbnailer();
+    // The bridge is injectable so tests can drive a thumbnailer against an
+    // isolated engine; production keeps using the process-wide instance.
+    explicit Thumbnailer(EngineBridge &bridge = EngineBridge::instance());
     ~Thumbnailer();
     static std::shared_ptr<Thumbnail> getThumbnail(QString filePath, int size);
     void clearTasks();
@@ -19,6 +22,7 @@ public slots:
     void getThumbnailAsync(QString path, int size, bool crop, bool force);
 
 private:
+    EngineBridge &mBridge;
     ThumbnailCache *cache;
     QThreadPool *pool;
     void startThumbnailerThread(QString filePath, int size, bool crop, bool force);

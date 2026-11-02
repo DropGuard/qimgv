@@ -23,6 +23,11 @@ public:
     };
 
     static EngineBridge &instance();
+    // Construction is public: the class is instance-safe (each object owns its
+    // engine, eventfd and notifier), and tests need isolated bridges — the
+    // global instance's watch state would otherwise force every test into
+    // unique-directory workarounds. Production keeps using instance().
+    explicit EngineBridge(QObject *parent = nullptr);
     ~EngineBridge() override;
 
     EngineBridge(EngineBridge const &) = delete;
@@ -49,6 +54,12 @@ public:
     static bool parseListing(const QByteArray &arena, std::vector<EngineEntry> &files,
                              std::vector<EngineEntry> &dirs);
 
+    // Joins the engine's extension whitelist wire format ('\n'-separated).
+    // Pure: the formats come in, so tests can pin the seam where an empty
+    // list once meant "accept nothing" against the documented NULL contract.
+    // An empty result means "accept everything" (qimgv_engine_new's NULL).
+    static QByteArray extensionListFor(const QList<QByteArray> &formats);
+
     static bool supportsWatching();
     bool includePath(const QString &path);
     void stopWatch();
@@ -66,7 +77,6 @@ signals:
     void thumbNext(const QString &path, int size, bool crop);
 
 private:
-    EngineBridge();
     static void notifyCb(void *user);
 
 private slots:

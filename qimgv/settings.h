@@ -101,6 +101,10 @@ class Settings : public QObject
     Q_OBJECT
 public:
     static Settings* getInstance();
+    // Direct construction is allowed: each instance binds its own QSettings
+    // identity, so a test can run against an isolated config. The application
+    // keeps using getInstance().
+    explicit Settings(QObject *parent = nullptr);
     ~Settings();
     QStringList supportedMimeTypes();
     QList<QByteArray> supportedFormats();
@@ -308,10 +312,10 @@ public:
     bool showHiddenFiles();
     void setShowHiddenFiles(bool mode);
 
-private:
-    explicit Settings(QObject *parent = nullptr);
-    QSettings *settingsConf, *stateConf, *themeConf;
-    QDir *mTmpDir, *mThumbCacheDir, *mConfDir;
+private:    // null-initialized: a directly-constructed instance is safe to destroy
+    // even if its cache setup never ran (getInstance calls setupCache())
+    QSettings *settingsConf = nullptr, *stateConf = nullptr, *themeConf = nullptr;
+    QDir *mTmpDir = nullptr, *mThumbCacheDir = nullptr, *mConfDir = nullptr;
     ColorScheme mColorScheme;
     QMultiMap<QByteArray, QByteArray> mVideoFormatsMap; // [mimetype, format]
     void loadTheme();

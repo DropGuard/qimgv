@@ -24,10 +24,11 @@
 #include "components/scriptmanager/scriptmanager.h"
 #include "utils/actions.h"
 #include "utils/inputmap.h"
+#include "testhelpers.h"
 
 class TestCoreNav : public QObject {
     Q_OBJECT
-    QTemporaryDir homeDir;
+    IsolatedHome home;
     QString base, alpha, beta;
 
     static bool sawDir(const QSignalSpy &spy, const QString &dir, int from = 0) {
@@ -45,11 +46,8 @@ class TestCoreNav : public QObject {
 
 private slots:
     void initTestCase() {
-        // isolate Settings/QStandardPaths from the real user config
-        QVERIFY(homeDir.isValid());
-        qputenv("HOME", homeDir.path().toUtf8());
-        QCoreApplication::setOrganizationName("qimgv");
-        QCoreApplication::setApplicationName("qimgv");
+        // IsolatedHome redirected HOME and the config identity
+        QVERIFY(home.path() != nullptr);
 
         // the same globals main.cpp sets, in the same order
         inputMap = InputMap::getInstance();
@@ -61,7 +59,7 @@ private slots:
         QVERIFY(settings != nullptr);
         QVERIFY(actionManager != nullptr);
 
-        base = QDir(homeDir.path()).filePath("nav");
+        base = QDir(home.path()).filePath("nav");
         alpha = QDir(base).filePath("alpha");
         beta = QDir(base).filePath("beta");
         QVERIFY(QDir().mkpath(alpha));
