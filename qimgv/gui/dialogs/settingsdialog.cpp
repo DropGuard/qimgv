@@ -6,6 +6,43 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
     ui(new Ui::SettingsDialog)
 {
     ui->setupUi(this);
+    mChecks = {
+        {ui->loopSlideshowCheckBox, &Settings::loopSlideshow, &Settings::setLoopSlideshow},
+        {ui->fullscreenCheckBox, &Settings::fullscreenMode, &Settings::setFullscreenMode},
+        {ui->videoPlaybackCheckBox, &Settings::videoPlayback, &Settings::setVideoPlayback},
+        {ui->playSoundsCheckBox, &Settings::playVideoSounds, &Settings::setPlayVideoSounds},
+        {ui->enablePanelCheckBox, &Settings::panelEnabled, &Settings::setPanelEnabled},
+        {ui->panelFullscreenOnlyCheckBox, &Settings::panelFullscreenOnly, &Settings::setPanelFullscreenOnly},
+        {ui->squareThumbnailsCheckBox, &Settings::squareThumbnails, &Settings::setSquareThumbnails},
+        {ui->transparencyGridCheckBox, &Settings::transparencyGrid, &Settings::setTransparencyGrid},
+        {ui->showHiddenFilesCheckBox, &Settings::showHiddenFiles, &Settings::setShowHiddenFiles},
+        {ui->enableSmoothScrollCheckBox, &Settings::enableSmoothScroll, &Settings::setEnableSmoothScroll},
+        {ui->usePreloaderCheckBox, &Settings::usePreloader, &Settings::setUsePreloader},
+        {ui->useThumbnailCacheCheckBox, &Settings::useThumbnailCache, &Settings::setUseThumbnailCache},
+        {ui->smoothUpscalingCheckBox, &Settings::smoothUpscaling, &Settings::setSmoothUpscaling},
+        {ui->expandImageCheckBox, &Settings::expandImage, &Settings::setExpandImage},
+        {ui->smoothAnimatedImagesCheckBox, &Settings::smoothAnimatedImages, &Settings::setSmoothAnimatedImages},
+        {ui->blurBackgroundCheckBox, &Settings::blurBackground, &Settings::setBlurBackground},
+        {ui->confirmDeleteCheckBox, &Settings::confirmDelete, &Settings::setConfirmDelete},
+        {ui->confirmTrashCheckBox, &Settings::confirmTrash, &Settings::setConfirmTrash},
+        {ui->unlockMinZoomCheckBox, &Settings::unlockMinZoom, &Settings::setUnlockMinZoom},
+        {ui->trackpadDetectionCheckBox, &Settings::trackpadDetection, &Settings::setTrackpadDetection},
+        {ui->clickableEdgesCheckBox, &Settings::clickableEdges, &Settings::setClickableEdges},
+        {ui->clickableEdgesVisibleCheckBox, &Settings::clickableEdgesVisible, &Settings::setClickableEdgesVisible},
+        {ui->showInfoBarFullscreen, &Settings::infoBarFullscreen, &Settings::setInfoBarFullscreen},
+        {ui->showInfoBarWindowed, &Settings::infoBarWindowed, &Settings::setInfoBarWindowed},
+        {ui->showExtendedInfoTitle, &Settings::windowTitleExtendedInfo, &Settings::setWindowTitleExtendedInfo},
+        {ui->cursorAutohideCheckBox, &Settings::cursorAutohide, &Settings::setCursorAutohide},
+        {ui->keepFitModeCheckBox, &Settings::keepFitMode, &Settings::setKeepFitMode},
+        {ui->saveOverlayCheckBox, &Settings::showSaveOverlay, &Settings::setShowSaveOverlay},
+        {ui->unloadThumbsCheckBox, &Settings::unloadThumbs, &Settings::setUnloadThumbs},
+        {ui->animatedJxlCheckBox, &Settings::jxlAnimation, &Settings::setJxlAnimation},
+        {ui->autoResizeWindowCheckBox, &Settings::autoResizeWindow, &Settings::setAutoResizeWindow},
+        {ui->panelCenterSelectionCheckBox, &Settings::panelCenterSelection, &Settings::setPanelCenterSelection},
+        {ui->useFixedZoomLevelsCheckBox, &Settings::useFixedZoomLevels, &Settings::setUseFixedZoomLevels},
+        {ui->pinPanelCheckBox, &Settings::panelPinned, &Settings::setPanelPinned},
+    };
+
     this->setWindowTitle(tr("Preferences — ") + qApp->applicationName());
 
     ui->shortcutsTableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);   
@@ -164,6 +201,9 @@ void SettingsDialog::setupSidebar() {
 }
 //------------------------------------------------------------------------------
 void SettingsDialog::readSettings() {
+    // checkbox bindings: one declaration, both directions
+    for(const CheckBinding &b : mChecks)
+        b.box->setChecked((settings->*b.get)());
     ui->loopSlideshowCheckBox->setChecked(settings->loopSlideshow());
     ui->videoPlaybackCheckBox->setChecked(settings->videoPlayback());
     ui->videoPlaybackGroupContents->setEnabled(settings->videoPlayback());
@@ -299,6 +339,8 @@ void SettingsDialog::saveSettings() {
     if(QThreadPool::globalInstance()->activeThreadCount()) {
         QThreadPool::globalInstance()->waitForDone();
     }
+    for(const CheckBinding &b : mChecks)
+        (settings->*b.set)(b.box->isChecked());
 
     settings->setLoopSlideshow(ui->loopSlideshowCheckBox->isChecked());
     settings->setFullscreenMode(ui->fullscreenCheckBox->isChecked());

@@ -13,6 +13,7 @@ enum ColorSchemes {
     COLORS_CUSTOMIZED
 };
 
+
 struct BaseColorScheme {
     int tid;
     QColor background;
@@ -70,6 +71,33 @@ public:
 
 private:
     void createColorVariants();
+};
+
+// The declarative table of theme colors: one row per persisted color role.
+// loadTheme/saveTheme loop over it; a junk color from a hand-edited theme
+// file falls back to the row default (same contract as settings_table.h).
+// Both member pointers ride together because ColorScheme re-declares the
+// base roles instead of inheriting them.
+struct ThemeColorDesc {
+    const char *key;
+    const char *def;
+    QColor BaseColorScheme::*base;
+    QColor ColorScheme::*scheme;
+};
+
+inline constexpr ThemeColorDesc kThemeColors[] = {
+    {"background",            "#1a1a1a", &BaseColorScheme::background,            &ColorScheme::background},
+    {"background_fullscreen", "#1a1a1a", &BaseColorScheme::background_fullscreen, &ColorScheme::background_fullscreen},
+    {"text",                  "#b6b6b6", &BaseColorScheme::text,                  &ColorScheme::text},
+    {"icons",                 "#a4a4a4", &BaseColorScheme::icons,                 &ColorScheme::icons},
+    {"widget",                "#252525", &BaseColorScheme::widget,                &ColorScheme::widget},
+    {"widget_border",         "#2c2c2c", &BaseColorScheme::widget_border,         &ColorScheme::widget_border},
+    {"accent",                "#8c9b81", &BaseColorScheme::accent,                &ColorScheme::accent},
+    {"folderview",            "#242424", &BaseColorScheme::folderview,            &ColorScheme::folderview},
+    {"folderview_topbar",     "#383838", &BaseColorScheme::folderview_topbar,     &ColorScheme::folderview_topbar},
+    {"scrollbar",             "#5a5a5a", &BaseColorScheme::scrollbar,             &ColorScheme::scrollbar},
+    {"overlay_text",          "#d2d2d2", &BaseColorScheme::overlay_text,          &ColorScheme::overlay_text},
+    {"overlay",               "#1a1a1a", &BaseColorScheme::overlay,               &ColorScheme::overlay},
 };
 
 class ThemeStore {

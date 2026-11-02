@@ -24,7 +24,11 @@
 #include "components/scriptmanager/scriptmanager.h"
 #include "utils/actions.h"
 #include "utils/inputmap.h"
+#include "gui/dialogs/settingsdialog.h"
+#include "themestore.h"
 #include "testhelpers.h"
+#include <QCheckBox>
+#include <QSettings>
 
 class TestCoreNav : public QObject {
     Q_OBJECT
@@ -154,6 +158,40 @@ private slots:
         QCOMPARE(listed.count(), before);
         QVERIFY(!sawDir(listed, beta, before));
         QCOMPARE(core.currentFilePath(), QDir(alpha).filePath("a.png"));
+    }
+
+    void themeColorRowsSurviveJunk() {
+        FreshSettings fresh;
+        QSettings theme(QCoreApplication::organizationName(), "theme");
+        theme.beginGroup("Colors");
+        theme.setValue("background", "banana");  // junk -> default
+        theme.setValue("accent", "#ff0000");     // valid -> passes through
+        theme.endGroup();
+        theme.sync();
+        settings->loadTheme();
+        QCOMPARE(settings->colorScheme().background, QColor("#1a1a1a"));
+        QCOMPARE(settings->colorScheme().accent, QColor("#ff0000"));
+    }
+
+    void dialogCheckboxBindingsAreSymmetric() {
+        FreshSettings fresh;
+        settings->setConfirmDelete(false);
+
+        SettingsDialog dlg;
+        auto *cb = dlg.findChild<QCheckBox *>("confirmDeleteCheckBox");
+        QVERIFY(cb != nullptr);
+        // read half: the widget reflects the setting
+        QCOMPARE(cb->isChecked(), false);
+        // save half: the widget's state lands in the setting
+        cb->setChecked(true);
+        dlg.saveSettings();
+        QCOMPARE(settings->confirmDelete(), true);
+        // and an untouched binding round-trips without drift
+        settings->setTrackpadDetection(false);
+        dlg.readSettings();
+        QCOMPARE(dlg.findChild<QCheckBox *>("trackpadDetectionCheckBox")->isChecked(), false);
+        dlg.saveSettings();
+        QCOMPARE(settings->trackpadDetection(), false);
     }
 };
 

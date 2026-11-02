@@ -19,6 +19,7 @@
 #include "components/actionmanager/actionmanager.h"
 
 namespace Ui {
+class QCheckBox;
 class SettingsDialog;
 }
 
@@ -33,12 +34,14 @@ public:
 
 public slots:
     int exec();
+    // both directions of the binding table; public so tests can drive them
+    void readSettings();
+    void saveSettings();
 
 private:
     void readColorScheme();
     void setColorScheme(ColorScheme colors);
     void saveColorScheme();
-    void readSettings();
     void readShortcuts();
     void readScripts();
     Ui::SettingsDialog *ui;
@@ -53,8 +56,15 @@ private:
     QMap<QString, QString> langs; // <"en_US", "English">
     QButtonGroup fitModeGrp, folderEndGrp, zoomIndGrp;
 
+private:
+    struct CheckBinding {
+        QCheckBox *box;
+        bool (Settings::*get)();
+        void (Settings::*set)(bool);
+    };
+    QVector<CheckBinding> mChecks;
+
 private slots:
-    void saveSettings();
     void saveSettingsAndClose();
 
     void addScript();

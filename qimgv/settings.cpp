@@ -289,19 +289,13 @@ void Settings::loadTheme() {
     } else {
         BaseColorScheme base;
         themeConf->beginGroup("Colors");
-        base.background            = QColor(themeConf->value("background",            "#1a1a1a").toString());
-        base.background_fullscreen = QColor(themeConf->value("background_fullscreen", "#1a1a1a").toString());
-        base.text                  = QColor(themeConf->value("text",                  "#b6b6b6").toString());
-        base.icons                 = QColor(themeConf->value("icons",                 "#a4a4a4").toString());
-        base.widget                = QColor(themeConf->value("widget",                "#252525").toString());
-        base.widget_border         = QColor(themeConf->value("widget_border",         "#2c2c2c").toString());
-        base.accent                = QColor(themeConf->value("accent",                "#8c9b81").toString());
-        base.folderview            = QColor(themeConf->value("folderview",            "#242424").toString());
-        base.folderview_topbar     = QColor(themeConf->value("folderview_topbar",     "#383838").toString());
-        base.scrollbar             = QColor(themeConf->value("scrollbar",             "#5a5a5a").toString());
-        base.overlay_text          = QColor(themeConf->value("overlay_text",          "#d2d2d2").toString());
-        base.overlay               = QColor(themeConf->value("overlay",               "#1a1a1a").toString());
-        base.tid                   = themeConf->value("tid", "-1").toInt();
+    for(const ThemeColorDesc &row : kThemeColors) {
+        QColor c(themeConf->value(row.key, row.def).toString());
+        if(!c.isValid())
+            c = QColor(row.def); // junk from a hand-edited theme file
+        base.*row.base = c;
+    }
+    base.tid = themeConf->value("tid", "-1").toInt();
         themeConf->endGroup();
         setColorScheme(ColorScheme(base));
     }
@@ -310,19 +304,9 @@ void Settings::saveTheme() {
     if(useSystemColorScheme())
         return;
     themeConf->beginGroup("Colors");
-    themeConf->setValue("background",            mColorScheme.background.name());
-    themeConf->setValue("background_fullscreen", mColorScheme.background_fullscreen.name());
-    themeConf->setValue("text",                  mColorScheme.text.name());
-    themeConf->setValue("icons",                 mColorScheme.icons.name());
-    themeConf->setValue("widget",                mColorScheme.widget.name());
-    themeConf->setValue("widget_border",         mColorScheme.widget_border.name());
-    themeConf->setValue("accent",                mColorScheme.accent.name());
-    themeConf->setValue("folderview",            mColorScheme.folderview.name());
-    themeConf->setValue("folderview_topbar",     mColorScheme.folderview_topbar.name());
-    themeConf->setValue("scrollbar",             mColorScheme.scrollbar.name());
-    themeConf->setValue("overlay_text",          mColorScheme.overlay_text.name());
-    themeConf->setValue("overlay",               mColorScheme.overlay.name());
-    themeConf->setValue("tid",                   mColorScheme.tid);
+    for(const ThemeColorDesc &row : kThemeColors)
+        themeConf->setValue(row.key, (mColorScheme.*row.scheme).name());
+    themeConf->setValue("tid", mColorScheme.tid);
     themeConf->endGroup();
 }
 //------------------------------------------------------------------------------

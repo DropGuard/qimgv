@@ -102,6 +102,8 @@ class Settings : public QObject
     Q_OBJECT
 public:
     static Settings* getInstance();
+    // re-reads the theme from themeConf; public for tests and theme reloads
+    void loadTheme();
     // Typed access to the declarative table (settings_table.h): read with
     // default + conversion + clamp semantics, write raw. Public because the
     // table is the typed API; the named accessors are one-line wrappers.
@@ -324,7 +326,6 @@ private:    // null-initialized: a directly-constructed instance is safe to dest
     QDir *mTmpDir = nullptr, *mThumbCacheDir = nullptr, *mConfDir = nullptr;
     ColorScheme mColorScheme;
     QMultiMap<QByteArray, QByteArray> mVideoFormatsMap; // [mimetype, format]
-    void loadTheme();
     void saveTheme();
     void createColorVariants();
 
