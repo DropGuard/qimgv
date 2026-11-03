@@ -66,7 +66,7 @@ void VideoControls::setPlaybackDuration(int duration) {
     ui->positionLabel->setText("");
 }
 
-void VideoControls::setPlaybackPosition(int position) {
+void VideoControls::setPlaybackPosition(int pos) {
     if(position == lastPosition)
         return;
     QString positionStr;
@@ -90,14 +90,14 @@ void VideoControls::setPlaybackPosition(int position) {
     lastPosition = position;
 }
 
-void VideoControls::onPlaybackPaused(bool mode) {
+void VideoControls::onPlaybackPaused(bool paused) {
     if(mode)
         ui->pauseButton->setIconPath(":res/icons/common/buttons/videocontrols/play24.png");
     else
         ui->pauseButton->setIconPath(":res/icons/common/buttons/videocontrols/pause24.png");
 }
 
-void VideoControls::onVideoMuted(bool mode) {
+void VideoControls::onVideoMuted(bool muted) {
     if(mode)
         ui->muteButton->setIconPath(":res/icons/common/buttons/videocontrols/mute-on24.png");
     else

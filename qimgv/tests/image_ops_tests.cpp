@@ -98,7 +98,7 @@ private slots:
         auto reloaded = *savedAgain;
         QCOMPARE(reloaded->getImage()->size(), img.size());
         QCOMPARE(*reloaded->getImage(), img);
-        QCOMPARE((int)QDir(saveDir).entryList(QDir::Files).size(), 2);
+        QCOMPARE(static_cast<int>(QDir(saveDir).entryList(QDir::Files).size()), 2);
 
         settings->setJPEGSaveQuality(10);
         QVERIFY(imgStatic->save(saveDir + "/q10.jpg"));
@@ -108,7 +108,7 @@ private slots:
         qlonglong big = QFileInfo(saveDir + "/q95.jpg").size();
         QVERIFY2(small < big, "q10 jpeg should be smaller than q95 for noise");
         QVERIFY(imgStatic->save(saveDir + "/q10.jpg"));
-        QCOMPARE((int)QDir(saveDir).entryList(QDir::Files).size(), 4);
+        QCOMPARE(static_cast<int>(QDir(saveDir).entryList(QDir::Files).size()), 4);
     }
 
     void imageLibTransformsFollowTheConventions() {

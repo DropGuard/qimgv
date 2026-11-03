@@ -278,11 +278,11 @@ QString DirectoryManager::nextOfDir(const QString &dirPath) const {
 }
 
 bool DirectoryManager::checkFileRange(int index) const {
-    return index >= 0 && index < (int)fileEntryVec.size();
+    return index >= 0 && index < static_cast<int>(fileEntryVec.size());
 }
 
 bool DirectoryManager::checkDirRange(int index) const {
-    return index >= 0 && index < (int)dirEntryVec.size();
+    return index >= 0 && index < static_cast<int>(dirEntryVec.size());
 }
 
 unsigned long DirectoryManager::totalCount() const {

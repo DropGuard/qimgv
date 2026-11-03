@@ -738,8 +738,8 @@ void ImageViewerV2::mouseMoveZoom(QMouseEvent *event) {
 
 // scale at which current image fills the window
 void ImageViewerV2::updateFitWindowScale() {
-    float scaleFitX = (float) viewport()->width()  * dpr / pixmap->width();
-    float scaleFitY = (float) viewport()->height() * dpr / pixmap->height();
+    float scaleFitX = static_cast<float>(viewport()->width()) * dpr / pixmap->width();
+    float scaleFitY = static_cast<float>(viewport()->height()) * dpr / pixmap->height();
     if(scaleFitX < scaleFitY) {
         fitWindowScale = scaleFitX;
     } else {
@@ -753,7 +753,7 @@ void ImageViewerV2::updateFitWindowStretchScale() {
     if(!pixmap)
         return;
 
-    float scaleFitY = (float) viewport()->height() * dpr / pixmap->height();
+    float scaleFitY = static_cast<float>(viewport()->height()) * dpr / pixmap->height();
 
     // For "Fit in window (stretch)", we always use height-based scaling
     // This ensures the full image is always visible while stretching to fill the window height
@@ -786,7 +786,7 @@ void ImageViewerV2::updateMinScale() {
 void ImageViewerV2::fitWidth() {
     if(!pixmap)
         return;
-    float scaleX = (float)viewport()->width() * dpr / pixmap->width();
+    float scaleX = static_cast<float>(viewport()->width()) * dpr / pixmap->width();
     if(!expandImage && scaleX > 1.0f)
         scaleX = 1.0f;
     if(scaleX > expandLimit)
@@ -953,8 +953,8 @@ void ImageViewerV2::resizeEvent(QResizeEvent *event) {
 void ImageViewerV2::centerOnPixmap() {
     auto imgRect = pixmapItem.sceneBoundingRect();
     auto vport = mapToScene(viewport()->geometry()).boundingRect();
-    hs->setValue(pixmapItem.offset().x() - (int)(vport.width()  - imgRect.width())  / 2);
-    vs->setValue(pixmapItem.offset().y() - (int)(vport.height() - imgRect.height()) / 2);
+    hs->setValue(pixmapItem.offset().x() - static_cast<int>((vport.width()  - imgRect.width())  / 2));
+    vs->setValue(pixmapItem.offset().y() - static_cast<int>((vport.height() - imgRect.height()) / 2));
 }
 
 void ImageViewerV2::stopPosAnimation() {
@@ -1223,9 +1223,9 @@ void ImageViewerV2::centerIfNecessary() {
     auto imgRect = pixmapItem.sceneBoundingRect();
     auto vport = mapToScene(viewport()->geometry()).boundingRect();
     if(sz.width() <= viewport()->width())
-        hs->setValue(pixmapItem.offset().x() - (int)(vport.width()  - imgRect.width())  / 2);
+        hs->setValue(pixmapItem.offset().x() - static_cast<int>((vport.width()  - imgRect.width())  / 2));
     if(sz.height() <= viewport()->height())
-        vs->setValue(pixmapItem.offset().y() - (int)(vport.height() - imgRect.height()) / 2);
+        vs->setValue(pixmapItem.offset().y() - static_cast<int>((vport.height() - imgRect.height()) / 2));
 }
 
 void ImageViewerV2::snapToEdges() {

@@ -198,7 +198,7 @@ std::unique_ptr<QImage> ImageLib::scaled_CV(const std::shared_ptr<const QImage> 
         cv::resize(srcMat, dstMat, destSizeCv, 0, 0, filter);
         dest = QtOcv::mat2Image(dstMat, order, source->format());
     } else { // downscale
-        float scale = (float)destSize.width() / source->width();
+        float scale = static_cast<float>(destSize.width()) / source->width();
         if(scale < 0.5f && filter != cv::INTER_NEAREST) {
             if(filter == cv::INTER_CUBIC)
                 sharpen = 1;

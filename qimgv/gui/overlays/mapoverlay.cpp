@@ -235,11 +235,11 @@ void MapOverlay::updateMap(const QRectF &drawingRect) {
 
     float aspect = outerSz.width() / drawingRect.width();
 
-    float innerWidth = std::min((float) windowRect.width() * aspect,
-                                (float) outerSz.width());
+    float innerWidth = std::min(static_cast<float>(windowRect.width()) * aspect,
+                                static_cast<float>(outerSz.width()));
 
-    float innerHeight = std::min((float) windowRect.height() * aspect,
-                                 (float) outerSz.height());
+    float innerHeight = std::min(static_cast<float>(windowRect.height()) * aspect,
+                                 static_cast<float>(outerSz.height()));
 
     QSizeF innerSz(innerWidth, innerHeight);
     d->innerRect.setSize(innerSz);
@@ -247,8 +247,8 @@ void MapOverlay::updateMap(const QRectF &drawingRect) {
     d->xSpeedDiff = innerSz.width() / windowRect.width();
     d->ySpeedDiff = innerSz.height() / windowRect.height();
 
-    float x = (float) - drawingRect.left() * d->xSpeedDiff;
-    float y = (float) - drawingRect.top() * d->ySpeedDiff;
+    float x = static_cast<float>(-drawingRect.left()) * d->xSpeedDiff;
+    float y = static_cast<float>(-drawingRect.top()) * d->ySpeedDiff;
 
     d->moveInnerWidget(x, y);
     update();

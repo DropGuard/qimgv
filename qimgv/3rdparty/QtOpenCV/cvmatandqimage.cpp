@@ -362,7 +362,7 @@ cv::Mat image2Mat_shared(const QImage &img, MatColorOrder *order)
     default:
         return cv::Mat();
     }
-    return cv::Mat(img.height(), img.width(), CV_8UC(img.depth()/8), (uchar*)img.bits(), img.bytesPerLine());
+    return cv::Mat(img.height(), img.width(), CV_8UC(img.depth()/8), const_cast<uchar *>(img.bits()), img.bytesPerLine());
 }
 
 /* Convert  cv::Mat to QImage without data copy

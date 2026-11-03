@@ -461,12 +461,12 @@ void ThumbnailView::updateLayout() {
 void ThumbnailView::fitSceneToContents() {
     QPointF center;
     if(this->mOrientation == Qt::Vertical) {
-        int height = qMax((int)scene.itemsBoundingRect().height(), this->height());
+        int height = qMax(static_cast<int>(scene.itemsBoundingRect().height()), this->height());
         scene.setSceneRect(QRectF(0,0, this->width(), height));
         center = mapToScene(viewport()->rect().center());
         QGraphicsView::centerOn(0, center.y() + 1);
     } else {
-        int width = qMax((int)scene.itemsBoundingRect().width(), this->width());
+        int width = qMax(static_cast<int>(scene.itemsBoundingRect().width()), this->width());
         scene.setSceneRect(QRectF(0,0, width, this->height()));
         center = mapToScene(viewport()->rect().center());
         QGraphicsView::centerOn(center.x() + 1, 0);

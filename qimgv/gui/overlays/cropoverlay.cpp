@@ -59,7 +59,7 @@ void CropOverlay::setImageDrawRect(QRect _imageDrawRect) {
 }
 
 //------------------------------------------------------------------------------
-void CropOverlay::setImageScale(float scale) {
+void CropOverlay::setImageScale(float ratio) {
     this->scale = scale;
 }
 

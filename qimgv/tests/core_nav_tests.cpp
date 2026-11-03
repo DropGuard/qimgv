@@ -241,9 +241,9 @@ private slots:
         const QByteArray oldSession = qgetenv("DESKTOP_SESSION");
         qputenv("DESKTOP_SESSION", "twm");
 
-        QString base = QDir(home.path()).filePath("wp");
-        QVERIFY(QDir().mkpath(base));
-        QString img = QDir(base).filePath("w.png");
+        QString wpBase = QDir(home.path()).filePath("wp");
+        QVERIFY(QDir().mkpath(wpBase));
+        QString img = QDir(wpBase).filePath("w.png");
         writeImage(img);
 
         Core core;

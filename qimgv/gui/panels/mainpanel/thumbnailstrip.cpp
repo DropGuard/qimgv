@@ -12,7 +12,7 @@ ThumbnailStrip::ThumbnailStrip(QWidget *parent) : ThumbnailView(Qt::Horizontal, 
 void ThumbnailStrip::updateScrollbarIndicator() {
     if(!thumbnails.count() || lastSelected() == -1)
         return;
-    qreal itemCenter = (qreal)(lastSelected() + 0.5) / itemCount();
+    qreal itemCenter = static_cast<qreal>(lastSelected() + 0.5) / itemCount();
     if(scrollBar->orientation() == Qt::Horizontal)
         indicator = QRect(scrollBar->width() * itemCenter - indicatorSize, 2, indicatorSize, scrollBar->height() - 4);
     else

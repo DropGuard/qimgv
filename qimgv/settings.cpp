@@ -176,11 +176,11 @@ void Settings::loadStylesheet() {
         auto fnt = QGuiApplication::font();
         QFontMetrics fm(fnt);
         // todo: use precise values for ~9-11 point sizes
-        int font_small = qMax((int)(fnt.pointSize() * 0.9f), 8);
-        int font_large = (int)(fnt.pointSize() * 1.8f);
+        int font_small = qMax(static_cast<int>(fnt.pointSize() * 0.9f), 8);
+        int font_large = static_cast<int>(fnt.pointSize() * 1.8f);
         int text_height = fm.height();
-        int text_padding = (int)(text_height * 0.10f);
-        int text_padding_large = (int)(text_height * 0.25f);
+        int text_padding = static_cast<int>(text_height * 0.10f);
+        int text_padding_large = static_cast<int>(text_height * 0.25f);
 
         // folderview top panel item sizes
         int top_panel_v_margin = 4;
@@ -198,7 +198,7 @@ void Settings::loadStylesheet() {
 
         // pseudo-dpi to scale some widget widths
         int text_height_base = 22;
-        qreal pDpr = qMax( ((qreal)(text_height) / text_height_base), 1.0);
+        qreal pDpr = qMax( (static_cast<qreal>(text_height) / text_height_base), 1.0);
         int context_menu_width = 212 * pDpr;
         int context_menu_button_height = 32 * pDpr;
         int rename_overlay_width = 380 * pDpr;

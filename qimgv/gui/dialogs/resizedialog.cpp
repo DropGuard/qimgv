@@ -1,7 +1,7 @@
 #include "resizedialog.h"
 #include "ui_resizedialog.h"
 
-ResizeDialog::ResizeDialog(QSize originalSize,  QWidget *parent) :
+ResizeDialog::ResizeDialog(QSize initialSize,  QWidget *parent) :
     QDialog(parent),
     ui(new Ui::ResizeDialog),
     lastEdited(0)
