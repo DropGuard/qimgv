@@ -40,7 +40,7 @@ private:
     void setIcon(FloatingMessageIcon icon);
 
 protected:
-    void mousePressEvent(QMouseEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
 
 private slots:
     void readSettings();

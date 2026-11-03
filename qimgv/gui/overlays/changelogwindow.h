@@ -26,8 +26,8 @@ public slots:
     void hide();
 
 protected:
-    void paintEvent(QPaintEvent *);
-    void wheelEvent(QWheelEvent *);
+    void paintEvent(QPaintEvent *) override;
+    void wheelEvent(QWheelEvent *) override;
     void keyPressEvent(QKeyEvent *);
 
 private:

@@ -18,8 +18,8 @@ public:
     TriggerMode triggerMode();
 
 protected:
-    void mousePressEvent(QMouseEvent *event);
-    void mouseReleaseEvent(QMouseEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     QString actionName;
     TriggerMode mTriggerMode;
 };

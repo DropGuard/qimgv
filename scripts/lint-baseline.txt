@@ -8,7 +8,7 @@
 #
 # Families at zero are NOT baselined: they are -Werror in the build itself
 # (Wuse-after-free, Wsign-compare), which is where they belong.
-gcc suggest-override 198
+gcc suggest-override 190
 gcc conversion 86
 gcc float-conversion 55
 gcc old-style-cast 30
@@ -20,7 +20,6 @@ clazy connect-3arg-lambda 14
 clazy range-loop-reference 9
 clazy qproperty-without-notify 3
 clazy detaching-temporary 3
-clazy overridden-signal 2
 clazy container-anti-pattern 2
 clazy no-module-include 1
 clazy use-static-qregularexpression 2
@@ -28,7 +27,7 @@ clazy const-signal-or-slot 1
 clazy non-pod-global-static 1
 clazy connect-by-name 1
 cppcheck passedByValue 120
-cppcheck duplInheritedMember 47
+cppcheck duplInheritedMember 29
 cppcheck passedByValueCallback 36
 cppcheck returnByReference 10
 cppcheck iterateByValue 5

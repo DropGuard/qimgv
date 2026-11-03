@@ -31,7 +31,7 @@ signals:
 
 protected:
     void keyPressEvent(QKeyEvent *event);
-    void mousePressEvent(QMouseEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
     void recalculateGeometry();
 
 private slots:

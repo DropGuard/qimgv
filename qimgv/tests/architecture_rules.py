@@ -149,6 +149,60 @@ if not any(f.startswith('R5 cannot run') for f in failures):
         elif c[key] != r[key]:
             failures.append(f"R5 ABI layout disagrees: {where} is {c[key]} in qimgv_engine.h, {r[key]} in lib.rs")
 
+# Rule 6: no class re-declares a signal an ancestor already declares. Qt gives the
+# derived class its OWN signal when the name is re-declared, so a consumer that
+# connects through &Base::sig silently receives nothing — measured, not theorised:
+# a base-pointer connection to a re-declared signal got 0 deliveries while the
+# derived one got 1. That is how "video finished, advance" was dead: the proxy
+# re-declared playbackFinished while ViewerWidget connects via
+# &VideoPlayer::playbackFinished (viewerwidget.cpp:53).
+BASE_RE = re.compile(r'^\s*class\s+(\w+)\b[^;{]*?:\s*((?:\w+\s*:\s*)?public\s+\w+(?:\s*,\s*public\s+\w+)*)')
+SIG_RE = re.compile(r'^\s*(?:void|[A-Za-z_]\w*<[^>]*>)\s+(\w+)\s*\([^;]*\)\s*;')
+MODE_END = re.compile(r'^\s*(public|protected|private|signals|Q_SIGNALS|slots)\b')
+signals_of, parents = {}, {}
+for root in (SRC, os.path.join(ROOT, 'plugins')):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in ('3rdparty', 'res', 'translations')]
+        for f in filenames:
+            if not f.endswith('.h'):
+                continue
+            path = os.path.join(dirpath, f)
+            rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
+            scanned['R6'] = scanned.get('R6', 0) + 1
+            current, in_signals = None, False
+            for line in text_of(path).splitlines():
+                m = BASE_RE.match(line)
+                if m:
+                    current = m.group(1)
+                    signals_of.setdefault(current, set())
+                    parents.setdefault(current, set())
+                    parents[current] |= {b.strip().split()[-1] for b in m.group(2).split(',')}
+                    in_signals = False
+                    continue
+                if not current:
+                    continue
+                e = MODE_END.match(line)
+                if e:
+                    in_signals = e.group(1) in ('signals', 'Q_SIGNALS')
+                    continue
+                if in_signals:
+                    s = SIG_RE.match(line)
+                    if s:
+                        signals_of[current].add(s.group(1))
+
+def ancestors(name, seen=()):
+    for parent in parents.get(name, ()):
+        if parent in seen:
+            continue
+        yield parent
+        yield from ancestors(parent, seen + (parent,))
+
+for name, sigs in sorted(signals_of.items()):
+    for parent in sorted(set(ancestors(name))):
+        for sig in sorted(sigs & signals_of.get(parent, set())):
+            failures.append(f"R6 signal re-declared: {name}::{sig}() also exists in {parent} — "
+                            f"connections made through &{parent}::{sig} will never fire")
+
 if failures:
     print("architecture violations:")
     for f in failures:

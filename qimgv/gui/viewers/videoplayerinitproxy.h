@@ -59,7 +59,9 @@ private:
 private slots:
     void onSettingsChanged();
 
-signals:
-    void playbackFinished();
+// playbackFinished() comes from VideoPlayer — re-declaring it here would
+// make this class' signal a different one, and consumers connect through
+// &VideoPlayer::playbackFinished (viewerwidget.cpp:53). A re-declaration is
+// silent: the base-pointer connection receives nothing. Rule R6.
 
 };
