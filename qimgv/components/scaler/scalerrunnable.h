@@ -18,7 +18,9 @@ public:
     void run();
 signals:
     void started(ScalerRequest);
-    void finished(QImage*, ScalerRequest);
+    // the result is shared, not handed over as a naked pointer: this signal is
+    // emitted on a pool thread
+    void finished(std::shared_ptr<const QImage>, ScalerRequest);
 
 private:
     ScalerRequest req;

@@ -13,11 +13,11 @@ void ScalerRunnable::run() {
     emit started(req);
     //QElapsedTimer t;
     //t.start();
-    QImage *scaled = nullptr;
+    std::shared_ptr<const QImage> scaled;
     if(req.filter == 0 || (req.size.width() > req.image->width() && !req.smoothUpscaling)) {
-        scaled = ImageLib::scaled(req.image->getImage(), req.size, QI_FILTER_NEAREST).release();
+        scaled = std::shared_ptr<const QImage>(ImageLib::scaled(req.image->getImage(), req.size, QI_FILTER_NEAREST));
     } else {
-        scaled = ImageLib::scaled(req.image->getImage(), req.size, req.filter).release();
+        scaled = std::shared_ptr<const QImage>(ImageLib::scaled(req.image->getImage(), req.size, req.filter));
     }
     //qDebug() << ">> " << req.size << ": " << t.elapsed();
     emit finished(scaled, req);

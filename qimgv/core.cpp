@@ -1215,11 +1215,11 @@ void Core::scalingRequest(QSize size, ScalingFilter filter) {
 }
 
 // TODO: don't use connect? otherwise there is no point using unique_ptr
-void Core::onScalingFinished(QPixmap *scaled, ScalerRequest req) {
+void Core::onScalingFinished(QPixmap scaled, ScalerRequest req) {
+    // the viewer takes a unique_ptr, so hand it one from a value instead of
+    // passing a naked QPixmap* and hoping somebody deletes it
     if(state.hasActiveImage /* TODO: a better fix > */ && req.path == state.currentFilePath) {
-        mw->onScalingFinished(std::unique_ptr<QPixmap>(scaled));
-    } else {
-        delete scaled;
+        mw->onScalingFinished(std::make_unique<QPixmap>(std::move(scaled)));
     }
 }
 

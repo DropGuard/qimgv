@@ -90,7 +90,7 @@ void Scaler::onTaskStart(ScalerRequest req) {
     sem->release(1);
 }
 
-void Scaler::onTaskFinish(QImage *scaled, ScalerRequest req) {
+void Scaler::onTaskFinish(std::shared_ptr<const QImage> scaled, ScalerRequest req) {
     sem->acquire(1);
     running = false;
     if(buffered && bufferedRequest.image == req.image) {
@@ -101,7 +101,7 @@ void Scaler::onTaskFinish(QImage *scaled, ScalerRequest req) {
     }
     if(buffered) {
       //qDebug() << "onTaskFinish - startingBuffered: " << bufferedRequest.string;
-        delete scaled;
+        // the discarded result frees itself
         //startRequest(bufferedRequest);
         emit startBufferedRequest();
         sem->release(1);
@@ -115,11 +115,12 @@ void Scaler::slotStartBufferedRequest() {
     startRequest(bufferedRequest);
 }
 
-void Scaler::slotForwardScaledResult(QImage *image, ScalerRequest req) {
-    QPixmap *pixmap = new QPixmap();
-    *pixmap = QPixmap::fromImage(*image);
-    delete image;
-    emit scalingFinished(pixmap, req);
+void Scaler::slotForwardScaledResult(std::shared_ptr<const QImage> image, ScalerRequest req) {
+    if(!image)
+        return;
+    // QPixmap is implicitly shared, so the consumer can take it by value and the
+    // question of who deletes it disappears with the pointer
+    emit scalingFinished(QPixmap::fromImage(*image), req);
 }
 
 void Scaler::startRequest(ScalerRequest req) {
