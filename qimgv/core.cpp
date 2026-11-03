@@ -991,7 +991,10 @@ void Core::edit_template(bool save, QString action, const std::function<QImage*(
         auto img = getEditableImage(path);
         if(!img)
             continue;
-        img->setEditedImage(std::unique_ptr<const QImage>( editFunc(img->getImage(), std::forward<Args>(as)...) ));
+        // no std::forward here: the pack is used once per selected file, and a
+        // forwarded rvalue is empty from the second file on. Every current call
+        // site passes lvalues, so forwarding bought nothing but the trap.
+        img->setEditedImage(std::unique_ptr<const QImage>( editFunc(img->getImage(), as...) ));
         model->updateImage(path, std::static_pointer_cast<Image>(img));
         if(save) {
             saveFile(path);
