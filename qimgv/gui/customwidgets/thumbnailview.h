@@ -37,7 +37,7 @@ class ThumbnailView : public QGraphicsView, public IDirectoryView {
     Q_INTERFACES(IDirectoryView)
 public:
     ThumbnailView(Qt::Orientation orient, QWidget *parent = nullptr);
-    virtual void setDirectoryPath(QString path) override;
+    void setDirectoryPath(QString path) override;
     void select(QList<int>) override;
     void select(int) override;
     QList<int> selection() override;
@@ -58,13 +58,13 @@ public slots:
 
     void addItem();
 
-    virtual void focusOnSelection() = 0;
-    virtual void populate(int count) override;
-    virtual void setThumbnail(int pos, std::shared_ptr<Thumbnail> thumb) override;
-    virtual void insertItem(int index) override;
-    virtual void removeItem(int index) override;
-    virtual void reloadItem(int index) override;
-    virtual void setDragHover(int index) override;
+    void focusOnSelection() override = 0;
+    void populate(int count) override;
+    void setThumbnail(int pos, std::shared_ptr<Thumbnail> thumb) override;
+    void insertItem(int index) override;
+    void removeItem(int index) override;
+    void reloadItem(int index) override;
+    void setDragHover(int index) override;
 
 signals:
     void itemActivated(int) override;

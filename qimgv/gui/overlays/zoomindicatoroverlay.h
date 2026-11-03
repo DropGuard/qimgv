@@ -15,7 +15,7 @@ public:
     void show();
     void show(int duration);
 protected:
-    virtual void recalculateGeometry();
+    void recalculateGeometry() override;
 
 private:
     QFontMetrics *fm;

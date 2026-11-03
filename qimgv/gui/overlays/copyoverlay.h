@@ -22,7 +22,7 @@ class CopyOverlay : public OverlayWidget {
     Q_OBJECT
 public:
     CopyOverlay(FloatingWidgetContainer *parent);
-    ~CopyOverlay();
+    ~CopyOverlay() override;
     void saveSettings();    
     void setDialogMode(CopyOverlayMode _mode);
     CopyOverlayMode operationMode();
@@ -36,9 +36,9 @@ signals:
     void moveRequested(QString);
 
 protected:
-    void keyPressEvent(QKeyEvent *event);
+    void keyPressEvent(QKeyEvent *event) override;
 
-    bool focusNextPrevChild(bool);
+    bool focusNextPrevChild(bool) override;
 private slots:
     void requestFileOperation(QString path);
     void readSettings();

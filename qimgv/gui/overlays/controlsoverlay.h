@@ -25,7 +25,7 @@ private:
     void fitToContents();
 
 protected:
-    virtual void recalculateGeometry();
-    void enterEvent(QEnterEvent *event);
-    void leaveEvent(QEvent *event);
+    void recalculateGeometry() override;
+    void enterEvent(QEnterEvent *event) override;
+    void leaveEvent(QEvent *event) override;
 };

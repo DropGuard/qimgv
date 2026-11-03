@@ -15,7 +15,7 @@ class ScalerRunnable : public QObject, public QRunnable
 public:
     explicit ScalerRunnable();
     void setRequest(ScalerRequest r);
-    void run();
+    void run() override;
 signals:
     void started(ScalerRequest);
     // the result is shared, not handed over as a naked pointer: this signal is

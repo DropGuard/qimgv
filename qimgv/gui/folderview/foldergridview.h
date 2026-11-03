@@ -35,9 +35,9 @@ public slots:
     void zoomOut();
     void setThumbnailSize(int newSize);
     void setShowLabels(bool mode);
-    virtual void focusOn(int index) override;
-    virtual void focusOnSelection() override;
-    virtual void setDragHover(int index) override;
+    void focusOn(int index) override;
+    void focusOnSelection() override;
+    void setDragHover(int index) override;
 
 private:
     FlowLayout *flowLayout;
@@ -51,14 +51,14 @@ private slots:
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
-    virtual void updateScrollbarIndicator() override;
+    void updateScrollbarIndicator() override;
     void addItemToLayout(ThumbnailWidget *widget, int pos) override;
     void removeItemFromLayout(int pos) override;
     void removeAll() override;
     void setupLayout();
     ThumbnailWidget *createThumbnailWidget() override;
     void updateLayout() override;
-    virtual void fitSceneToContents() override;
+    void fitSceneToContents() override;
 
     void keyPressEvent(QKeyEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;    

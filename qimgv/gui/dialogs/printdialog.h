@@ -20,7 +20,7 @@ class PrintDialog : public QDialog {
 
 public:
     explicit PrintDialog(QWidget *parent = nullptr);
-    ~PrintDialog();
+    ~PrintDialog() override;
     void setImage(std::shared_ptr<const QImage> _img);
     void setOutputPath(QString path);
 

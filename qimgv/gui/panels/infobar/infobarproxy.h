@@ -13,14 +13,14 @@ class InfoBarProxy : public QWidget {
     Q_OBJECT
 public:
     explicit InfoBarProxy(QWidget *parent = nullptr);
-    ~InfoBarProxy();
+    ~InfoBarProxy() override;
 
     void init();
 public slots:
     void setInfo(QString position, QString fileName, QString info);
 
 protected:
-    void paintEvent(QPaintEvent *event);
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     InfoBarStateBuffer stateBuf;

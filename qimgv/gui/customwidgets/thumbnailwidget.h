@@ -37,7 +37,7 @@ public:
     void setDropHovered(bool mode);
     bool isDropHovered();
 
-    virtual QRectF boundingRect() const override;
+    QRectF boundingRect() const override;
 
     qreal width();
     qreal height();

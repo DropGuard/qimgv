@@ -32,14 +32,14 @@ private:
     ThumbnailStyle mCurrentStyle;
 
 public slots:
-    virtual void focusOn(int index);
-    virtual void focusOnSelection();
+    void focusOn(int index) override;
+    void focusOnSelection() override;
 
 protected:
-    virtual void resizeEvent(QResizeEvent *event);
-    virtual void updateScrollbarIndicator();
-    void addItemToLayout(ThumbnailWidget *widget, int pos);
-    void removeItemFromLayout(int pos);
-    void removeAll();
-    ThumbnailWidget *createThumbnailWidget();
+    void resizeEvent(QResizeEvent *event) override;
+    void updateScrollbarIndicator() override;
+    void addItemToLayout(ThumbnailWidget *widget, int pos) override;
+    void removeItemFromLayout(int pos) override;
+    void removeAll() override;
+    ThumbnailWidget *createThumbnailWidget() override;
 };

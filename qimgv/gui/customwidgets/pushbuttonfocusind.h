@@ -17,9 +17,9 @@ signals:
     void rightClicked();
 
 protected:
-    virtual void mousePressEvent(QMouseEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
     bool mIsHighlighted;
-    void paintEvent(QPaintEvent *event);
-    void mouseReleaseEvent(QMouseEvent *event);
+    void paintEvent(QPaintEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 };
 

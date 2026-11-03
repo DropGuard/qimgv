@@ -15,7 +15,7 @@ public:
     void setDescription(QString text);
 
 protected:
-    void paintEvent(QPaintEvent *e);
+    void paintEvent(QPaintEvent *e) override;
 
 private slots:
     void showColorSelector();

@@ -16,7 +16,7 @@ class ScriptManager : public QObject {
     Q_OBJECT
 public:
     static ScriptManager* getInstance();
-    ~ScriptManager();
+    ~ScriptManager() override;
     void runScript(const QString &scriptName, std::shared_ptr<Image> img);
     static QString runCommand(QString cmd);
     static void runCommandDetached(QString cmd);

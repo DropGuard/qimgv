@@ -12,6 +12,6 @@ signals:
     void resized(QSize);
 
 protected:
-    void resizeEvent(QResizeEvent *event);
-    void focusInEvent(QFocusEvent *event);
+    void resizeEvent(QResizeEvent *event) override;
+    void focusInEvent(QFocusEvent *event) override;
 };

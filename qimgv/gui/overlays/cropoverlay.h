@@ -40,13 +40,13 @@ signals:
     void cropSave();
 
 protected:
-    virtual void paintEvent(QPaintEvent *event);
-    virtual void mousePressEvent(QMouseEvent *event);
-    virtual void mouseMoveEvent(QMouseEvent* event);
-    virtual void mouseReleaseEvent(QMouseEvent* event);
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
 
-    void keyPressEvent(QKeyEvent *event);
-    void resizeEvent(QResizeEvent *event);
+    void keyPressEvent(QKeyEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 private:
     QPoint startPos, endPos, moveStartPos, resizeAnchor;
     QRect imageRect, imageDrawRect, imageDrawRectDpi, selectionRect, selectionDrawRect, selectionDrawRectDpi, handles[8];
@@ -70,7 +70,7 @@ private:
     void resizeSelection(QPoint d);
     void resizeSelectionAR(QPoint d);
     void resizeSelectionFree(QPoint d);
-    void recalculateGeometry();
+    void recalculateGeometry() override;
     QPoint mapPointToImage(QPoint p);
     void updateSelectionDrawRect();
     void setCursorAction(CursorAction action);

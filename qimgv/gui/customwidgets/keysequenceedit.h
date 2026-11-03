@@ -12,12 +12,12 @@ public:
     void setText(const QString &text);
 
 protected:
-    void keyPressEvent(QKeyEvent *e);
-    void mousePressEvent(QMouseEvent *e);
-    void wheelEvent(QWheelEvent *e);
+    void keyPressEvent(QKeyEvent *e) override;
+    void mousePressEvent(QMouseEvent *e) override;
+    void wheelEvent(QWheelEvent *e) override;
 
-    void mouseReleaseEvent(QMouseEvent *e);
-    bool focusNextPrevChild(bool);
+    void mouseReleaseEvent(QMouseEvent *e) override;
+    bool focusNextPrevChild(bool) override;
 private:
     void processEvent(QEvent *e);
     QString mSequence;

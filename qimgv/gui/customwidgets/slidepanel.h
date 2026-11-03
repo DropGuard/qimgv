@@ -17,7 +17,7 @@ class SlidePanel : public FloatingWidget {
     Q_OBJECT
 public:
     explicit SlidePanel(FloatingWidgetContainer *parent);
-    ~SlidePanel();
+    ~SlidePanel() override;
     bool hasWidget();
     void setWidget(std::shared_ptr<QWidget> w);
     // Use visibleGeometry instead of geometry() here.
@@ -54,7 +54,7 @@ protected:
     QEasingCurve outCurve;
     const int ANIMATION_DURATION = 230;
     PanelPosition mPosition;
-    void recalculateGeometry();
+    void recalculateGeometry() override;
     virtual void updateTriggerRect();
 
 private:

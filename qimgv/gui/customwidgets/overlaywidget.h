@@ -28,7 +28,7 @@ class OverlayWidget : public FloatingWidget
     Q_PROPERTY (qreal opacity READ opacity WRITE setOpacity)
 public:
     OverlayWidget(FloatingWidgetContainer *parent);
-    ~OverlayWidget();
+    ~OverlayWidget() override;
     void setHorizontalMargin(int);
     void setVerticalMargin(int);
     int horizontalMargin();
@@ -53,6 +53,6 @@ private slots:
     qreal opacity() const;
 
 protected:
-    virtual void recalculateGeometry();
+    void recalculateGeometry() override;
     FloatingWidgetPosition position;
 };

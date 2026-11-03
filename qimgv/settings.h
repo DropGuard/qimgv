@@ -113,7 +113,7 @@ public:
     // identity, so a test can run against an isolated config. The application
     // keeps using getInstance().
     explicit Settings(QObject *parent = nullptr);
-    ~Settings();
+    ~Settings() override;
     QStringList supportedMimeTypes();
     QList<QByteArray> supportedFormats();
     QString supportedFormatsFilter();

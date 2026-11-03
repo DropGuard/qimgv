@@ -16,7 +16,7 @@ public:
     void setInfo(QString _name, QString _value);
 
 protected:
-    void paintEvent(QPaintEvent *event);
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     QString name;

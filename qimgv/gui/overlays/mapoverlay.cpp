@@ -5,7 +5,7 @@
 class MapOverlay::MapOverlayPrivate : public QObject {
 public:
     MapOverlayPrivate(MapOverlay *qq);
-    ~MapOverlayPrivate();
+    ~MapOverlayPrivate() override;
     void moveInnerWidget(float x, float y);
     void moveMainImage(float xDist, float yDist);
 

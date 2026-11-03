@@ -24,12 +24,12 @@ class CropPanel : public SidePanelWidget
 
 public:
     explicit CropPanel(CropOverlay *_overlay, QWidget *parent = nullptr);
-    ~CropPanel();
+    ~CropPanel() override;
     void setImageRealSize(QSize);
 
 public slots:
     void onSelectionOutsideChange(QRect rect);
-    void show();
+    void show() override;
 
 signals:
     void crop(QRect);
@@ -41,9 +41,9 @@ signals:
     void aspectRatioChanged(QPointF);
 
 protected:
-    void paintEvent(QPaintEvent *);
-    void keyPressEvent(QKeyEvent *event);
-    void wheelEvent(QWheelEvent *event);
+    void paintEvent(QPaintEvent *) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
 private slots:
     void doCrop();

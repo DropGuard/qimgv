@@ -29,11 +29,11 @@ class SettingsDialog : public QDialog
 
 public:
     explicit SettingsDialog(QWidget *parent = nullptr);
-    ~SettingsDialog();
+    ~SettingsDialog() override;
     void switchToPage(int number);
 
 public slots:
-    int exec();
+    int exec() override;
     // both directions of the binding table; public so tests can drive them
     void readSettings();
     void saveSettings();

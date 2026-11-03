@@ -8,7 +8,6 @@
 #
 # Families at zero are NOT baselined: they are -Werror in the build itself
 # (Wuse-after-free, Wsign-compare), which is where they belong.
-gcc suggest-override 190
 gcc conversion 86
 gcc float-conversion 55
 gcc old-style-cast 30

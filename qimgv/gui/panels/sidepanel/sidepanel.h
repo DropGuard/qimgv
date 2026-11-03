@@ -17,7 +17,7 @@ class SidePanel : public QWidget
 
 public:
     explicit SidePanel(QWidget *parent = nullptr);
-    ~SidePanel();
+    ~SidePanel() override;
 
     void setWidget(SidePanelWidget *w);
     SidePanelWidget* widget();
@@ -27,7 +27,7 @@ public slots:
     void hide();
 
 protected:
-    void paintEvent(QPaintEvent *);
+    void paintEvent(QPaintEvent *) override;
 private:
     Ui::SidePanel *ui;
     SidePanelWidget *mWidget;

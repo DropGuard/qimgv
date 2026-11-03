@@ -21,7 +21,7 @@ public:
     };
     
     explicit MapOverlay(QWidget *parent = nullptr);
-    virtual ~MapOverlay();
+    ~MapOverlay() override;
     void resize(int size);
     int size() const;
     void animateVisible(bool visible);
@@ -60,12 +60,12 @@ signals:
     void positionChanged(float x, float y);
     
 protected:
-    virtual void paintEvent(QPaintEvent *event);
-    virtual void mousePressEvent(QMouseEvent *event);
-    virtual void mouseMoveEvent(QMouseEvent* event);
-    virtual void mouseReleaseEvent(QMouseEvent* event);
-    virtual void resizeEvent(QResizeEvent* event);
-    virtual void leaveEvent(QEvent *);
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void leaveEvent(QEvent *) override;
     virtual void enterEvent(QEvent *);
     
 private:

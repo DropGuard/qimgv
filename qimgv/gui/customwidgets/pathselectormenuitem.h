@@ -15,7 +15,7 @@ public slots:
     void setDirectory(QString path);
 
 protected:
-    virtual void onPress() override;
+    void onPress() override;
 
 signals:
     void directorySelected(QString);

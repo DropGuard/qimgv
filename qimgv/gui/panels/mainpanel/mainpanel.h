@@ -9,12 +9,12 @@ class MainPanel : public SlidePanel {
     Q_OBJECT
 public:
     MainPanel(FloatingWidgetContainer *parent);
-    ~MainPanel();
+    ~MainPanel() override;
     void setPosition(PanelPosition);
     void setExitButtonEnabled(bool mode);
     std::shared_ptr<ThumbnailStripProxy> getThumbnailStrip();
     void setupThumbnailStrip();
-    QSize sizeHint() const;
+    QSize sizeHint() const override;
 
 public slots:
     void readSettings();
@@ -32,5 +32,5 @@ private:
     ActionButton *openButton, *settingsButton, *exitButton, *folderViewButton, *pinButton;
 
 protected:
-    virtual void paintEvent(QPaintEvent* event);
+    void paintEvent(QPaintEvent* event) override;
 };

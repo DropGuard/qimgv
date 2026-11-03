@@ -13,7 +13,7 @@ public:
     // The bridge is injectable so tests can drive a thumbnailer against an
     // isolated engine; production keeps using the process-wide instance.
     explicit Thumbnailer(EngineBridge &bridge = EngineBridge::instance());
-    ~Thumbnailer();
+    ~Thumbnailer() override;
     static std::shared_ptr<Thumbnail> getThumbnail(QString filePath, int size);
     void clearTasks();
     void waitForDone();

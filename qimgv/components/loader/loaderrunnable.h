@@ -10,7 +10,7 @@ class LoaderRunnable: public QObject, public QRunnable
     Q_OBJECT
 public:
     LoaderRunnable(QString _path, bool _scaled);
-    void run();
+    void run() override;
 private:
     QString path;
     bool scaled;

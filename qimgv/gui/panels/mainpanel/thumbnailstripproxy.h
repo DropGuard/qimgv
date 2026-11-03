@@ -19,18 +19,18 @@ public:
     void readSettings();
 
 public slots:
-    virtual void populate(int) override;
-    virtual void setThumbnail(int pos, std::shared_ptr<Thumbnail> thumb) override;
-    virtual void select(QList<int>) override;
-    virtual void select(int) override;
-    virtual QList<int> selection() override;
-    virtual void focusOn(int) override;
-    virtual void focusOnSelection() override;
-    virtual void insertItem(int index) override;
-    virtual void removeItem(int index) override;
-    virtual void reloadItem(int index) override;
-    virtual void setDragHover(int index) override;
-    virtual void setDirectoryPath(QString path) override;
+    void populate(int) override;
+    void setThumbnail(int pos, std::shared_ptr<Thumbnail> thumb) override;
+    void select(QList<int>) override;
+    void select(int) override;
+    QList<int> selection() override;
+    void focusOn(int) override;
+    void focusOnSelection() override;
+    void insertItem(int index) override;
+    void removeItem(int index) override;
+    void reloadItem(int index) override;
+    void setDragHover(int index) override;
+    void setDirectoryPath(QString path) override;
     void addItem();
 
 protected:

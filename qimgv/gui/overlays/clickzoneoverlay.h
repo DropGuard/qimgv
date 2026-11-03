@@ -44,7 +44,7 @@ private:
     void drawPixmap(QPainter &p, QPixmap *pixmap, QRect rect);
 
 protected:
-    virtual void resizeEvent(QResizeEvent *event);
-    virtual void paintEvent(QPaintEvent *event);
-    virtual void recalculateGeometry();
+    void resizeEvent(QResizeEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void recalculateGeometry() override;
 };

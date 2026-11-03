@@ -11,7 +11,7 @@ class DirectoryModel : public QObject {
     Q_OBJECT
 public:
     explicit DirectoryModel(QObject *parent = nullptr);
-    ~DirectoryModel();
+    ~DirectoryModel() override;
 
     Scaler *scaler = nullptr;
 

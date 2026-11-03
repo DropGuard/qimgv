@@ -22,7 +22,7 @@ class ActionManager : public QObject {
     Q_OBJECT
 public:
     static ActionManager* getInstance();
-    ~ActionManager();
+    ~ActionManager() override;
     bool processEvent(QInputEvent*);
     void addShortcut(const QString &keys, const QString &action);
     void resetDefaults();

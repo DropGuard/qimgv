@@ -23,7 +23,7 @@ class FloatingMessage : public OverlayWidget {
     Q_OBJECT 
 public:
     FloatingMessage(FloatingWidgetContainer *parent);
-    ~FloatingMessage();
+    ~FloatingMessage() override;
     void showMessage(QString text, FloatingMessageIcon icon, int fadeDuration);
     void showMessage(QString text, FloatingWidgetPosition position, FloatingMessageIcon icon, int duration);
 

@@ -22,14 +22,14 @@ class ResizeDialog : public QDialog
     Q_OBJECT
 public:
     explicit ResizeDialog(QSize initialSize, QWidget *parent = nullptr);
-    ~ResizeDialog();
+    ~ResizeDialog() override;
     QSize newSize();
 
 public slots:
-    int exec();
+    int exec() override;
 
 protected:
-    void keyPressEvent(QKeyEvent *event);
+    void keyPressEvent(QKeyEvent *event) override;
 
 private:
     Ui::ResizeDialog *ui;

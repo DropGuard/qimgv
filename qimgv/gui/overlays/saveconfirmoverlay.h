@@ -13,7 +13,7 @@ class SaveConfirmOverlay : public OverlayWidget
     Q_OBJECT
 public:
     explicit SaveConfirmOverlay(FloatingWidgetContainer *parent = nullptr);
-    ~SaveConfirmOverlay();
+    ~SaveConfirmOverlay() override;
 
 signals:
     void saveClicked();

@@ -58,7 +58,7 @@ private:
 
     QRect videoControlsArea();
 
-    bool eventFilter(QObject *object, QEvent *event);
+    bool eventFilter(QObject *object, QEvent *event) override;
 
 private slots:
     void onScaleChanged(qreal);
@@ -120,12 +120,12 @@ public slots:
     void setLoopPlayback(bool mode);
 
 protected:
-    void mouseMoveEvent(QMouseEvent *event);
-    void mousePressEvent(QMouseEvent *event);
-    void mouseReleaseEvent(QMouseEvent *event);
-    void hideEvent(QHideEvent *event);
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
-    void keyPressEvent(QKeyEvent *event);
-    void leaveEvent(QEvent *event);
-    bool focusNextPrevChild(bool mode);
+    void keyPressEvent(QKeyEvent *event) override;
+    void leaveEvent(QEvent *event) override;
+    bool focusNextPrevChild(bool mode) override;
 };

@@ -15,28 +15,28 @@ public:
     ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled = false);
     bool isScaledRequest() const { return mScaledRequest; }
     bool isScaledResult() const override { return mScaledApplied; }
-    ~ImageStatic();
+    ~ImageStatic() override;
 
-    std::unique_ptr<QPixmap> getPixmap();
+    std::unique_ptr<QPixmap> getPixmap() override;
     std::shared_ptr<const QImage> getSourceImage();
-    std::shared_ptr<const QImage> getImage();
+    std::shared_ptr<const QImage> getImage() override;
 
-    int height();
-    int width();
-    QSize size();
+    int height() override;
+    int width() override;
+    QSize size() override;
 
     bool setEditedImage(std::unique_ptr<const QImage> imageEditedNew);
     bool discardEditedImage();
 
 public slots:
     void crop(QRect newRect);
-    bool save();
-    bool save(QString destPath);
+    bool save() override;
+    bool save(QString destPath) override;
 
 private:
     bool mScaledRequest = false;
     bool mScaledApplied = false;
-    void load();
+    void load() override;
     std::shared_ptr<const QImage> image, imageEdited;
     void loadGeneric();
     void loadICO();

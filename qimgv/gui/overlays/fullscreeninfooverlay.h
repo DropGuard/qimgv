@@ -12,7 +12,7 @@ class FullscreenInfoOverlay : public OverlayWidget {
 
 public:
     explicit FullscreenInfoOverlay(FloatingWidgetContainer *parent = nullptr);
-    ~FullscreenInfoOverlay();
+    ~FullscreenInfoOverlay() override;
     void setInfo(QString pos, QString fileName, QString info);
 
 private:

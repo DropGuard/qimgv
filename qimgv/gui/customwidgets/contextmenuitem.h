@@ -9,14 +9,14 @@ class ContextMenuItem : public MenuItem {
     Q_OBJECT
 public:
     ContextMenuItem(QWidget *parent = nullptr);
-    ~ContextMenuItem();
+    ~ContextMenuItem() override;
     void setAction(QString mAction);
 
 signals:
     void pressed();
 
 protected:
-    virtual void onPress() override;
+    void onPress() override;
 
 private:
     QString mAction;

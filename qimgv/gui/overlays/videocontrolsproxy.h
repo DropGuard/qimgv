@@ -14,7 +14,7 @@ class VideoControlsProxyWrapper : public QObject {
     Q_OBJECT
 public:
     explicit VideoControlsProxyWrapper(FloatingWidgetContainer *parent = nullptr);
-    ~VideoControlsProxyWrapper();
+    ~VideoControlsProxyWrapper() override;
     void init();
 
     void show();

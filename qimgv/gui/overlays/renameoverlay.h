@@ -19,7 +19,7 @@ class RenameOverlay : public OverlayWidget
 
 public:
     explicit RenameOverlay(FloatingWidgetContainer *parent);
-    ~RenameOverlay();
+    ~RenameOverlay() override;
 
 public slots:
     void setName(QString name);
@@ -30,9 +30,9 @@ signals:
     void renameRequested(QString name);
 
 protected:
-    void keyPressEvent(QKeyEvent *event);
+    void keyPressEvent(QKeyEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
-    void recalculateGeometry();
+    void recalculateGeometry() override;
 
 private slots:
     void rename();

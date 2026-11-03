@@ -112,7 +112,7 @@ private:
 
     void applyWindowedBackground();
     void applyFullscreenBackground();
-    void mouseDoubleClickEvent(QMouseEvent *event);
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
 
     void setupCropPanel();
     void setupCopyOverlay();
@@ -130,19 +130,19 @@ private slots:
     void showScriptSettings();
 
 protected:
-    void mouseMoveEvent(QMouseEvent *event);
-    bool event(QEvent *event);
-    void paintEvent(QPaintEvent *event);
-    void closeEvent(QCloseEvent *event);
-    void dragEnterEvent(QDragEnterEvent *e);
-    void dropEvent(QDropEvent *event);
+    void mouseMoveEvent(QMouseEvent *event) override;
+    bool event(QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *e) override;
+    void dropEvent(QDropEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
 
-    void mousePressEvent(QMouseEvent *event);
-    void keyPressEvent(QKeyEvent *event);
-    void wheelEvent(QWheelEvent *event);
-    void mouseReleaseEvent(QMouseEvent *event);
-    void leaveEvent(QEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
 
    // bool focusNextPrevChild(bool);
 signals:

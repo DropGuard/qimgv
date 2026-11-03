@@ -20,7 +20,7 @@ class VideoControls : public OverlayWidget
 
 public:
     explicit VideoControls(FloatingWidgetContainer *parent = nullptr);
-    ~VideoControls();
+    ~VideoControls() override;
 
 public slots:
     void setPlaybackDuration(int);

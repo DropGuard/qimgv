@@ -24,23 +24,23 @@ class FolderView : public FloatingWidgetContainer, public IDirectoryView {
     Q_INTERFACES(IDirectoryView)
 public:
     explicit FolderView(QWidget *parent = nullptr);
-    ~FolderView();
+    ~FolderView() override;
 
 public slots:
     void show();
     void hide();
-    virtual void populate(int) override;
-    virtual void setThumbnail(int pos, std::shared_ptr<Thumbnail> thumb) override;
-    virtual void select(QList<int>) override;
-    virtual void select(int) override;
-    virtual QList<int> selection() override;
-    virtual void focusOn(int) override;
-    virtual void focusOnSelection() override;
-    virtual void setDirectoryPath(QString path) override;
-    virtual void insertItem(int index) override;
-    virtual void removeItem(int index) override;
-    virtual void reloadItem(int index) override;
-    virtual void setDragHover(int) override;
+    void populate(int) override;
+    void setThumbnail(int pos, std::shared_ptr<Thumbnail> thumb) override;
+    void select(QList<int>) override;
+    void select(int) override;
+    QList<int> selection() override;
+    void focusOn(int) override;
+    void focusOnSelection() override;
+    void setDirectoryPath(QString path) override;
+    void insertItem(int index) override;
+    void removeItem(int index) override;
+    void reloadItem(int index) override;
+    void setDragHover(int) override;
     void addItem();
     void onFullscreenModeChanged(bool mode);
     void onSortingChanged(SortingMode mode);

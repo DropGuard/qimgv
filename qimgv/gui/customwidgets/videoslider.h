@@ -11,8 +11,8 @@ class VideoSlider : public QSlider {
 public:
     VideoSlider(QWidget *parent = nullptr);
 protected:
-    void mousePressEvent(QMouseEvent *event);
-    void mouseMoveEvent(QMouseEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
 signals:
     void sliderMovedX(int);
 private:

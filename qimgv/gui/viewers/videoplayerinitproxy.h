@@ -15,23 +15,23 @@
 class VideoPlayerInitProxy : public VideoPlayer {
 public:
     VideoPlayerInitProxy(QWidget *parent = nullptr);
-    ~VideoPlayerInitProxy();
-    bool showVideo(QString file);
-    void seek(int pos);
-    void seekRelative(int pos);
-    void pauseResume();
-    void frameStep();
-    void frameStepBack();
-    void stop();
-    void setPaused(bool mode);
-    void setMuted(bool);
-    bool muted();
-    void volumeUp();
-    void volumeDown();
-    void setVolume(int);
-    int volume();
-    void setVideoUnscaled(bool mode);
-    void setLoopPlayback(bool mode);
+    ~VideoPlayerInitProxy() override;
+    bool showVideo(QString file) override;
+    void seek(int pos) override;
+    void seekRelative(int pos) override;
+    void pauseResume() override;
+    void frameStep() override;
+    void frameStepBack() override;
+    void stop() override;
+    void setPaused(bool mode) override;
+    void setMuted(bool) override;
+    bool muted() override;
+    void volumeUp() override;
+    void volumeDown() override;
+    void setVolume(int) override;
+    int volume() override;
+    void setVideoUnscaled(bool mode) override;
+    void setLoopPlayback(bool mode) override;
     std::shared_ptr<VideoPlayer> getPlayer();
     bool isInitialized();
 
@@ -39,11 +39,11 @@ public:
     void removeEventFilter(QObject *filterObj);
 
 public slots:
-    void show();
-    void hide();
+    void show() override;
+    void hide() override;
 
 protected:
-    void paintEvent(QPaintEvent *event);
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     QLibrary playerLib;

@@ -16,15 +16,15 @@ class FVOptionsPopup : public QWidget {
 
 public:
     explicit FVOptionsPopup(QWidget *parent = nullptr);
-    ~FVOptionsPopup();
+    ~FVOptionsPopup() override;
 
 public slots:
     void showAt(QPoint pos);
 
 protected:
-    void paintEvent(QPaintEvent *event);
-    void keyPressEvent(QKeyEvent *event);
-    void hideEvent(QHideEvent *event);
+    void paintEvent(QPaintEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
 
 signals:
     void dismissed();

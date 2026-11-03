@@ -17,15 +17,15 @@ enum IconColorMode {
 class IconWidget : public QWidget {
 public:
     explicit IconWidget(QWidget *parent = nullptr);
-    ~IconWidget();
+    ~IconWidget() override;
     void setIconPath(QString path);
     void setIconOffset(int x, int y);
     void setColorMode(IconColorMode _mode);
     void setColor(QColor _color);
-    QSize minimumSizeHint() const;
+    QSize minimumSizeHint() const override;
 
 protected:
-    void paintEvent(QPaintEvent *event);
+    void paintEvent(QPaintEvent *event) override;
 
 private slots:
     void onSettingsChanged();

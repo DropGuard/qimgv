@@ -31,12 +31,12 @@ protected:
     // called whenever container rectangle changes
     // this does nothing, reimplement to use
     virtual void recalculateGeometry();
-    void paintEvent(QPaintEvent *event);
+    void paintEvent(QPaintEvent *event) override;
     void setContainerSize(QSize container);
 
-    void mousePressEvent(QMouseEvent *event);
-    void mouseReleaseEvent(QMouseEvent *event);
-    void wheelEvent(QWheelEvent *event);
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 private:
     // size of whatever widget we are overlayed on
     QSize container;

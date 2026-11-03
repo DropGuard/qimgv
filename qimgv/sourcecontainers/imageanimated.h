@@ -8,28 +8,28 @@ class ImageAnimated : public Image {
 public:
     ImageAnimated(QString _path);
     ImageAnimated(std::unique_ptr<DocumentInfo> _info);
-    ~ImageAnimated();
+    ~ImageAnimated() override;
 
-    std::unique_ptr<QPixmap> getPixmap();
-    std::shared_ptr<const QImage> getImage();
+    std::unique_ptr<QPixmap> getPixmap() override;
+    std::shared_ptr<const QImage> getImage() override;
     std::shared_ptr<QMovie> getMovie();
-    int height();
-    int width();
-    QSize size();
+    int height() override;
+    int width() override;
+    QSize size() override;
 
     bool isEditable();
     bool isEdited();
 
     int frameCount();
 public slots:
-    bool save();
-    bool save(QString destPath);
+    bool save() override;
+    bool save(QString destPath) override;
 
 signals:
     void frameChanged(QPixmap*);
 
 private:
-    void load();
+    void load() override;
     QSize mSize;
     int mFrameCount;
     std::shared_ptr<QMovie> movie;
