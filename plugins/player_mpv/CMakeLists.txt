@@ -23,8 +23,6 @@ add_library(player_mpv MODULE
     src/videoplayermpv.cpp
     src/qthelper.hpp)
 
-target_compile_features(player_mpv PRIVATE cxx_std_11)
-
 if(WIN32)
     target_link_libraries(player_mpv PRIVATE
         Qt6::Core Qt6::Widgets Mpv)

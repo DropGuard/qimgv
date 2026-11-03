@@ -56,8 +56,6 @@ target_sources(qimgv_nongui PRIVATE
     themestore.cpp
 )
 
-target_compile_features(qimgv_nongui PRIVATE cxx_std_17)
-set_target_properties(qimgv_nongui PROPERTIES CXX_EXTENSIONS OFF)
 target_include_directories(qimgv_nongui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/../engine/qimgv-engine-ffi/include)
@@ -95,8 +93,6 @@ target_sources(qimgv_gui PRIVATE
     proxystyle.cpp
     resources.qrc
 )
-target_compile_features(qimgv_gui PRIVATE cxx_std_17)
-set_target_properties(qimgv_gui PROPERTIES CXX_EXTENSIONS OFF)
 target_link_libraries(qimgv_gui PUBLIC qimgv_nongui Qt6::OpenGLWidgets)
 if(EXIV2)
     target_compile_definitions(qimgv_gui PRIVATE USE_EXIV2)
@@ -121,8 +117,6 @@ if(OPENCV_SUPPORT)
 endif()
 
 # C++ STANDARD
-target_compile_features(qimgv PRIVATE cxx_std_17)
-set_target_properties(qimgv PROPERTIES CXX_EXTENSIONS OFF)
 
 # LINK STUFF
 target_link_libraries(qimgv PRIVATE qimgv_gui qimgv_nongui)

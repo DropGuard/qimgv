@@ -13,6 +13,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
     message(FATAL_ERROR "\n!!! THIS PROJECT REQUIRES GCC 9.0 OR LATER !!!\n")
 endif()
 
+# C++ standard. Declaring cxx_std_17 as a compile *feature* only asks for "at
+# least 17", which GCC's own default already satisfies, so CMake writes no -std=
+# flag at all — and CXX_EXTENSIONS OFF quietly stops doing anything. The variable
+# form pins -std=c++17 on the command line, where it is visible and enforceable.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # AUTOMOC
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
