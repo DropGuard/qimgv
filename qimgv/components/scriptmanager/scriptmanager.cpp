@@ -7,10 +7,11 @@ ScriptManager::ScriptManager(QObject *parent)
 {
 }
 
-ScriptManager::~ScriptManager() {
-    scriptManager->saveScripts();
-    delete scriptManager;
-}
+ScriptManager::~ScriptManager() = default;
+// The body used to call saveScripts() and then delete the global it is
+// stored in. Saving is the settings dialog's job (see settingsdialog.cpp);
+// the self-delete was unreachable recursion waiting to be triggered.
+
 
 ScriptManager *ScriptManager::getInstance() {
     if(!scriptManager) {

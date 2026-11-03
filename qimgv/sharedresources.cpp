@@ -8,9 +8,7 @@ SharedResources::SharedResources()
 {
 }
 
-SharedResources::~SharedResources() {
-    delete shrRes;
-}
+SharedResources::~SharedResources() = default;
 
 QPixmap *SharedResources::getPixmap(ShrIcon icon, qreal dpr) {
     QPixmap *pixmap;
