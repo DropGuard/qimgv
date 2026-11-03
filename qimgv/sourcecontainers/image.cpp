@@ -2,7 +2,7 @@
 
 Image::Image(QString _path)
     : mDocInfo(new DocumentInfo(_path)),
-      mLoaded(false),
+      mLoadAttempted(false),
       mEdited(false),
       mPath(_path)
 {
@@ -10,7 +10,7 @@ Image::Image(QString _path)
 
 Image::Image(std::unique_ptr<DocumentInfo> _info)
     : mDocInfo(std::move(_info)),
-      mLoaded(false),
+      mLoadAttempted(false),
       mEdited(false),
       mPath(mDocInfo->filePath())
 {
@@ -21,10 +21,6 @@ Image::~Image() {
 
 QString Image::filePath() const {
     return mPath;
-}
-
-bool Image::isLoaded() const {
-    return mLoaded;
 }
 
 DocumentType Image::type() const {

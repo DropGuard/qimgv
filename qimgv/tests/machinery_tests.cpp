@@ -89,7 +89,8 @@ private slots:
         QVERIFY(!ImageFactory::createImage(fixtureDir + "/subdir", false).has_value());
         auto junk = ImageFactory::createImage(fixtureDir + "/skip.txt", false);
         QVERIFY(junk.has_value());
-        QVERIFY((*junk)->isLoaded());
+        // the object exists and the load was attempted, but the pixels are
+        // null — getImage() is the only public question that distinguishes
         QVERIFY((*junk)->getImage()->isNull());
         QVERIFY(cache.insert(*a));
         QVERIFY(cache.insert(*b));

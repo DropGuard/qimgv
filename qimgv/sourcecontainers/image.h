@@ -23,7 +23,6 @@ public:
     virtual int height() = 0;
     virtual int width() = 0;
     virtual QSize size() = 0;
-    bool isLoaded() const;
     virtual bool save() = 0;
     virtual bool save(QString destPath) = 0;
     QString fileName() const;
@@ -36,7 +35,10 @@ public:
 protected:
     virtual void load() = 0;
     std::unique_ptr<DocumentInfo> mDocInfo;
-    bool mLoaded, mEdited;
+    // "load() has run", NOT "we got pixels": a file we try to open and fail to
+    // decode still counts as attempted. The honest name matters because getImage()
+    // is the only question that distinguishes the two, and Core::guiSetImage asks it.
+    bool mLoadAttempted, mEdited;
     QString mPath;
     QSize resolution;
 };

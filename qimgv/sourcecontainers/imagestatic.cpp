@@ -20,7 +20,7 @@ ImageStatic::~ImageStatic() {
 
 //load image data from disk
 void ImageStatic::load() {
-    if(isLoaded()) {
+    if(mLoadAttempted) {
         return;
     }
     if(mDocInfo->mimeType().name() == "image/vnd.microsoft.icon")
@@ -69,7 +69,7 @@ void ImageStatic::loadGeneric() {
         // set image
         image = std::move(img);
     }
-    mLoaded = true;
+    mLoadAttempted = true;
 }
 
 // TODO: move this out somewhere to use in other places
@@ -84,7 +84,7 @@ void ImageStatic::loadICO() {
     QPixmap iconPix = icon.pixmap(maxSize);
     std::unique_ptr<const QImage> img(new QImage(iconPix.toImage()));
     image = std::move(img);
-    mLoaded = true;
+    mLoadAttempted = true;
 }
 
 QString ImageStatic::generateHash(QString str) {

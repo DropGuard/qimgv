@@ -10,7 +10,7 @@ Video::Video(std::unique_ptr<DocumentInfo> _info) : Image(std::move(_info)) {
 }
 
 void Video::load() {
-    if(isLoaded())
+    if(mLoadAttempted)
         return;
 
     /*
@@ -42,7 +42,7 @@ void Video::load() {
 
     qDebug() << "zzzz" << wt << ht << filePathEsc << settings->mpvBinary();
     */
-    mLoaded = true;
+    mLoadAttempted = true;
 }
 
 bool Video::save(QString destPath) {

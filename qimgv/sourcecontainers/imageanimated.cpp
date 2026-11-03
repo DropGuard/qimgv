@@ -23,10 +23,10 @@ ImageAnimated::~ImageAnimated() {
 }
 
 void ImageAnimated::load() {
-    if(isLoaded())
+    if(mLoadAttempted)
         return;
     loadMovie();
-    mLoaded = true;
+    mLoadAttempted = true;
 }
 
 void ImageAnimated::loadMovie() {
