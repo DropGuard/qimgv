@@ -364,7 +364,7 @@ void Core::removePermanent() {
     }
     FileOpResult result;
     int successCount = 0;
-    for(auto path : paths) {
+    for(const auto &path : paths) {
         QFileInfo fi(path);
         if(fi.isDir())
             model->removeDir(path, false, true, result);
@@ -398,7 +398,7 @@ void Core::moveToTrash() {
     }
     FileOpResult result;
     int successCount = 0;
-    for(auto path : paths) {
+    for(const auto &path : paths) {
         result = removeFile(path, true);
         if(result == FileOpResult::SUCCESS)
             successCount++;
@@ -435,7 +435,7 @@ void Core::enableDocumentView() {
         return;
     mw->enableDocumentView();
     if(model && model->fileCount() && state.currentFilePath == "") {
-        auto selected = folderViewPresenter.selectedPaths().first();
+        const QString selected = folderViewPresenter.selectedPaths().value(0);
         // if it is a directory - ignore and just open the first file
         if(model->containsFile(selected))
             loadPath(selected);
@@ -490,7 +490,7 @@ void Core::openFromClipboard() {
 
     // try opening url
     if(mimeData->hasUrls()) {
-        auto url = mimeData->urls().first();
+        const QUrl url = mimeData->urls().value(0);
         QString path = url.toLocalFile();
         if(path.isEmpty()) {
             qDebug() << "Could not load url:" << url;
@@ -820,7 +820,7 @@ void Core::doInteractiveCopy(QString path, QString destDirectory, DialogResult &
     // copy all contents
     // TODO: skip symlinks? test
     QStringList entryList = srcDir.entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-    for(auto entry : entryList) {
+    for(const auto &entry : entryList) {
         doInteractiveCopy(srcDir.absolutePath() + "/" + entry, dstDir.absolutePath(), overwriteFiles);
         if(overwriteFiles.cancel)
             return;
@@ -830,7 +830,7 @@ void Core::doInteractiveCopy(QString path, QString destDirectory, DialogResult &
 
 void Core::interactiveMove(QList<QString> paths, QString destDirectory) {
     DialogResult overwriteFiles;
-    for(auto path : paths) {
+    for(const auto &path : paths) {
         doInteractiveMove(path, destDirectory, overwriteFiles);
         if(overwriteFiles.cancel)
             return;
@@ -888,7 +888,7 @@ void Core::doInteractiveMove(QString path, QString destDirectory, DialogResult &
     // move all contents
     // TODO: skip symlinks? test
     QStringList entryList = srcDir.entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-    for(auto entry : entryList) {
+    for(const auto &entry : entryList) {
         doInteractiveMove(srcDir.absolutePath() + "/" + entry, dstDir.absolutePath(), overwriteFiles);
         if(overwriteFiles.cancel)
             return;
@@ -987,7 +987,7 @@ void Core::edit_template(bool save, QString action, const std::function<QImage*(
         return;
     if(save && !mw->showConfirmation(action, tr("Perform action \"") + action + "\"? \n\n" + tr("Changes will be saved immediately.")))
         return;
-    for(auto path : currentSelection()) {
+    for(const auto &path : currentSelection()) {
         auto img = getEditableImage(path);
         if(!img)
             continue;
@@ -1084,7 +1084,7 @@ QString Core::selectedPath() {
     if(!model)
         return "";
     else if(mw->currentViewMode() == MODE_FOLDERVIEW)
-        return folderViewPresenter.selectedPaths().last();
+        return folderViewPresenter.selectedPaths().constLast();
     else
         return state.currentFilePath;
 }

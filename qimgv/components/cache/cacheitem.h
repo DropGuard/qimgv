@@ -8,6 +8,9 @@ public:
     CacheItem();
     CacheItem(std::shared_ptr<Image> _contents);
     ~CacheItem();
+    // raw owning pointer member: copying would double-delete the semaphore
+    CacheItem(const CacheItem &) = delete;
+    CacheItem &operator=(const CacheItem &) = delete;
 
     std::shared_ptr<Image> getContents();
 

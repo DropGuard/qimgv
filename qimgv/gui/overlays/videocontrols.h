@@ -13,6 +13,7 @@ enum PlaybackMode {
     PLAYBACK_VIDEO
 };
 
+
 class VideoControls : public OverlayWidget
 {
     Q_OBJECT

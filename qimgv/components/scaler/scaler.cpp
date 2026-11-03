@@ -96,7 +96,6 @@ void Scaler::onTaskFinish(QImage *scaled, ScalerRequest req) {
     if(buffered && bufferedRequest.image == req.image) {
     } else {
       //qDebug() << "onTaskFinish() - 2 releasing..  " <<  req.image->name();
-        QString name = req.image->fileName();
         cache->release(req.image->fileName());
       //qDebug() << "onTaskFinish() - 2 RELEASED!  " <<  name;
     }

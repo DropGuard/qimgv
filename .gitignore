@@ -33,3 +33,4 @@ _deps/
 .lupdate/
 cmake_uninstall.cmake
 install_manifest.txt
+build-clazy/

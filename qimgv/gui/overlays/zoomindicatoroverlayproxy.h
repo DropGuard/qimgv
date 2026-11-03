@@ -3,7 +3,7 @@
 #include "gui/overlays/zoomindicatoroverlay.h"
 
 struct ZoomIndicatorOverlayStateBuffer {
-    qreal scale;
+    qreal scale = 1.0;
 };
 
 class ZoomIndicatorOverlayProxy {

@@ -69,7 +69,7 @@ protected:
     virtual void enterEvent(QEvent *);
     
 private:
-    bool visibilityEnabled, imageDoesNotFit;
+    bool visibilityEnabled = false, imageDoesNotFit = false;
     class MapOverlayPrivate;
     MapOverlayPrivate* d;
 };

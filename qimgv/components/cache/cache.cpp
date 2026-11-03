@@ -25,11 +25,11 @@ void Cache::remove(QString path) {
 }
 
 void Cache::clear() {
-    for(auto path : items.keys()) {
-        items[path]->lock();
-        auto item = items.take(path);
-        delete item;
+    for(auto it = items.begin(); it != items.end(); ++it) {
+        it.value()->lock();
+        delete it.value();
     }
+    items.clear();
 }
 
 std::shared_ptr<Image> Cache::get(QString path) {
@@ -58,11 +58,13 @@ bool Cache::release(QString path) {
 
 // removes all items except the ones in list
 void Cache::trimTo(QStringList pathList) {
-    for(auto path : items.keys()) {
-        if(!pathList.contains(path)) {
-            items[path]->lock();
-            auto *item = items.take(path);
-            delete item;
+    for(auto it = items.begin(); it != items.end();) {
+        if(!pathList.contains(it.key())) {
+            it.value()->lock();
+            delete it.value();
+            it = items.erase(it);
+        } else {
+            ++it;
         }
     }
 }

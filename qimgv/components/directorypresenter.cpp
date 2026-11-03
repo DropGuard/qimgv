@@ -162,14 +162,14 @@ QList<QString> DirectoryPresenter::selectedPaths() const {
     if(!view)
         return paths;
     if(mShowDirs) {
-        for(auto i : view->selection()) {
+        for(const auto &i : view->selection()) {
             if(i < model->dirCount())
                 paths << model->dirPathAt(i);
             else
                 paths << model->filePathAt(i - model->dirCount());
         }
     } else {
-        for(auto i : view->selection()) {
+        for(const auto &i : view->selection()) {
             paths << model->filePathAt(i);
         }
     }

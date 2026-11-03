@@ -10,7 +10,7 @@ public:
     void moveMainImage(float xDist, float yDist);
 
     QPen outlinePen;
-    float xSpeedDiff, ySpeedDiff;
+    float xSpeedDiff = 0.0f, ySpeedDiff = 0.0f;
     QRectF outerRect, innerRect;
     QRectF windowRect, drawingRect;
     MapOverlay *q;
@@ -19,7 +19,7 @@ public:
     float innerOffset;
     int margin;
 
-    QPropertyAnimation *opacityAnimation, *transitionAnimation;
+    QPropertyAnimation *opacityAnimation = nullptr, *transitionAnimation = nullptr;
     MapOverlay::Location location;
 };
 

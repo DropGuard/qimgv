@@ -7,7 +7,7 @@ struct VideoControlsStateBuffer {
     int position = 0;
     bool paused = true;
     bool videoMuted = true;
-    PlaybackMode mode;
+    PlaybackMode mode = PLAYBACK_ANIMATION;
 };
 
 class VideoControlsProxyWrapper : public QObject {

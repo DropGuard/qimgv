@@ -173,7 +173,7 @@ int MpvWidget::volume() {
 }
 
 void MpvWidget::setVolume(int vol) {
-    qBound(0, vol, 100);
+    vol = qBound(0, vol, 100);
     mpv::qt::set_property_variant(mpv, "volume", vol);
 }
 
