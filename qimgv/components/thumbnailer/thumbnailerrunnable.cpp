@@ -175,7 +175,10 @@ std::pair<QImage*, QSize> ThumbnailerRunnable::createThumbnail(QString path, con
             QRect scaledRect(QPoint(0,0), scaledSize);
             clip.moveCenter(scaledRect.center());
             QImage scaled = QImage(fullSize->scaled(scaledSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
-            result = ImageLib::croppedRaw(&scaled, clip);
+            // .release() at the edge of this function's raw-pointer island: the
+            // pair it returns is QImage*-based, so ownership still travels as a
+            // naked pointer until that currency changes.
+            result = ImageLib::croppedRaw(scaled, clip).release();
         } else {
             result = new QImage(fullSize->scaled(scaledSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         }

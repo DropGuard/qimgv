@@ -117,35 +117,35 @@ private slots:
             for(int x = 0; x < 2; ++x)
                 src.setPixel(x, y, qRgb(0, x, y + 1));
         auto S = [&src]() { return std::make_shared<const QImage>(src); };
-        auto px = [](const std::unique_ptr<QImage> &im, int x, int y) {
+        auto px = [](const std::unique_ptr<const QImage> &im, int x, int y) {
             return im->pixel(x, y);
         };
-        auto r90 = std::unique_ptr<QImage>(ImageLib::rotated(S(), 90));
+        auto r90 = ImageLib::rotated(S(), 90);
         QCOMPARE(r90->size(), QSize(3, 2));
         QCOMPARE(px(r90, 2, 0), qRgb(0, 0, 1));
         QCOMPARE(px(r90, 2, 1), qRgb(0, 1, 1));
         QCOMPARE(px(r90, 0, 0), qRgb(0, 0, 3));
-        auto r180 = std::unique_ptr<QImage>(ImageLib::rotated(S(), 180));
+        auto r180 = ImageLib::rotated(S(), 180);
         QCOMPARE(r180->size(), QSize(2, 3));
         QCOMPARE(px(r180, 0, 0), qRgb(0, 1, 3));
         QCOMPARE(px(r180, 1, 2), qRgb(0, 0, 1));
-        auto r270 = std::unique_ptr<QImage>(ImageLib::rotated(S(), 270));
+        auto r270 = ImageLib::rotated(S(), 270);
         QCOMPARE(r270->size(), QSize(3, 2));
         QCOMPARE(px(r270, 0, 0), qRgb(0, 1, 1));
         QCOMPARE(px(r270, 0, 1), qRgb(0, 0, 1));
         QCOMPARE(px(r270, 2, 0), qRgb(0, 1, 3));
-        auto fh = std::unique_ptr<QImage>(ImageLib::flippedH(S()));
+        auto fh = ImageLib::flippedH(S());
         QCOMPARE(px(fh, 0, 0), qRgb(0, 1, 1));
         QCOMPARE(px(fh, 1, 0), qRgb(0, 0, 1));
-        auto fv = std::unique_ptr<QImage>(ImageLib::flippedV(S()));
+        auto fv = ImageLib::flippedV(S());
         QCOMPARE(px(fv, 0, 0), qRgb(0, 0, 3));
         QCOMPARE(px(fv, 0, 2), qRgb(0, 0, 1));
-        auto crop = std::unique_ptr<QImage>(ImageLib::cropped(S(), QRect(1, 1, 1, 2)));
+        auto crop = ImageLib::cropped(S(), QRect(1, 1, 1, 2));
         QCOMPARE(crop->size(), QSize(1, 2));
         QCOMPARE(px(crop, 0, 0), qRgb(0, 1, 2));
         // a rect that does not fit is refused with an empty image rather than
         // silently clipped, so callers can tell the two apart
-        auto badCrop = std::unique_ptr<QImage>(ImageLib::cropped(S(), QRect(1, 1, 2, 2)));
+        auto badCrop = ImageLib::cropped(S(), QRect(1, 1, 2, 2));
         QVERIFY(badCrop->isNull());
 
         // exifRotated takes the code QImageReader::transformation() reports —
@@ -158,10 +158,10 @@ private slots:
             return ImageLib::exifRotated(std::make_unique<const QImage>(src), int(code));
         };
         QCOMPARE(*E(T::TransformationNone), src);
-        QCOMPARE(*E(T::TransformationMirror), *std::unique_ptr<QImage>(ImageLib::flippedH(S())));
-        QCOMPARE(*E(T::TransformationFlip), *std::unique_ptr<QImage>(ImageLib::flippedV(S())));
-        QCOMPARE(*E(T::TransformationRotate180), *std::unique_ptr<QImage>(ImageLib::rotated(S(), 180)));
-        QCOMPARE(*E(T::TransformationRotate90), *std::unique_ptr<QImage>(ImageLib::rotated(S(), 90)));
+        QCOMPARE(*E(T::TransformationMirror), *ImageLib::flippedH(S()));
+        QCOMPARE(*E(T::TransformationFlip), *ImageLib::flippedV(S()));
+        QCOMPARE(*E(T::TransformationRotate180), *ImageLib::rotated(S(), 180));
+        QCOMPARE(*E(T::TransformationRotate90), *ImageLib::rotated(S(), 90));
 
         // the combined codes mean "then" in the order Qt applies them: the flag
         // names say a mirror/flip precedes the rotation, and that is what the
@@ -173,7 +173,7 @@ private slots:
         QImage flipThen90 = src.flipped(Qt::Vertical).transformed(QTransform().rotate(90),
                                                                   Qt::SmoothTransformation);
         QCOMPARE(*E(T::TransformationFlipAndRotate90), flipThen90);
-        QCOMPARE(*E(T::TransformationRotate270), *std::unique_ptr<QImage>(ImageLib::rotated(S(), -90)));
+        QCOMPARE(*E(T::TransformationRotate270), *ImageLib::rotated(S(), -90));
     }
 };
 
