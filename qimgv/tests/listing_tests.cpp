@@ -98,6 +98,38 @@ private slots:
         QCOMPARE(dm.filePathAt(1), fixtureDir + "/img10.jpg");
     }
 
+    void liveFileModificationKeepsTheMirrorEntryWhole() {
+        // the engine watcher's "modified" event is applied by re-statting the
+        // file through FSEntry's path constructor. That constructor once
+        // produced an empty entry for every path: the mirror replaced a valid
+        // entry with an empty one, the fileModified signal still fired,
+        // nothing crashed — the file just silently vanished from the mirror.
+        resetFixture();
+        DirectoryManager dm;
+        QSignalSpy modified(&dm, &DirectoryManager::fileModified);
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        QFile f(fixtureDir + "/img2.jpg");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Append));
+        QVERIFY(f.write("appended") == 8);
+        f.close();
+
+        QTRY_VERIFY_WITH_TIMEOUT(modified.count() >= 1, 10000);
+        bool sawImg2Modified = false;
+        for(int i = 0; i < modified.count(); ++i)
+            sawImg2Modified |= modified.at(i).at(0).toString() == fixtureDir + "/img2.jpg";
+        QVERIFY(sawImg2Modified);
+
+        // the entry survives the round trip whole: re-stat, not emptied
+        int index = dm.indexOfFile(fixtureDir + "/img2.jpg");
+        QVERIFY(index >= 0);
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileEntryAt(index).size, 9UL, 10000);
+        QCOMPARE(dm.fileEntryAt(index).name, QStringLiteral("img2.jpg"));
+        QCOMPARE(dm.fileEntryAt(index).path, fixtureDir + "/img2.jpg");
+        QVERIFY(!dm.fileEntryAt(index).isDirectory);
+    }
+
     void liveRenameSurfacesAsRemoveAndAdd() {
         // the engine does not pair inotify rename cookies (v1): a rename
         // surfaces as Removed(old) + Added(new) — ordered and lossless

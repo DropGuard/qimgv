@@ -4,22 +4,27 @@ FSEntry::FSEntry() {
 }
 
 FSEntry::FSEntry(const QString &filePath) {
-    std::filesystem::directory_entry stdEntry(toStdString(path));
-    QString fileName = QString::fromStdString(stdEntry.path().filename().generic_string());
-    if(stdEntry.is_directory()) {
-        try {
-            this->name = name;
-            this->path = path;
+    try {
+        std::filesystem::directory_entry stdEntry(toStdString(filePath));
+        QString fileName = QString::fromStdString(stdEntry.path().filename().generic_string());
+        if(stdEntry.is_directory()) {
+            this->name = fileName;
+            this->path = filePath;
             this->isDirectory = true;
-        } catch (const std::filesystem::filesystem_error &err) { }
-    } else {
-        try {
-            this->name = name;
-            this->path = path;
+        } else {
+            // stat both attributes before touching any member: a throw here
+            // must leave the entry fully empty, never half-populated
+            std::uintmax_t fileSize = stdEntry.file_size();
+            std::filesystem::file_time_type lastWrite = stdEntry.last_write_time();
+            this->name = fileName;
+            this->path = filePath;
             this->isDirectory = false;
-            this->size = stdEntry.file_size();
-            this->modifyTime = stdEntry.last_write_time();
-        } catch (const std::filesystem::filesystem_error &err) { }
+            this->size = fileSize;
+            this->modifyTime = lastWrite;
+        }
+    } catch (const std::filesystem::filesystem_error &err) {
+        // the stat lost a race with a delete, or the path is unreadable:
+        // stay empty; DirectoryManager::updateFileEntry refuses empty entries
     }
 }
 

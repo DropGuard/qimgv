@@ -114,6 +114,32 @@ private slots:
         QVERIFY(cache.keys().isEmpty());
     }
 
+    // FSEntry(const QString&) is the re-stat the mirror leans on: engine
+    // "modified" events flow through it. Its body once referenced its own
+    // members instead of the parameter, so every stat produced an empty entry
+    // and updateFileEntry replaced a valid mirror entry with it, silently.
+    void fsEntryConstructorStatsThePathItWasGiven() {
+        resetFixture();
+        FSEntry file(fixtureDir + "/img1.jpg");
+        QCOMPARE(file.name, QStringLiteral("img1.jpg"));
+        QCOMPARE(file.path, fixtureDir + "/img1.jpg");
+        QVERIFY(!file.isDirectory);
+        QCOMPARE(file.size, 1UL); // fixture files hold one byte
+
+        FSEntry directory(fixtureDir + "/subdir");
+        QCOMPARE(directory.name, QStringLiteral("subdir"));
+        QCOMPARE(directory.path, fixtureDir + "/subdir");
+        QVERIFY(directory.isDirectory);
+
+        // a stat that fails (vanished file) leaves the entry empty by
+        // contract — updateFileEntry refuses empty entries
+        FSEntry missing(fixtureDir + "/vanished.jpg");
+        QVERIFY(missing.path.isEmpty());
+        QVERIFY(missing.name.isEmpty());
+        QCOMPARE(missing.size, 0UL);
+        QVERIFY(!missing.isDirectory);
+    }
+
     void documentInfoClassifiesFormatsAndAnimation() {
         resetFixture();
         auto write = [this](const QString &name, const QByteArray &bytes) {

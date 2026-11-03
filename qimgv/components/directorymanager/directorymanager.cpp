@@ -416,6 +416,12 @@ void DirectoryManager::updateFileEntry(const QString &filePath) {
     if(!containsFile(filePath))
         return;
     FSEntry newEntry(filePath);
+    if(newEntry.path.isEmpty()) {
+        // the re-stat lost a race with a delete: keep the last known entry
+        // instead of replacing it with an empty one
+        qCDebug(lcWatchPerf) << "fileMod stat failed" << filePath;
+        return;
+    }
     int index = indexOfFile(filePath);
     if(fileEntryVec.at(index).modifyTime != newEntry.modifyTime)
         fileEntryVec.at(index) = newEntry;
