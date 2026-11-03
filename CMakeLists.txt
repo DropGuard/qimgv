@@ -80,14 +80,17 @@ add_compile_options(-Wall -Wextra -Wpedantic)
 # so the compilation database is part of the toolchain, not a convenience.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Three families are at zero findings in this tree, so they are errors. They are
-# the classes this project has actually been bitten by: a descriptor closed
-# twice (use-after-free) and an int compared against a size() (sign-compare).
-# The rest are deliberately NOT compiled in — suggest-override 198 sites,
-# conversion 86, float-conversion 55, old-style-cast 30, shadow 13 — because a
-# build that shouts is a build nobody reads. scripts/lint.py runs them on demand
-# against a baseline that may only shrink.
+# Families at zero findings in this tree are errors. They are the classes this
+# project has actually been bitten by: a descriptor closed twice
+# (use-after-free), an int compared against a size() (sign-compare), and a
+# parameter rename that left six call sites reading members instead of their
+# arguments (unused-parameter — the only diagnostic that pointed at f8e8b216's
+# behavior breakage). The rest are deliberately NOT compiled in, because a
+# build that shouts is a build nobody reads: the style/coordinate-math families
+# are retired from the gate scan entirely (scripts/lint.py FROZEN and REPORT),
+# and the remainder runs on demand against a baseline that may only shrink.
 add_compile_options(-Werror=sign-compare)
+add_compile_options(-Werror=unused-parameter)
 # -Wuse-after-free is a GCC check; the clang driver that clazy wraps accepts the
 # flag only by warning that it does not know it, so asking for it there would
 # print two lines per TU and enforce nothing.

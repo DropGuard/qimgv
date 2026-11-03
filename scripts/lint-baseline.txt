@@ -7,9 +7,12 @@
 # An id that is not listed here at all is a new kind of finding and fails too.
 #
 # Families at zero are NOT baselined: they are -Werror in the build itself
-# (Wuse-after-free, Wsign-compare), which is where they belong.
+# (Wsign-compare, Wuse-after-free, Wunused-parameter), which is where they
+# belong.
 #
-# Deliberately NOT fixed (owner decision, do not re-litigate):
+# Deliberately NOT scanned, not just not fixed (owner decision, do not
+# re-litigate; the filters live in scripts/lint.py — FROZEN for cppcheck,
+# REPORT for gcc):
 #   conversion / float-conversion — the bulk is GUI coordinate math
 #   (qreal -> int for pixel positions); the truncation is the intent,
 #   not a bug. Adding casts is noise. The directorymodel/manager
@@ -20,10 +23,6 @@
 #   remainder is dialogs/settings cold paths.
 #   duplInheritedMember — Qt-style signal/slot re-declaration patterns
 #   (non-virtual shadowing is intentional in this framework).
-gcc conversion 86
-gcc float-conversion 55
-gcc old-style-cast 30
-gcc shadow 13
 clazy qcolor-from-literal 50
 clazy range-loop-detach 21
 clazy connect-3arg-lambda 14
@@ -36,8 +35,6 @@ clazy use-static-qregularexpression 2
 clazy const-signal-or-slot 1
 clazy non-pod-global-static 1
 clazy connect-by-name 1
-cppcheck passedByValue 55
-cppcheck duplInheritedMember 29
 cppcheck passedByValueCallback 7
 cppcheck returnByReference 10
 cppcheck iterateByValue 4

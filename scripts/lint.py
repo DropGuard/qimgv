@@ -3,7 +3,9 @@
 # shrink. The families that are already at zero do not live here — they are
 # -Werror'd in the build itself (see the root CMakeLists); this script reports
 # the debt that would be noise to compile in, so that it can be watched instead
-# of ignored.
+# of ignored. Families judged noise by policy are not baselined either — they
+# are filtered out of the scan (GATED/REPORT/FROZEN below), with the rationale
+# in lint-baseline.txt.
 #
 #   scripts/lint.py [build-dir]          report only
 #   scripts/lint.py [build-dir] --gate   fail if any count moved
@@ -20,10 +22,22 @@ BUILD = next((a for a in sys.argv[1:] if not a.startswith('-')), os.path.join(RO
 GATE = '--gate' in sys.argv
 BASELINE = os.path.join(ROOT, 'scripts', 'lint-baseline.txt')
 
-# fatal in the build, so they must be zero here too
-GATED = {'Wuse-after-free', 'Wsign-compare'}
-# reported, baseline-controlled
-REPORT = ['-Wconversion', '-Wshadow', '-Wold-style-cast', '-Wsuggest-override']
+# fatal in the build, so they must be zero here too. Keys match what gcc prints
+# inside [-W...]: the earlier W-prefixed spelling never matched a single
+# diagnostic, so those families silently fell through to report-only and the
+# build's -Werror was doing all the work.
+GATED = {'sign-compare', 'use-after-free', 'unused-parameter'}
+# reported, baseline-controlled. -Wconversion/float-conversion are retired from
+# the scan entirely (REPORT drives the gcc pass cost): the bulk is GUI
+# coordinate truncation that is the intent, not a bug, and scanning them cost
+# every TU on every run while producing nothing anyone acts on.
+REPORT = ['-Wshadow', '-Wold-style-cast', '-Wsuggest-override']
+# policy-frozen families: the findings are real, but every fix was judged a
+# non-improvement for this tree, so they are filtered out instead of counted —
+# the numbers cannot rot, and the gate stops paying to re-derive them.
+#   cppcheck passedByValue / duplInheritedMember — Qt's implicit sharing and
+#   signal re-declaration idioms make these recommendations wrong here.
+FROZEN = {'passedByValue', 'duplInheritedMember'}
 DIAG = re.compile(r'^(/[^:]+):(\d+):\d+: (?:warning|error): .*?\[-?W?([a-z0-9-]+)\]$')
 CLAZY = re.compile(r'^(/[^:]+):(\d+):\d+: warning: .* \[-Wclazy-([a-z0-9-]+)\]$')
 CPPCHECK = re.compile(r'^(/[^:]+):(\d+):\d+: (?:style|warning|performance|portability): .* \[([a-zA-Z0-9_]+)\]$')
@@ -105,7 +119,7 @@ def cppcheck_counts():
 
     for line in out.splitlines():
         m = CPPCHECK.match(line)
-        if m and not any(s in m.group(1) for s in SKIP):
+        if m and not any(s in m.group(1) for s in SKIP) and m.group(3) not in FROZEN:
             found[m.group(3)].add((m.group(1), m.group(2)))
     return found
 

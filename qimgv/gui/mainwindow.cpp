@@ -845,9 +845,9 @@ void MW::onInfoUpdated() {
 }
 
 // TODO!!! buffer this in mw
-void MW::setExifInfo(const QMap<QString, QString> &info) {
+void MW::setExifInfo(const QMap<QString, QString> &exifInfo) {
     if(imageInfoOverlay)
-        imageInfoOverlay->setExifInfo(info);
+        imageInfoOverlay->setExifInfo(exifInfo);
 }
 
 std::shared_ptr<FolderViewProxy> MW::getFolderView() {

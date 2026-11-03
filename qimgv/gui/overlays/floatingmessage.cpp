@@ -43,8 +43,8 @@ void FloatingMessage::readSettings() {
     */
 }
 
-void FloatingMessage::showMessage(QString text, FloatingWidgetPosition position, FloatingMessageIcon icon, int duration) {
-    setPosition(position);
+void FloatingMessage::showMessage(QString text, FloatingWidgetPosition anchor, FloatingMessageIcon icon, int duration) {
+    setPosition(anchor);
     doShowMessage(text, icon, duration);
 }
 

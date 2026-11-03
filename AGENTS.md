@@ -36,12 +36,18 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
 3. **修复与钉住它的测试必须同一提交。** 检测延迟是学费的大头。
 4. **不引入隐式上下文**:cwd 依赖、单例顺序依赖、未初始化成员、靠调用顺序
    才成立的协议——已在 CacheItem/settings/lint.py 各修过一次,别再新增。
+5. **签名类修复必须带着函数体走。** f8e8b216 只改签名行就宣称"纯改名无行为
+   变化",实际制造了六处行为回归(含 FSEntry 静默丢数据)。改参数名/局部名时
+   `git show` 完整 diff 逐行自查函数体引用;shadow 清零不等于行为不变——家族
+   之间会互相制造(修 shadow 造出 unused-parameter)。凡行为可能变的修复,按
+   纪律 3 钉住。
 
 ## 已知债务(有基线,只许缩)
 
 - `scripts/lint-baseline.txt`:静态分析计数,`--gate` 强制只缩不涨。
 - settings 的 R4 DEBT 名单(architecture_rules.py 内):off-thread 解引用。
-- suggest-override 等风格族:机械修一轮、基线同 commit 下调。
+- suggest-override / old-style-cast / shadow:已清零;unused-parameter 已升格
+  `-Werror`(CMakeLists)。风格族不再主动扫荡:只缩不涨 + 新族即失败自动守门。
 
 ## 挂起决议(动了要说理由)
 
@@ -50,3 +56,8 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
 - `--gen-thumbs` 已砍;wallpaper 为 KDE 专属是**有意为之**(注释在
   Core::setWallpaper)。
 - pimpl 不用:应用不是库,白盒可测性优先于隐藏。
+- 反模式燃烧阶段已于 2026-11 关闭:不再主动全库扫风格族。策略冻结族
+  (conversion/float-conversion/passedByValue/duplInheritedMember)已退役出
+  扫描(lint.py 的 FROZEN 与 REPORT 裁剪),理由留在 lint-baseline.txt 头部。
+  重启条件:无——新族即失败与只缩不涨已经自动守门,重启只在有人拿实测证据
+  证明某个冻结族值得修时发生。

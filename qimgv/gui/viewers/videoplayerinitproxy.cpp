@@ -64,7 +64,7 @@ inline bool VideoPlayerInitProxy::initPlayer() {
 
 // load lib
     typedef VideoPlayer* (*createPlayerWidgetFn)();
-    createPlayerWidgetFn fn = (createPlayerWidgetFn) playerLib.resolve("CreatePlayerWidget");
+    createPlayerWidgetFn fn = reinterpret_cast<createPlayerWidgetFn>(playerLib.resolve("CreatePlayerWidget"));
     if(fn) {
         VideoPlayer* pl = fn();
         player.reset(pl);

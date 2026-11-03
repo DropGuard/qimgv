@@ -195,8 +195,8 @@ private slots:
         if(mimeDb.mimeTypeForFile(fixtureDir + "/anim.avif",
                                   QMimeDatabase::MatchContent).name()
            == QStringLiteral("image/avif")) {
-            DocumentInfo avif(fixtureDir + "/anim.avif");
-            QCOMPARE(avif.type(), DocumentType::ANIMATED);
+            DocumentInfo avifDoc(fixtureDir + "/anim.avif");
+            QCOMPARE(avifDoc.type(), DocumentType::ANIMATED);
         } else {
             QSKIP("this mime database does not identify ftypavis as image/avif");
         }

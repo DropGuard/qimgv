@@ -25,7 +25,7 @@ public:
     FloatingMessage(FloatingWidgetContainer *parent);
     ~FloatingMessage() override;
     void showMessage(QString text, FloatingMessageIcon icon, int fadeDuration);
-    void showMessage(QString text, FloatingWidgetPosition position, FloatingMessageIcon icon, int duration);
+    void showMessage(QString text, FloatingWidgetPosition anchor, FloatingMessageIcon icon, int duration);
 
 public slots:
     void show();
