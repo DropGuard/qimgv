@@ -99,12 +99,12 @@ private slots:
         // runs against a landed listing, which is the path that works.
 
         // one flip forward: from b the forward neighbor c decodes
-        actionManager->nextImage();
+        emit actionManager->nextImage();
         QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(1), 10000);
         QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(2)), 10000);
 
         // another flip forward: from c the forward neighbor is d
-        actionManager->nextImage();
+        emit actionManager->nextImage();
         QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(2), 10000);
         QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(3)), 10000);
 
@@ -117,7 +117,7 @@ private slots:
 
         // one backward move: the preload must follow the travel direction and
         // decode b, which a forward-facing policy would never have touched
-        actionManager->prevImage();
+        emit actionManager->prevImage();
         QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(2), 10000);
         QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(1)), 10000);
     }
@@ -136,7 +136,7 @@ private slots:
         QCOMPARE(core.currentFilePath(), QDir(alpha).filePath("a.png"));
 
         const int before = listed.count();
-        actionManager->nextImage();
+        emit actionManager->nextImage();
         QTRY_VERIFY_WITH_TIMEOUT(sawDir(listed, beta, before), 10000);
         // it must land on the new folder's image, not on whatever the previous
         // folder's mirror still had at index 0
@@ -153,7 +153,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(sawDir(listed, alpha), 10000);
 
         const int before = listed.count();
-        actionManager->nextImage();
+        emit actionManager->nextImage();
         QTest::qWait(500); // a folder change would have queued a listing
         QCOMPARE(listed.count(), before);
         QVERIFY(!sawDir(listed, beta, before));

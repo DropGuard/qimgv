@@ -1,5 +1,7 @@
 ﻿#include "directorypresenter.h"
 
+#include <utility>
+
 DirectoryPresenter::DirectoryPresenter(QObject *parent) : QObject(parent), mShowDirs(false) {
     connect(&thumbnailer, &Thumbnailer::thumbnailReady, this, &DirectoryPresenter::onThumbnailReady);
 }
@@ -161,15 +163,17 @@ QList<QString> DirectoryPresenter::selectedPaths() const {
     QList<QString> paths;
     if(!view)
         return paths;
+    // const local: iterating a by-value temporary directly would detach it
+    const QList<int> selection = view->selection();
     if(mShowDirs) {
-        for(const auto &i : view->selection()) {
+        for(const int i : selection) {
             if(i < model->dirCount())
                 paths << model->dirPathAt(i);
             else
                 paths << model->filePathAt(i - model->dirCount());
         }
     } else {
-        for(const auto &i : view->selection()) {
+        for(const int i : selection) {
             paths << model->filePathAt(i);
         }
     }

@@ -175,7 +175,7 @@ ViewMode MW::currentViewMode() {
 
 void MW::fitWindow() {
     if(viewerWidget->interactionEnabled()) {
-        viewerWidget->fitWindow();
+        emit viewerWidget->fitWindow();
     } else {
         showMessage("Zoom temporary disabled");
     }
@@ -183,7 +183,7 @@ void MW::fitWindow() {
 
 void MW::fitWidth() {
     if(viewerWidget->interactionEnabled()) {
-        viewerWidget->fitWidth();
+        emit viewerWidget->fitWidth();
     } else {
         showMessage("Zoom temporary disabled");
     }
@@ -191,7 +191,7 @@ void MW::fitWidth() {
 
 void MW::fitOriginal() {
     if(viewerWidget->interactionEnabled()) {
-        viewerWidget->fitOriginal();
+        emit viewerWidget->fitOriginal();
     } else {
         showMessage("Zoom temporary disabled");
     }
@@ -199,7 +199,7 @@ void MW::fitOriginal() {
 
 void MW::fitWindowStretch() {
     if(viewerWidget->interactionEnabled()) {
-        viewerWidget->fitWindowStretch();
+        emit viewerWidget->fitWindowStretch();
     } else {
         showMessage("Zoom temporary disabled");
     }
@@ -305,7 +305,7 @@ void MW::setDirectoryPath(QString path) {
 }
 
 void MW::toggleLockZoom() {
-    viewerWidget->toggleLockZoom();
+    emit viewerWidget->toggleLockZoom();
     if(viewerWidget->lockZoomEnabled())
         showMessage("Zoom lock: ON");
     else
@@ -314,7 +314,7 @@ void MW::toggleLockZoom() {
 }
 
 void MW::toggleLockView() {
-    viewerWidget->toggleLockView();
+    emit viewerWidget->toggleLockView();
     if(viewerWidget->lockViewEnabled())
         showMessage("View lock: ON");
     else
@@ -365,12 +365,12 @@ void MW::toggleScalingFilter() {
 
 void MW::setFilterNearest() {
     showMessage("Filter: nearest", 600);
-    viewerWidget->setFilterNearest();
+    emit viewerWidget->setFilterNearest();
 }
 
 void MW::setFilterBilinear() {
     showMessage("Filter: bilinear", 600);
-    viewerWidget->setFilterBilinear();
+    emit viewerWidget->setFilterBilinear();
 }
 
 void MW::setFilter(ScalingFilter filter) {
@@ -396,7 +396,7 @@ void MW::setFilter(ScalingFilter filter) {
             break;
     }
     showMessage("Filter " + filterName, 600);
-    viewerWidget->setScalingFilter(filter);
+    emit viewerWidget->setScalingFilter(filter);
 }
 
 bool MW::isCropPanelActive() {
@@ -712,7 +712,7 @@ void MW::showCropPanel() {
         cropOverlay->show();
         activeSidePanel = SIDEPANEL_CROP;
         // reset & lock zoom so CropOverlay won't go crazy
-        viewerWidget->fitWindow();
+        emit viewerWidget->fitWindow();
         setInteractionEnabled(false);
         // feed the panel current image info
         updateCropPanelData();

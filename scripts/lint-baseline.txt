@@ -13,10 +13,9 @@ gcc float-conversion 55
 gcc old-style-cast 30
 gcc shadow 13
 clazy qcolor-from-literal 50
-clazy range-loop-detach 23
-clazy incorrect-emit 17
+clazy range-loop-detach 21
 clazy connect-3arg-lambda 14
-clazy range-loop-reference 9
+clazy range-loop-reference 7
 clazy qproperty-without-notify 3
 clazy detaching-temporary 3
 clazy container-anti-pattern 2
@@ -29,5 +28,5 @@ cppcheck passedByValue 120
 cppcheck duplInheritedMember 29
 cppcheck passedByValueCallback 36
 cppcheck returnByReference 10
-cppcheck iterateByValue 5
+cppcheck iterateByValue 4
 cppcheck useInitializationList 2

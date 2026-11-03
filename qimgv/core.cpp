@@ -292,7 +292,7 @@ void Core::toggleSlideshow() {
 void Core::startSlideshow() {
     if(!slideshow) {
         slideshow = true;
-        mw->setLoopPlayback(false);
+        emit mw->setLoopPlayback(false);
         enableDocumentView();
         startSlideshowTimer();
         updateInfoString();
@@ -302,7 +302,7 @@ void Core::startSlideshow() {
 void Core::stopSlideshow() {
     if(slideshow) {
         slideshow = false;
-        mw->setLoopPlayback(true);
+        emit mw->setLoopPlayback(true);
         slideshowTimer.stop();
         updateInfoString();
     }
@@ -593,7 +593,7 @@ void Core::onDraggedOut(QList<QString> paths) {
     } else { // multi-selection, or single directory. drag urls
         mimeData = new QMimeData();
         QList<QUrl> urlList;
-        for(auto path : paths)
+        for(const auto &path : paths)
             urlList << QUrl::fromLocalFile(path);
         mimeData->setUrls(urlList);
     }
@@ -762,7 +762,7 @@ void Core::showInDirectory() {
 
 void Core::interactiveCopy(QList<QString> paths, QString destDirectory) {
     DialogResult overwriteFiles;
-    for(auto path : paths) {
+    for(const auto &path : paths) {
         doInteractiveCopy(path, destDirectory, overwriteFiles);
         if(overwriteFiles.cancel)
             return;
