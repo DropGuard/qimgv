@@ -18,36 +18,9 @@
 #include <thread>
 #include <vector>
 
-// Layout pinning — must match #[repr(C)] QimgvEntryMeta (u64,u64,i64,c_int).
-static_assert(sizeof(qimgv_entry_meta) == 32, "qimgv_entry_meta layout drift");
-static_assert(offsetof(qimgv_entry_meta, handle) == 0, "layout drift");
-static_assert(offsetof(qimgv_entry_meta, size) == 8, "layout drift");
-static_assert(offsetof(qimgv_entry_meta, mtime_ms) == 16, "layout drift");
-static_assert(offsetof(qimgv_entry_meta, is_dir) == 24, "layout drift");
-
-// Layout pinning — must match #[repr(C)] QimgvEvent (i32,i32,u32).
-static_assert(sizeof(qimgv_event) == 12, "qimgv_event layout drift");
-static_assert(offsetof(qimgv_event, epoch) == 8, "layout drift");
-
-// Layout pinning — must match #[repr(C)] QimgvProbeResult (5 × int32).
-static_assert(sizeof(qimgv_probe_result) == 20, "qimgv_probe_result layout drift");
-static_assert(offsetof(qimgv_probe_result, format) == 0, "layout drift");
-static_assert(offsetof(qimgv_probe_result, animated) == 4, "layout drift");
-static_assert(offsetof(qimgv_probe_result, orientation) == 8, "layout drift");
-static_assert(offsetof(qimgv_probe_result, width) == 12, "layout drift");
-static_assert(offsetof(qimgv_probe_result, height) == 16, "layout drift");
-
-// Layout pinning — must match #[repr(C)] QimgvMutation (i32,i32,u64,i64).
-static_assert(sizeof(qimgv_mutation) == 24, "qimgv_mutation layout drift");
-static_assert(offsetof(qimgv_mutation, kind) == 0, "layout drift");
-static_assert(offsetof(qimgv_mutation, is_dir) == 4, "layout drift");
-static_assert(offsetof(qimgv_mutation, size) == 8, "layout drift");
-static_assert(offsetof(qimgv_mutation, mtime_ms) == 16, "layout drift");
-
-// Layout pinning — must match #[repr(C)] QimgvThumbReq (u32,i32).
-static_assert(sizeof(qimgv_thumb_req) == 8, "qimgv_thumb_req layout drift");
-static_assert(offsetof(qimgv_thumb_req, size) == 0, "layout drift");
-static_assert(offsetof(qimgv_thumb_req, crop) == 4, "layout drift");
+// The five by-value structs are pinned in qimgv_engine.h itself, so the contract
+// build and every production TU that includes the header check them; the Rust
+// mirror lives in lib.rs and architecture_rules.py R5 compares the two.
 
 static int failures = 0;
 #define CHECK(cond)                                                        \

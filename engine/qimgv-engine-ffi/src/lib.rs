@@ -122,6 +122,39 @@ pub struct QimgvThumbReq {
     pub crop: c_int,
 }
 
+// ABI layout pins. The C header asserts the same numbers
+// (qimgv_engine.h, "Compile-time layout pinning") and tests/architecture_rules.py
+// R5 fails if the two literals disagree. This side needs its own assert because
+// #[repr(C)] does not freeze a declaration: reorder two fields or widen one and
+// everything still compiles here, the symbol names still match, and the consumer
+// reads arguments from the wrong bytes.
+const _: () = {
+    use std::mem::{offset_of, size_of};
+    assert!(size_of::<QimgvEntryMeta>() == 32);
+    assert!(offset_of!(QimgvEntryMeta, handle) == 0);
+    assert!(offset_of!(QimgvEntryMeta, size) == 8);
+    assert!(offset_of!(QimgvEntryMeta, mtime_ms) == 16);
+    assert!(offset_of!(QimgvEntryMeta, is_dir) == 24);
+    assert!(size_of::<QimgvEvent>() == 12);
+    assert!(offset_of!(QimgvEvent, kind) == 0);
+    assert!(offset_of!(QimgvEvent, code) == 4);
+    assert!(offset_of!(QimgvEvent, epoch) == 8);
+    assert!(size_of::<QimgvMutation>() == 24);
+    assert!(offset_of!(QimgvMutation, kind) == 0);
+    assert!(offset_of!(QimgvMutation, is_dir) == 4);
+    assert!(offset_of!(QimgvMutation, size) == 8);
+    assert!(offset_of!(QimgvMutation, mtime_ms) == 16);
+    assert!(size_of::<QimgvThumbReq>() == 8);
+    assert!(offset_of!(QimgvThumbReq, size) == 0);
+    assert!(offset_of!(QimgvThumbReq, crop) == 4);
+    assert!(size_of::<QimgvProbeResult>() == 20);
+    assert!(offset_of!(QimgvProbeResult, format) == 0);
+    assert!(offset_of!(QimgvProbeResult, animated) == 4);
+    assert!(offset_of!(QimgvProbeResult, orientation) == 8);
+    assert!(offset_of!(QimgvProbeResult, width) == 12);
+    assert!(offset_of!(QimgvProbeResult, height) == 16);
+};
+
 /// Raw pointers are not Send; the notify callback ships one to engine threads.
 struct SendPtr(*mut c_void);
 

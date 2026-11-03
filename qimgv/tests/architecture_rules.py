@@ -103,6 +103,52 @@ for path, rel in sources():
     if not hits and rel in DEBT:
         failures.append(f"R4 stale DEBT entry: {rel} no longer reads settings — drop it from DEBT")
 
+# Rule 5: both sides of the ABI assert the same layout. qimgv_engine.h pins the
+# by-value structs with QIMGV_PIN, lib.rs mirrors the numbers with size_of/
+# offset_of. This has to be a rule because neither compiler can see the other: a
+# layout mismatch still links (the symbol names are unchanged), so the only thing
+# that can catch a field reordered on one side is comparing the two sets of
+# literals — and sizes alone would miss exactly that case, since reordering keeps
+# the size identical.
+HEADER = os.path.join(ROOT, 'engine/qimgv-engine-ffi/include/qimgv_engine.h')
+RUST = os.path.join(ROOT, 'engine/qimgv-engine-ffi/src/lib.rs')
+for side, path in (('header', HEADER), ('rust', RUST)):
+    if not os.path.exists(path):
+        failures.append(f"R5 cannot run: the {side} moved ({path}) — update this rule, do not let it scan nothing")
+if not any(f.startswith('R5 cannot run') for f in failures):
+    scanned['R5'] = 2
+
+    def pascal_to_snake(name):
+        return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
+    def c_layout(text):
+        out = {}
+        for struct, n in re.findall(r'QIMGV_PIN\("(qimgv_[a-z_]+)", sizeof\(qimgv_[a-z_]+\) == (\d+)\)', text):
+            out[(struct, '')] = int(n)
+        for field, struct, n in re.findall(
+                r'QIMGV_PIN\("qimgv_[a-z_]+\.([a-z_]+)", offsetof\((qimgv_[a-z_]+), \w+\) == (\d+)\)', text):
+            out[(struct, field)] = int(n)
+        return out
+
+    def rust_layout(text):
+        out = {}
+        for struct, n in re.findall(r'size_of::<(Qimgv\w+)\>\(\) == (\d+)', text):
+            out[('qimgv_' + pascal_to_snake(struct.removeprefix('Qimgv')), '')] = int(n)
+        for struct, field, n in re.findall(r'offset_of!\((Qimgv\w+), (\w+)\) == (\d+)', text):
+            out[('qimgv_' + pascal_to_snake(struct.removeprefix('Qimgv')), field)] = int(n)
+        return out
+
+    c, r = c_layout(text_of(HEADER)), rust_layout(text_of(RUST))
+    for key in sorted(set(c) | set(r)):
+        struct, field = key
+        where = f"{struct}.{field}" if field else struct
+        if key not in c:
+            failures.append(f"R5 unpinned in the C header: {where}")
+        elif key not in r:
+            failures.append(f"R5 unpinned in Rust: {where}")
+        elif c[key] != r[key]:
+            failures.append(f"R5 ABI layout disagrees: {where} is {c[key]} in qimgv_engine.h, {r[key]} in lib.rs")
+
 if failures:
     print("architecture violations:")
     for f in failures:

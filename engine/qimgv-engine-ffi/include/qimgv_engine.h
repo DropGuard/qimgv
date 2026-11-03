@@ -99,6 +99,56 @@ typedef struct qimgv_probe_result {
 
 typedef void (*qimgv_notify_fn)(void *user);
 
+/* Compile-time layout pinning. These five structs cross by value, so their
+ * layout IS the ABI — and unlike a symbol name, a layout mismatch does not fail
+ * at link time: the call resolves, the arguments are simply read from the wrong
+ * bytes. The same numbers are asserted on the Rust side
+ * (engine/qimgv-engine-ffi/src/lib.rs, "ABI layout pins") and
+ * tests/architecture_rules.py R5 fails if the two literals disagree.
+ *
+ * They live here rather than in a test file because the production build must
+ * check them too: whoever includes this header compiles the contract. */
+#ifdef __cplusplus
+#  define QIMGV_PIN(what, cond) static_assert(cond, what " layout drift")
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#  define QIMGV_PIN(what, cond) _Static_assert(cond, what " layout drift")
+#else
+#  define QIMGV_PIN(what, cond) /* no compile-time assert available */
+#endif
+
+/* (u64,u64,i64,int) */
+QIMGV_PIN("qimgv_entry_meta", sizeof(qimgv_entry_meta) == 32);
+QIMGV_PIN("qimgv_entry_meta.handle", offsetof(qimgv_entry_meta, handle) == 0);
+QIMGV_PIN("qimgv_entry_meta.size", offsetof(qimgv_entry_meta, size) == 8);
+QIMGV_PIN("qimgv_entry_meta.mtime_ms", offsetof(qimgv_entry_meta, mtime_ms) == 16);
+QIMGV_PIN("qimgv_entry_meta.is_dir", offsetof(qimgv_entry_meta, is_dir) == 24);
+
+/* (int,int,u32) */
+QIMGV_PIN("qimgv_event", sizeof(qimgv_event) == 12);
+QIMGV_PIN("qimgv_event.kind", offsetof(qimgv_event, kind) == 0);
+QIMGV_PIN("qimgv_event.code", offsetof(qimgv_event, code) == 4);
+QIMGV_PIN("qimgv_event.epoch", offsetof(qimgv_event, epoch) == 8);
+
+/* (int32,int32,u64,int64) */
+QIMGV_PIN("qimgv_mutation", sizeof(qimgv_mutation) == 24);
+QIMGV_PIN("qimgv_mutation.kind", offsetof(qimgv_mutation, kind) == 0);
+QIMGV_PIN("qimgv_mutation.is_dir", offsetof(qimgv_mutation, is_dir) == 4);
+QIMGV_PIN("qimgv_mutation.size", offsetof(qimgv_mutation, size) == 8);
+QIMGV_PIN("qimgv_mutation.mtime_ms", offsetof(qimgv_mutation, mtime_ms) == 16);
+
+/* (u32,i32) */
+QIMGV_PIN("qimgv_thumb_req", sizeof(qimgv_thumb_req) == 8);
+QIMGV_PIN("qimgv_thumb_req.size", offsetof(qimgv_thumb_req, size) == 0);
+QIMGV_PIN("qimgv_thumb_req.crop", offsetof(qimgv_thumb_req, crop) == 4);
+
+/* 5 x int32 */
+QIMGV_PIN("qimgv_probe_result", sizeof(qimgv_probe_result) == 20);
+QIMGV_PIN("qimgv_probe_result.format", offsetof(qimgv_probe_result, format) == 0);
+QIMGV_PIN("qimgv_probe_result.animated", offsetof(qimgv_probe_result, animated) == 4);
+QIMGV_PIN("qimgv_probe_result.orientation", offsetof(qimgv_probe_result, orientation) == 8);
+QIMGV_PIN("qimgv_probe_result.width", offsetof(qimgv_probe_result, width) == 12);
+QIMGV_PIN("qimgv_probe_result.height", offsetof(qimgv_probe_result, height) == 16);
+
 const char *qimgv_engine_version(void);
 const char *qimgv_last_error(void);
 
