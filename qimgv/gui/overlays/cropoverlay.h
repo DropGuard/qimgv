@@ -30,6 +30,8 @@ public:
     void setImageRealSize(QSize);
     void setButtonText(QString text);
     void setImageScale(float scale);
+    // observability for tests: the scale the overlay draws with
+    float imageScale() const { return scale; }
     void clearSelection();
 
 signals:

@@ -67,11 +67,11 @@ void VideoControls::setPlaybackDuration(int duration) {
 }
 
 void VideoControls::setPlaybackPosition(int pos) {
-    if(position == lastPosition)
+    if(pos == lastPosition)
         return;
     QString positionStr;
     if(mode == PLAYBACK_VIDEO) {
-        int _time = position;
+        int _time = pos;
         int hours = _time / 3600;
         _time -= hours * 3600;
         int minutes = _time / 60;
@@ -81,24 +81,24 @@ void VideoControls::setPlaybackPosition(int pos) {
         if(hours)
             positionStr.prepend(QString("%1").arg(hours, 2, 10, QChar('0')) + ":");
     } else {
-        positionStr = QString::number(position + 1);
+        positionStr = QString::number(pos + 1);
     }
     ui->positionLabel->setText(positionStr);
     ui->seekBar->blockSignals(true);
-    ui->seekBar->setValue(position);
+    ui->seekBar->setValue(pos);
     ui->seekBar->blockSignals(false);
-    lastPosition = position;
+    lastPosition = pos;
 }
 
 void VideoControls::onPlaybackPaused(bool paused) {
-    if(mode)
+    if(paused)
         ui->pauseButton->setIconPath(":res/icons/common/buttons/videocontrols/play24.png");
     else
         ui->pauseButton->setIconPath(":res/icons/common/buttons/videocontrols/pause24.png");
 }
 
 void VideoControls::onVideoMuted(bool muted) {
-    if(mode)
+    if(muted)
         ui->muteButton->setIconPath(":res/icons/common/buttons/videocontrols/mute-on24.png");
     else
         ui->muteButton->setIconPath(":res/icons/common/buttons/videocontrols/mute-off24.png");

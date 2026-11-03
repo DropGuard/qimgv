@@ -161,7 +161,7 @@ void CopyOverlay::createDefaultPaths() {
 
 // block native tab-switching so we can use it in shortcuts
 bool CopyOverlay::focusNextPrevChild(bool next) {
-    Q_UNUSED(mode)
+    Q_UNUSED(next)
     return false;
 }
 

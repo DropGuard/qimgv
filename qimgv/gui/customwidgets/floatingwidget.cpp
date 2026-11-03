@@ -11,7 +11,7 @@ QSize FloatingWidget::containerSize() {
 }
 
 void FloatingWidget::setContainerSize(QSize sz) {
-    this->container = container;
+    this->container = sz;
     recalculateGeometry();
 }
 

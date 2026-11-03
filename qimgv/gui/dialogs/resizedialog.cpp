@@ -10,16 +10,16 @@ ResizeDialog::ResizeDialog(QSize initialSize,  QWidget *parent) :
     setWindowModality(Qt::ApplicationModal);
     ui->percent->setFocus();
 
-    this->originalSize = originalSize;
-    targetSize = originalSize;
+    this->originalSize = initialSize;
+    targetSize = initialSize;
 
-    ui->width->setValue(originalSize.width());
-    ui->height->setValue(originalSize.height());
+    ui->width->setValue(initialSize.width());
+    ui->height->setValue(initialSize.height());
 
     ui->resetButton->setText(tr("Reset:") + " " +
-                             QString::number(originalSize.width()) +
+                             QString::number(initialSize.width()) +
                              " x " +
-                             QString::number(originalSize.height()));
+                             QString::number(initialSize.height()));
 
     desktopSize = qApp->primaryScreen()->size();
     connect(ui->byPercentage,   &QRadioButton::toggled, this, &ResizeDialog::onPercentageRadioButton);

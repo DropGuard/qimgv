@@ -22,6 +22,9 @@ public:
     explicit VideoControls(FloatingWidgetContainer *parent = nullptr);
     ~VideoControls() override;
 
+    // observability for tests: the mirror of the last applied position
+    int playbackPosition() const { return lastPosition; }
+
 public slots:
     void setPlaybackDuration(int);
     void setPlaybackPosition(int);

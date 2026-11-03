@@ -27,8 +27,21 @@
 #include "gui/dialogs/settingsdialog.h"
 #include "themestore.h"
 #include "testhelpers.h"
+#include "gui/customwidgets/floatingwidget.h"
+#include "gui/customwidgets/floatingwidgetcontainer.h"
+#include "gui/dialogs/resizedialog.h"
+#include "gui/overlays/videocontrols.h"
+#include "gui/overlays/cropoverlay.h"
 #include <QCheckBox>
 #include <QSettings>
+
+// FloatingWidget::setContainerSize is protected; the pin reaches it the way
+// the widget hierarchy does — through a subclass.
+class ProbeWidget : public FloatingWidget {
+public:
+    explicit ProbeWidget(FloatingWidgetContainer *parent) : FloatingWidget(parent) {}
+    void pokeContainerSize(QSize size) { setContainerSize(size); }
+};
 
 class TestCoreNav : public QObject {
     Q_OBJECT
@@ -254,6 +267,41 @@ private slots:
         // wallpaper is untouched — the assertion is the safe return
         QMetaObject::invokeMethod(&core, "setWallpaper");
         qputenv("DESKTOP_SESSION", oldSession);
+    }
+
+    // The f8e8b216 "pure renaming" commit renamed constructor and callback
+    // parameters without updating the bodies, and six call sites silently
+    // switched to reading members instead of the arguments. These pins hold
+    // the argument-actually-lands behavior at each of those sites.
+
+    void floatingWidgetContainerSizeFollowsTheArgument() {
+        FloatingWidgetContainer container;
+        ProbeWidget probe(&container);
+        probe.pokeContainerSize(QSize(300, 150));
+        QCOMPARE(probe.containerSize(), QSize(300, 150));
+    }
+
+    void resizeDialogSeedsItsFieldsFromTheArgument() {
+        ResizeDialog dialog(QSize(800, 600));
+        QCOMPARE(dialog.newSize(), QSize(800, 600));
+    }
+
+    void videoControlsPlaybackPositionFollowsTheArgument() {
+        FloatingWidgetContainer container;
+        VideoControls controls(&container);
+        controls.setMode(PLAYBACK_VIDEO); // the ctor leaves mode uninitialized
+        controls.setPlaybackPosition(42);
+        QCOMPARE(controls.playbackPosition(), 42);
+        // a repeat is the dedup no-op, not a corruption
+        controls.setPlaybackPosition(42);
+        QCOMPARE(controls.playbackPosition(), 42);
+    }
+
+    void cropOverlayImageScaleFollowsTheArgument() {
+        FloatingWidgetContainer container;
+        CropOverlay overlay(&container);
+        overlay.setImageScale(2.5f);
+        QCOMPARE(overlay.imageScale(), 2.5f);
     }
 };
 
