@@ -71,10 +71,39 @@ def clazy_counts(srcs):
 
 def cppcheck_counts():
     found = collections.defaultdict(set)
-    cmd = ['cppcheck', f'--project={os.path.join(BUILD, "compile_commands.json")}',
-           '--library=qt', '--suppress=unknownMacro',
-           '--enable=warning,performance,portability', '--inline-suppr', '--quiet']
-    for line in run(cmd, ROOT).splitlines():
+    # no -i exclusions: the compile db drives what gets checked (a nonexistent
+    # -i path is ignored, not fatal), and the coverage assertion below catches
+    # any real coverage hole. The autogen TUs the db contains only cost
+    # preprocessor noise, not findings.
+    # no --quiet: the progress lines ("Checking <file> ...") are the liveness
+    # signal — cppcheck answers a broken invocation (phantom -i, unresolvable
+    # project) with one error line, exit code 0, and zero findings, which is
+    # indistinguishable from a clean scan unless coverage is asserted.
+    cmd = ['cppcheck', f'--project={os.path.abspath(os.path.join(BUILD, "compile_commands.json"))}',
+           '--library=qt', '--suppress=unknownMacro', '--suppress=syntaxError',
+           '--suppress=missingIncludeSystem',
+           '--enable=warning,performance,portability', '--inline-suppr']
+    cwd = os.path.abspath(BUILD)
+    out = run(cmd, cwd)
+
+    # coverage: every TU the compile db offers (after the same SKIP filter the
+    # other tools apply) must appear in cppcheck's Checking lines, normalized
+    # to absolute paths
+    checked = set()
+    for line in out.splitlines():
+        m = re.match(r'^Checking (\S+) \.{3}$', line)
+        if m:
+            checked.add(os.path.abspath(os.path.join(cwd, m.group(1))))
+    expected = {os.path.abspath(e['file']) for e in entries()}
+    missing = sorted(expected - checked)
+    if missing:
+        print(f'cppcheck coverage {len(checked)}/{len(expected)} TUs — '
+              f'{len(missing)} silently unchecked, first few:')
+        for f in missing[:5]:
+            print('  ', f)
+        sys.exit('cppcheck did not scan the whole tree; its findings are untrustworthy')
+
+    for line in out.splitlines():
         m = CPPCHECK.match(line)
         if m and not any(s in m.group(1) for s in SKIP):
             found[m.group(3)].add((m.group(1), m.group(2)))
