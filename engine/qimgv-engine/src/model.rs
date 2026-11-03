@@ -157,9 +157,11 @@ impl DirectoryState {
 
     // --- incremental mutations (engine watcher) ---------------------------------
 
-    /// Inserts an entry keeping the current sort order. Returns the new handle,
-    /// or None if the path is already listed.
-    pub fn insert_entry(&mut self, data: EntryData) -> Option<EntryKey> {
+    /// Inserts an entry keeping the current sort order. Returns the new handle
+    /// and the position the engine chose for it, or None if the path is already
+    /// listed. The position is what the mutation event carries: the mirror
+    /// splices there instead of re-deriving an order.
+    pub fn insert_entry(&mut self, data: EntryData) -> Option<(EntryKey, u32)> {
         if self.entries.values().any(|e| e.path == data.path) {
             return None;
         }
@@ -176,15 +178,29 @@ impl DirectoryState {
             idx as u32
         };
         if is_dir {
+            // the splice shifts every later entry right; the position maps
+            // must follow, or next/prev navigation and the mutation wire
+            // start lying until the next full reorder
+            for v in self.dir_pos.values_mut() {
+                if *v >= pos {
+                    *v += 1;
+                }
+            }
             self.dir_pos.insert(key, pos);
         } else {
+            for v in self.file_pos.values_mut() {
+                if *v >= pos {
+                    *v += 1;
+                }
+            }
             self.file_pos.insert(key, pos);
         }
-        Some(key)
+        Some((key, pos))
     }
 
-    /// Removes by full path from whichever order it lives in.
-    pub fn remove_entry_by_path(&mut self, path: &str) -> Option<EntryKey> {
+    /// Removes by full path from whichever order it lives in. Returns the
+    /// handle and the position the entry held before removal.
+    pub fn remove_entry_by_path(&mut self, path: &str) -> Option<(EntryKey, u32)> {
         let key = self
             .entries
             .iter()
@@ -195,7 +211,8 @@ impl DirectoryState {
         } else {
             (&mut self.file_order, &mut self.file_pos)
         };
-        if let Some(i) = pos.remove(&key) {
+        let index = pos.get(&key).copied();
+        if let Some(i) = index {
             order.remove(i as usize);
             for v in pos.values_mut() {
                 if *v > i {
@@ -204,7 +221,7 @@ impl DirectoryState {
             }
         }
         self.entries.remove(key);
-        Some(key)
+        Some((key, index.unwrap_or(0)))
     }
 
     /// (size, mtime) of a listed entry, for watcher change detection.
@@ -215,17 +232,42 @@ impl DirectoryState {
             .map(|e| (e.size, e.mtime))
     }
 
-    pub fn update_entry_meta(&mut self, path: &str, size: u64, mtime: SystemTime) -> bool {
+    /// Updates (size, mtime) of a listed entry and returns its position in the
+    /// engine's own order afterwards. A size/time sort can reorder on a
+    /// metadata change, so the entry is re-seated when the current mode can
+    /// move it; name sorts return the position unchanged. Without the
+    /// re-seating, the order vectors stop being sorted and the export itself
+    /// stops agreeing with the comparator.
+    pub fn update_entry_meta(&mut self, path: &str, size: u64, mtime: SystemTime) -> Option<u32> {
         let key = self
             .entries
             .iter()
             .find(|(_, e)| e.path == path)
-            .map(|(k, _)| k);
-        let Some(key) = key else { return false };
-        let e = self.entries.get_mut(key).unwrap();
-        e.size = size;
-        e.mtime = mtime;
-        true
+            .map(|(k, _)| k)?;
+        let is_dir = self.entries.get(key).unwrap().is_dir;
+        {
+            let e = self.entries.get_mut(key).unwrap();
+            e.size = size;
+            e.mtime = mtime;
+        }
+        let (order, pos) = if is_dir {
+            (&mut self.dir_order, &mut self.dir_pos)
+        } else {
+            (&mut self.file_order, &mut self.file_pos)
+        };
+        let old = pos.get(&key).copied()?;
+        if matches!(self.sort, SortMode::Name | SortMode::NameDesc) {
+            return Some(old);
+        }
+        let mode = self.sort;
+        let entries = &self.entries;
+        order.remove(old as usize);
+        let idx = order
+            .binary_search_by(|&k| mode.compare(&entries[k], &entries[key]))
+            .unwrap_or_else(|i| i);
+        order.insert(idx, key);
+        *pos = order.iter().enumerate().map(|(i, &k)| (k, i as u32)).collect();
+        Some(idx as u32)
     }
 
     // --- bulk listing export ------------------------------------------------

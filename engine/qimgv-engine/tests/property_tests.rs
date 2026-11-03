@@ -307,3 +307,97 @@ fn read_arena(buf: &[u8]) -> (Vec<Rec>, Vec<Rec>) {
     }
     (files, dirs)
 }
+
+// --- the self-consistency contract -------------------------------------------
+//
+// After ANY mutation sequence in ANY sort mode, the order vectors must be
+// sorted by the comparator and the position maps must tell the truth about
+// them. update_entry_meta used to skip the re-seating, so a size change under
+// SIZE sort silently unsorted the model — and every export after it.
+
+#[derive(Debug, Clone)]
+enum Op {
+    Insert(usize, bool),
+    Remove(usize),
+    Update(usize, u64, u32),
+}
+
+fn op_strategy() -> impl Strategy<Value = Op> {
+    prop_oneof![
+        3 => (0..6usize, any::<bool>()).prop_map(|(i, is_dir)| Op::Insert(i, is_dir)),
+        2 => (0..6usize).prop_map(Op::Remove),
+        2 => (0..6usize, any::<u64>(), 1_000_000_000u32..2_000_000_000)
+            .prop_map(|(i, size, secs)| Op::Update(i, size % 4096, secs)),
+    ]
+}
+
+fn assert_well_ordered(st: &DirectoryState) {
+    let mode = st.sort();
+    for i in 0..st.file_count() {
+        let e = st.file_at(i).unwrap();
+        assert_eq!(st.index_of_file(e.handle), Some(i as u32), "position map lies about {}", e.data.name);
+        if i > 0 {
+            let prev = st.file_at(i - 1).unwrap();
+            assert_ne!(
+                mode.compare(prev.data, e.data),
+                Ordering::Greater,
+                "file order unsorted at {i}: {} vs {}",
+                prev.data.name,
+                e.data.name
+            );
+        }
+    }
+    for i in 0..st.dir_count() {
+        let e = st.dir_at(i).unwrap();
+        assert_eq!(st.index_of_dir(e.handle), Some(i as u32));
+        if i > 0 {
+            let prev = st.dir_at(i - 1).unwrap();
+            assert_ne!(mode.compare(prev.data, e.data), Ordering::Greater, "dir order unsorted at {i}");
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn mutations_leave_the_model_well_ordered(
+        specs_in in specs(1..6),
+        ops in prop::collection::vec(op_strategy(), 0..40),
+        mode in any_mode(),
+    ) {
+        let mut st = DirectoryState::new(mode);
+        let mut alive: Vec<(Spec, bool)> = Vec::new();
+        for op in ops {
+            match op {
+                Op::Insert(i, is_dir) => {
+                    let spec = specs_in[i % specs_in.len()].clone();
+                    // the model dedups on full path, files and dirs alike
+                    if alive.iter().any(|(s, _)| s.name == spec.name) {
+                        continue;
+                    }
+                    let inserted = st.insert_entry(spec.entry_in("/root", is_dir));
+                    prop_assert!(inserted.is_some(), "insert of a fresh path must succeed");
+                    alive.push((spec, is_dir));
+                }
+                Op::Remove(i) => {
+                    if alive.is_empty() {
+                        continue;
+                    }
+                    let (spec, _) = alive.remove(i % alive.len());
+                    let removed = st.remove_entry_by_path(&format!("/root/{}", spec.name));
+                    prop_assert!(removed.is_some(), "removing a listed path must succeed");
+                }
+                Op::Update(i, size, secs) => {
+                    if alive.is_empty() {
+                        continue;
+                    }
+                    let (spec, _) = &alive[i % alive.len()];
+                    let path = format!("/root/{}", spec.name);
+                    let mtime = UNIX_EPOCH + Duration::from_secs(secs as u64);
+                    let updated = st.update_entry_meta(&path, size, mtime);
+                    prop_assert!(updated.is_some(), "updating a listed path must succeed");
+                }
+            }
+            assert_well_ordered(&st);
+        }
+    }
+}

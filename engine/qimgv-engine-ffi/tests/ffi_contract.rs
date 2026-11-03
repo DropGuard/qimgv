@@ -35,7 +35,7 @@ fn take_event(engine: *mut QimgvEngine, timeout: Duration) -> Option<(c_int, c_i
     loop {
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 512];
-        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()) };
         if r > 0 {
             let dir = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned();
@@ -82,7 +82,7 @@ fn fresh_engine_state_and_free() {
         assert_eq!(qimgv_engine_dir_count(engine), 0);
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 64];
-        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
         qimgv_engine_free(engine);
     }
@@ -188,7 +188,7 @@ fn open_dir_event_queries_and_truncation() {
         // the single DirListed event was already drained
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 64];
-        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
 
         qimgv_engine_free(engine);
@@ -294,7 +294,7 @@ fn take_thumb(engine: *mut QimgvEngine, timeout: Duration) -> Option<(String, u3
     loop {
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 4096];
-        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let mut t = QimgvThumbReq { size: 0, crop: 0 };
         let r = unsafe {
             qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, &mut t)
@@ -451,7 +451,7 @@ fn thumb_round_trip_works_while_a_directory_open_is_in_flight() {
     while !(got_thumb && got_listing) {
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
         let mut buf = [0 as c_char; 4096];
-        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0 };
+        let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let mut t = QimgvThumbReq { size: 0, crop: 0 };
         let r = unsafe {
             qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, &mut t)

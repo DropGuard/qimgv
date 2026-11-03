@@ -269,7 +269,7 @@ void EngineBridge::drainEvents() {
         if (ev.kind == QIMGV_EVENT_DIR_LISTED) {
             emit dirListed(dir);
         } else if (ev.kind == QIMGV_EVENT_DIR_MUTATED) {
-            emit dirMutated(mut.kind, dir, mut.is_dir != 0, mut.size, mut.mtime_ms);
+            emit dirMutated(mut.kind, dir, mut.is_dir != 0, mut.size, mut.mtime_ms, mut.index);
         } else if (ev.kind == QIMGV_EVENT_THUMB_NEXT) {
             emit thumbNext(dir, static_cast<int>(treq.size), treq.crop != 0);
         } else if (ev.kind == QIMGV_EVENT_OPEN_FAILED) {

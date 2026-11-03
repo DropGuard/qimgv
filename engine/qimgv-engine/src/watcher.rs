@@ -125,6 +125,9 @@ pub enum WatchAction {
         is_dir: bool,
         size: u64,
         mtime_ms: i64,
+        /// The entry's position in the engine's own order at the time of the
+        /// event. The engine decides where things sit; consumers splice.
+        index: u32,
     },
     /// The watcher snapshot can't be trusted for this directory.
     Reconcile,
@@ -164,16 +167,21 @@ pub fn apply_event(
                 path: path.to_string_lossy().into_owned(),
                 is_dir: ev.is_dir,
                 size: if ev.is_dir { 0 } else { meta.len() },
-                mtime: meta.modified().unwrap_or(UNIX_EPOCH),
+                // Directories are canonical (size 0, mtime epoch, name-ordered
+                // in every mode): scan.rs creates them that way, so a watched
+                // creation must not hand them real metadata that would let a
+                // size/time sort reorder them against the scanner's rule.
+                mtime: if ev.is_dir { UNIX_EPOCH } else { meta.modified().unwrap_or(UNIX_EPOCH) },
             };
-            if state.insert_entry(entry).is_some() {
+            if let Some((_key, index)) = state.insert_entry(entry) {
                 WatchAction::Changed {
                     kind: Applied::Added,
                     path: path.to_string_lossy().into_owned(),
                     name: name.clone(),
                     is_dir: ev.is_dir,
                     size: if ev.is_dir { 0 } else { meta.len() },
-                    mtime_ms: mtime_ms(meta.modified().unwrap_or(UNIX_EPOCH)),
+                    mtime_ms: if ev.is_dir { 0 } else { mtime_ms(meta.modified().unwrap_or(UNIX_EPOCH)) },
+                    index,
                 }
             } else {
                 WatchAction::Ignored
@@ -182,7 +190,7 @@ pub fn apply_event(
         K::Deleted | K::MovedFrom => {
             let path = dir.join(ev.name.as_deref().unwrap_or(""));
             let path = path.to_string_lossy().into_owned();
-            if state.remove_entry_by_path(&path).is_some() {
+            if let Some((_key, index)) = state.remove_entry_by_path(&path) {
                 WatchAction::Changed {
                     kind: Applied::Removed,
                     path,
@@ -190,12 +198,19 @@ pub fn apply_event(
                     is_dir: ev.is_dir,
                     size: 0,
                     mtime_ms: 0,
+                    index,
                 }
             } else {
                 WatchAction::Ignored
             }
         }
         K::Modified => {
+            // A directory's own mtime carries no listing meaning (see the
+            // canonical-dir note above), and no consumer mirrors it: the
+            // engine state stays exactly as the scanner left it.
+            if ev.is_dir {
+                return WatchAction::Ignored;
+            }
             let path = dir.join(ev.name.as_deref().unwrap_or(""));
             let path = path.to_string_lossy().into_owned();
             let Some((_, old_mtime)) = state.entry_meta(&path) else {
@@ -209,8 +224,10 @@ pub fn apply_event(
             if mtime == old_mtime {
                 return WatchAction::Ignored;
             }
-            let size = if ev.is_dir { 0 } else { meta.len() };
-            state.update_entry_meta(&path, size, mtime);
+            let size = meta.len();
+            let Some(index) = state.update_entry_meta(&path, size, mtime) else {
+                return WatchAction::Ignored;
+            };
             WatchAction::Changed {
                 kind: Applied::Modified,
                 path,
@@ -218,6 +235,7 @@ pub fn apply_event(
                 is_dir: ev.is_dir,
                 size,
                 mtime_ms: mtime_ms(mtime),
+                index,
             }
         }
     }

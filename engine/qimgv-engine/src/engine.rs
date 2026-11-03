@@ -70,7 +70,9 @@ pub enum Event {
     /// repopulates; handles stay stable across re-sorts).
     DirListed { dir: PathBuf, epoch: u64 },
     OpenFailed { dir: PathBuf, error: Arc<EngineError>, epoch: u64 },
-    /// Incremental change applied by the engine watcher.
+    /// Incremental change applied by the engine watcher. `index` is the
+    /// entry's position in the engine's own order — the single order decision,
+    /// handed to the mirror so it never re-derives one.
     Mutated {
         kind: WatchChangeKind,
         path: String,
@@ -78,6 +80,7 @@ pub enum Event {
         is_dir: bool,
         size: u64,
         mtime_ms: i64,
+        index: u32,
         epoch: u64,
     },
     /// Scheduler dispatches the next decode (C++ pool executes it).
@@ -269,7 +272,7 @@ impl Engine {
                                         ov.insert(p.clone());
                                         let mut st = state_write(&state);
                                         if let Ok(m) = meta {
-                                            st.insert_entry(crate::model::EntryData {
+                                            let _ = st.insert_entry(crate::model::EntryData {
                                                 name: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                                                 path: p.to_string_lossy().into_owned(),
                                                 is_dir: m.is_dir(),
@@ -363,13 +366,13 @@ impl Engine {
                                     .unwrap_or(watcher::WatchAction::Ignored)
                                 };
                                 match action {
-                                    watcher::WatchAction::Changed { kind, path, name, is_dir, size, mtime_ms } => {
+                                    watcher::WatchAction::Changed { kind, path, name, is_dir, size, mtime_ms, index } => {
                                         let kind = match kind {
                                             watcher::Applied::Added => WatchChangeKind::Added,
                                             watcher::Applied::Modified => WatchChangeKind::Modified,
                                             watcher::Applied::Removed => WatchChangeKind::Removed,
                                         };
-                                        let _ = ev_tx.send(Event::Mutated { kind, path, name, is_dir, size, mtime_ms, epoch: epoch_at() });
+                                        let _ = ev_tx.send(Event::Mutated { kind, path, name, is_dir, size, mtime_ms, index, epoch: epoch_at() });
                                         fire_notify(&notify);
                                     }
                                     watcher::WatchAction::Reconcile => {

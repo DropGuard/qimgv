@@ -156,3 +156,47 @@ fn set_sort_reorders_and_notifies() {
 fn st_names(engine: &Engine, i: usize) -> String {
     engine.state.read().unwrap().file_at(i).unwrap().data.name.clone()
 }
+
+#[test]
+fn mutated_event_carries_the_engine_position() {
+    // The mirror splices at the engine's position; the wire must actually
+    // carry it, and it must agree with where the model put the entry. State
+    // polling, not notify timing, drives the waits — the same discipline the
+    // live-watch tests use.
+    let (notify_tx, _notify_rx) = mpsc::channel::<()>();
+    let engine = Engine::spawn(
+        config(&["jpg"]),
+        Arc::new(move || {
+            let _ = notify_tx.send(());
+        }),
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.jpg"), b"x").unwrap();
+    engine.send(Command::OpenDir { path: dir.path().to_owned(), sort: None, epoch: engine.next_epoch() }).unwrap();
+    wait_for(&engine, |st| st.file_count() == 1);
+
+    std::fs::write(dir.path().join("b.jpg"), b"xx").unwrap();
+    wait_for(&engine, |st| st.file_count() == 2);
+
+    // drain the queued events down to the Added mutation: the create may also
+    // echo a modify for the same write, and the DirListed from the open is
+    // still queued ahead of both
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        match engine.try_event() {
+            Some(Event::Mutated { kind: qimgv_engine::WatchChangeKind::Added, index, is_dir, .. }) => {
+                assert_eq!(index, 1, "b.jpg sits after a.jpg in natural order");
+                assert!(!is_dir);
+                break;
+            }
+            Some(_) => continue,
+            None => {
+                assert!(std::time::Instant::now() < deadline, "no Added mutation event within 5s");
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        }
+    }
+    let st = engine.state.read().unwrap();
+    assert_eq!(st.file_at(1).unwrap().data.name, "b.jpg");
+}

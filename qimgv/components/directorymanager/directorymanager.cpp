@@ -510,33 +510,77 @@ void DirectoryManager::onEngineDirListed(const QString &dirPath) {
             pending.action();
 }
 
-void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs) {
+// The engine's own order is the contract: it decides where an entry sits, this
+// side only splices. An out-of-range index is a wire bug — degrade to the
+// nearest legal position (and say so) rather than corrupting memory; the
+// convergence contract test fails long before this branch can matter.
+static void insertAtEngineIndex(std::vector<FSEntry> &vec, FSEntry &&entry, int index) {
+    const int limit = static_cast<int>(vec.size());
+    if(index < 0 || index > limit) {
+        qCWarning(lcWatchPerf) << "engine index out of range" << index << "of" << limit;
+        index = std::clamp(index, 0, limit);
+    }
+    vec.insert(vec.begin() + index, std::move(entry));
+}
+
+// MODIFIED is applied from the wire: the watcher stat'ed the file before
+// emitting, so a re-stat here would be a second decision about the same fact —
+// and it is exactly where the old FSEntry self-assignment bug lived.
+void DirectoryManager::applyEngineModification(const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index) {
+    std::vector<FSEntry> &vec = isDir ? dirEntryVec : fileEntryVec;
+    FSEntry entry;
+    entry.path = path;
+    entry.name = QFileInfo(path).fileName();
+    entry.isDirectory = isDir;
+    entry.size = size;
+    entry.modifyTime = fileTimeFromMs(isDir ? 0 : mtimeMs);
+
+    int current = isDir ? indexOfDir(path) : indexOfFile(path);
+    if(current < 0) {
+        // the mirror is behind the engine (it never saw the add): converge by
+        // trusting the wire position instead of re-statting
+        insertAtEngineIndex(vec, std::move(entry), index);
+        if(isDir) {
+            emit dirAdded(path);
+        } else {
+            mPrevFileMeta.insert(path, qMakePair(size, mtimeMs));
+            emit fileAdded(path);
+        }
+        return;
+    }
+    // the wire index is the entry's FINAL position in the engine's post-update
+    // order; erase first, then splice straight to it
+    vec.erase(vec.begin() + current);
+    insertAtEngineIndex(vec, std::move(entry), index);
+    if(!isDir)
+        mPrevFileMeta.insert(path, qMakePair(size, mtimeMs));
+    emit fileModified(path);
+}
+
+void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index) {
     if(mResyncing)
         return;
     switch(kind) {
         case QIMGV_MUT_ADDED: {
             if(containsFile(path) || containsDir(path))
-                return; // app-side mutation already applied this
+                return; // already mirrored (racing duplicate)
             FSEntry entry;
             entry.path = path;
             entry.name = QFileInfo(path).fileName();
             entry.isDirectory = isDir;
             entry.size = size;
-            if(isDir)
-                entry.modifyTime = fileTimeFromMs(0);
-            else
-                entry.modifyTime = fileTimeFromMs(mtimeMs);
+            entry.modifyTime = fileTimeFromMs(isDir ? 0 : mtimeMs);
+            insertAtEngineIndex(isDir ? dirEntryVec : fileEntryVec, std::move(entry), index);
             if(isDir) {
-                insert_sorted(dirEntryVec, entry, std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
                 emit dirAdded(path);
             } else {
-                insert_sorted(fileEntryVec, entry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
+                mPrevFileMeta.insert(path, qMakePair(size, mtimeMs));
                 emit fileAdded(path);
             }
             break;
         }
         case QIMGV_MUT_MODIFIED:
-            updateFileEntry(path);
+            applyEngineModification(path, isDir, size, mtimeMs, index);
             break;
         case QIMGV_MUT_REMOVED:
             removeDirEntry(path);

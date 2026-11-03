@@ -134,6 +134,10 @@ private:
     void removeFileEntry(const QString &filePath);
     void removeDirEntry(const QString &dirPath);
     void updateFileEntry(const QString &filePath);
+    // MODIFIED applied from the wire: the watcher stat'ed before emitting, so
+    // the mirror replaces content and splices to the engine's position — it
+    // never re-derives either
+    void applyEngineModification(const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
     void scheduleRescan();
     void mirrorEngineListing(const QString &dirPath);
     static bool directoryUsable(const QString &dirPath);
@@ -164,7 +168,7 @@ private:
 private slots:
     void onEngineDirListed(const QString &dirPath);
     void onEngineOpenFailed(const QString &dirPath, int code);
-    void onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs);
+    void onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
 
 signals:
     void loaded(const QString &path);

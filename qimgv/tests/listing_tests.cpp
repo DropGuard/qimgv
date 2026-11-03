@@ -247,6 +247,66 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(model.containsFile(fixtureDir + "/copy.jpg"), 10000);
         QCOMPARE(model.fileCount(), 2UL + 1UL);
     }
+
+    // the contract check itself: the mirror vectors are the engine's own
+    // export, order included — same entries, same positions
+    void assertMirrorMatchesEngineExport(DirectoryManager &dm) {
+        QByteArray arena;
+        quint32 fileCount = 0, dirCount = 0;
+        QVERIFY(EngineBridge::instance().exportListing(arena, fileCount, dirCount));
+        std::vector<EngineBridge::EngineEntry> files, dirs;
+        QVERIFY(EngineBridge::parseListing(arena, files, dirs));
+        QCOMPARE(files.size(), dm.fileCount());
+        QCOMPARE(dirs.size(), dm.dirCount());
+        for(quint32 i = 0; i < fileCount; ++i)
+            QCOMPARE(dm.filePathAt(static_cast<int>(i)), files[i].path);
+        for(quint32 i = 0; i < dirCount; ++i)
+            QCOMPARE(dm.dirPathAt(static_cast<int>(i)), dirs[i].path);
+    }
+
+    // THE mirror contract: the engine decides content and order; the mirror is
+    // a faithful projection of it. After any mutation sequence the vectors
+    // must equal the engine's export without this side re-deriving either.
+    // (The pre-contract applier sorted incrementally with a lexicographic path
+    // compare, so "img3.jpg" landed somewhere else than the engine's natural
+    // order put it.)
+    void mirrorStaysAFaithfulProjectionOfTheEngineListing() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        // tricky names — exactly where the two producers used to disagree —
+        // plus a removal and a modification, all through the watcher
+        makeFile("IMG2.jpg");
+        makeFile("img 10.jpg");
+        makeFile("10.jpg");
+        QVERIFY(QFile::remove(fixtureDir + "/img1.jpg"));
+        {
+            QFile f(fixtureDir + "/img2.jpg");
+            QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Append));
+            QVERIFY(f.write("appended") == 8);
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 5UL, 10000); // 3 - 1 + 3 new
+        QTest::qWait(200); // straggling events drain before the pull
+        assertMirrorMatchesEngineExport(dm);
+
+        // under SIZE sort a metadata change re-seats the entry on the engine
+        // side; the mirror must follow the wire index, not its own comparator
+        dm.setSortingMode(SORT_SIZE);
+        QTest::qWait(400); // the resort's rebuilt mirror settles
+        assertMirrorMatchesEngineExport(dm);
+
+        {
+            QFile f(fixtureDir + "/10.jpg");
+            QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Append));
+            QVERIFY(f.write(QByteArray(4096, 'x')));
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(dm.indexOfFile(fixtureDir + "/10.jpg")
+                                     > dm.indexOfFile(fixtureDir + "/img2.jpg"), 10000);
+        QTest::qWait(200);
+        assertMirrorMatchesEngineExport(dm);
+    }
 };
 
 #include "listing_tests.moc"

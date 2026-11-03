@@ -82,6 +82,11 @@ typedef struct qimgv_mutation {
     int32_t is_dir;
     uint64_t size;
     int64_t mtime_ms;
+    /* The entry's position in the engine's own order at the time of the
+     * event: where an Added entry was inserted, where a Modified entry sits
+     * after its metadata re-sort, where a Removed entry lived. The mirror's
+     * only order decision is to splice at this index. */
+    int32_t index;
 } qimgv_mutation;
 
 typedef struct qimgv_thumb_req {
@@ -129,12 +134,13 @@ QIMGV_PIN("qimgv_event.kind", offsetof(qimgv_event, kind) == 0);
 QIMGV_PIN("qimgv_event.code", offsetof(qimgv_event, code) == 4);
 QIMGV_PIN("qimgv_event.epoch", offsetof(qimgv_event, epoch) == 8);
 
-/* (int32,int32,u64,int64) */
-QIMGV_PIN("qimgv_mutation", sizeof(qimgv_mutation) == 24);
+/* (int32,int32,u64,int64,int32) — index packs at 24, size pads to 32 */
+QIMGV_PIN("qimgv_mutation", sizeof(qimgv_mutation) == 32);
 QIMGV_PIN("qimgv_mutation.kind", offsetof(qimgv_mutation, kind) == 0);
 QIMGV_PIN("qimgv_mutation.is_dir", offsetof(qimgv_mutation, is_dir) == 4);
 QIMGV_PIN("qimgv_mutation.size", offsetof(qimgv_mutation, size) == 8);
 QIMGV_PIN("qimgv_mutation.mtime_ms", offsetof(qimgv_mutation, mtime_ms) == 16);
+QIMGV_PIN("qimgv_mutation.index", offsetof(qimgv_mutation, index) == 24);
 
 /* (u32,i32) */
 QIMGV_PIN("qimgv_thumb_req", sizeof(qimgv_thumb_req) == 8);

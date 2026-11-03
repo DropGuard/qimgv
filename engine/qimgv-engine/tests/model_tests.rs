@@ -88,3 +88,42 @@ fn ffi_key_roundtrip_and_null_rejection() {
     assert_eq!(key_from_ffi(bits), Some(key));
     assert_eq!(key_from_ffi(0), None, "all-zero bits are the null key");
 }
+
+#[test]
+fn insert_entry_reports_the_position_it_chose() {
+    let mut st = DirectoryState::new(SortMode::Name);
+    st.replace_all(
+        "/tmp".into(),
+        vec![entry("a.jpg", 1, 0), entry("c.jpg", 1, 0)],
+        vec![],
+    );
+    let (_, pos) = st.insert_entry(entry("b.jpg", 1, 0)).unwrap();
+    assert_eq!(pos, 1);
+    let names: Vec<&str> = (0..3).map(|i| st.file_at(i).unwrap().data.name.as_str()).collect();
+    assert_eq!(names, ["a.jpg", "b.jpg", "c.jpg"]);
+}
+
+#[test]
+fn meta_update_repositions_under_size_sort() {
+    // without the re-seating, a size change under SIZE sort leaves the order
+    // vectors unsorted — the export itself stops agreeing with the comparator
+    let mut st = DirectoryState::new(SortMode::Size);
+    st.replace_all(
+        "/tmp".into(),
+        vec![entry("big.jpg", 100, 0), entry("small.jpg", 1, 0)],
+        vec![],
+    );
+    let mtime = SystemTime::now();
+    let pos = st.update_entry_meta("/tmp/small.jpg", 500, mtime).unwrap();
+    assert_eq!(pos, 1);
+    assert_eq!(st.file_at(0).unwrap().data.name, "big.jpg");
+    assert_eq!(st.file_at(1).unwrap().data.name, "small.jpg");
+}
+
+#[test]
+fn meta_update_keeps_the_position_under_name_sort() {
+    let mut st = DirectoryState::new(SortMode::Name);
+    st.replace_all("/tmp".into(), vec![entry("a.jpg", 1, 0)], vec![]);
+    let pos = st.update_entry_meta("/tmp/a.jpg", 9, SystemTime::now()).unwrap();
+    assert_eq!(pos, 0);
+}

@@ -114,6 +114,11 @@ pub struct QimgvMutation {
     pub is_dir: c_int,
     pub size: u64,
     pub mtime_ms: i64,
+    /// The entry's position in the engine's own order at the time of the
+    /// event: where an Added entry was inserted, where a Modified entry sits
+    /// after its metadata re-sort, where a Removed entry lived. The mirror's
+    /// only order decision is to splice at this index.
+    pub index: c_int,
 }
 
 #[repr(C)]
@@ -139,11 +144,12 @@ const _: () = {
     assert!(offset_of!(QimgvEvent, kind) == 0);
     assert!(offset_of!(QimgvEvent, code) == 4);
     assert!(offset_of!(QimgvEvent, epoch) == 8);
-    assert!(size_of::<QimgvMutation>() == 24);
+    assert!(size_of::<QimgvMutation>() == 32);
     assert!(offset_of!(QimgvMutation, kind) == 0);
     assert!(offset_of!(QimgvMutation, is_dir) == 4);
     assert!(offset_of!(QimgvMutation, size) == 8);
     assert!(offset_of!(QimgvMutation, mtime_ms) == 16);
+    assert!(offset_of!(QimgvMutation, index) == 24);
     assert!(size_of::<QimgvThumbReq>() == 8);
     assert!(offset_of!(QimgvThumbReq, size) == 0);
     assert!(offset_of!(QimgvThumbReq, crop) == 4);
@@ -850,7 +856,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                 }
                 Ok(1)
             }
-            Some(Event::Mutated { kind, path, name: _, is_dir, size, mtime_ms, epoch }) => {
+            Some(Event::Mutated { kind, path, name: _, is_dir, size, mtime_ms, index, epoch }) => {
                 write_str(dir_buf, dir_cap, &path)?;
                 let mkind = match kind {
                     qimgv_engine::WatchChangeKind::Added => QIMGV_MUT_ADDED,
@@ -864,6 +870,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                             is_dir: is_dir as c_int,
                             size,
                             mtime_ms,
+                            index: index as c_int,
                         };
                     }
                 }
