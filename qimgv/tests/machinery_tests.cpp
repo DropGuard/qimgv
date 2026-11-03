@@ -192,6 +192,32 @@ private slots:
         QCOMPARE(bmp.format(), QStringLiteral("bmp"));
     }
 
+    // The scale pipeline is: worker thread computes the image, Scaler::onTaskFinish
+    // runs on that thread (direct connection) and re-emits across a QUEUED hop to the
+    // thread Scaler lives on. If the payload has no metatype, Qt drops the call with a
+    // warning that scrolls past in the log and the viewer simply never gets a result —
+    // silently, with no crash and every symbol still resolving.
+    void scaledResultSurvivesTheQueuedHop() {
+        resetFixture();
+        const QSize orig(64, 64);
+        QVERIFY(writeBigImage(fixtureDir + "/real.png", "png", orig));
+        auto image = *ImageFactory::createImage(fixtureDir + "/real.png", false);
+        QVERIFY(image->getImage()->size() == orig);
+
+        Cache cache;
+        Scaler scaler(&cache);
+        int delivered = 0;
+        QPixmap result;
+        QObject::connect(&scaler, &Scaler::scalingFinished, [&](QPixmap pix, ScalerRequest) {
+            result = pix;
+            ++delivered;
+        });
+        scaler.requestScaled(ScalerRequest(image, QSize(32, 32), fixtureDir + "/real.png",
+                                           QI_FILTER_BILINEAR, true));
+        QTRY_COMPARE_WITH_TIMEOUT(delivered, 1, 10000);
+        QCOMPARE(result.size(), QSize(32, 32));
+    }
+
     void thumbnailerAccountingSurvivesAClearMidFlight() {
         resetFixture();
         Thumbnailer thumb;

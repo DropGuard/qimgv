@@ -25,6 +25,8 @@
 #include <QStandardPaths>
 #include "components/directorymanager/directorymanager.h"
 #include "components/directorymanager/enginebridge.h"
+#include "components/scaler/scaler.h"
+#include "components/scaler/scalerrequest.h"
 #include "components/directorymodel.h"
 #include "components/cache/cache.h"
 #include "components/thumbnailer/thumbnailer.h"
@@ -89,10 +91,14 @@ public:
         QVERIFY(home.path() != nullptr);
         // IsolatedHome already redirected HOME and the config identity
         QVERIFY(Settings::getInstance() != nullptr);
-        // QSignalSpy records queued signals by metatype, and the loader hands
-        // both an image and the factory's optional over a thread boundary
+        // Upstream registers these two, and a probe says the suite passes without
+        // them: in Qt 6 a pointer-to-member connection carries its argument types
+        // from the declaration, so qRegisterMetaType is only load-bearing for a
+        // payload that has to live in a QVariant (string-based SIGNAL/SLOT connect,
+        // or QVariant conversion). Kept because removing someone else's safety net
+        // on an unfinished theory is not a win — the point is not to add more.
         qRegisterMetaType<std::shared_ptr<Image>>("std::shared_ptr<Image>");
-        qRegisterMetaType<std::optional<std::shared_ptr<Image>>>("std::optional<std::shared_ptr<Image>>");
+        qRegisterMetaType<ScalerRequest>("ScalerRequest");
         // no removeRecursively here: the engine keeps inotify watches on these
         // paths for the life of the process, and deleting a watched directory out
         // from under it is how a later listing dies with EBADF. main() sweeps the

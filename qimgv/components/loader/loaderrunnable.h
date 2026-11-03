@@ -18,7 +18,3 @@ signals:
     void finished(std::optional<std::shared_ptr<Image>>, QString, bool scaled);
     void failed(QString);
 };
-
-// crosses the pool thread -> Loader connection as a queued call, so the payload
-// needs a metatype the same way std::shared_ptr<Image> does
-Q_DECLARE_METATYPE(std::optional<std::shared_ptr<Image>>)
