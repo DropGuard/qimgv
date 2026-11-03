@@ -21,7 +21,20 @@ add_test(NAME ENGINE_CONTRACT COMMAND engine_contract_tests)
 # Engine stack integration: EngineBridge pump + DirectoryManager async wiring.
 # Links qimgv_nongui — the same objects the executable is built from — so a test
 # that touches another component costs nothing to add.
-add_executable(engine_stack_tests test_engine_stack.cpp)
+# One class per domain, one binary. 49 slots in a single 1371-line TU meant every
+# edit recompiled the whole suite, and the fifteen "layer" comments in it were
+# file boundaries that never became files.
+add_executable(engine_stack_tests
+    engine_stack_main.cpp
+    listing_tests.cpp
+    wire_format_tests.cpp
+    folder_boundary_tests.cpp
+    decode_tests.cpp
+    settings_tests.cpp
+    filelog_tests.cpp
+    machinery_tests.cpp
+    image_ops_tests.cpp
+    infra_tests.cpp)
 target_link_libraries(engine_stack_tests PRIVATE Qt6::Test qimgv_nongui)
 add_test(NAME ENGINE_STACK COMMAND engine_stack_tests)
 

@@ -1,0 +1,225 @@
+#include "engine_stack_fixture.h"
+
+// the bridge event pump, DirectoryManager's async open, the deferred-listing
+// primitive and the single-writer rule
+class TestListing : public QObject, protected EngineStackFixture {
+    Q_OBJECT
+public:
+    TestListing() : EngineStackFixture("listing") {}
+
+private slots:
+    void initTestCase() { init(); }
+
+    void engineBridgePumpDeliversListed() {
+        resetFixture();
+        auto &bridge = EngineBridge::instance();
+        QSignalSpy listed(&bridge, &EngineBridge::dirListed);
+        QVERIFY(listed.isValid());
+
+        QVERIFY(bridge.openDir(fixtureDir, 0 /*QIMGV_SORT_NAME*/, false));
+        QTRY_COMPARE_WITH_TIMEOUT(listed.count(), 1, 10000);
+
+        QCOMPARE(bridge.fileCount(), 3); // txt filtered
+        QCOMPARE(bridge.dirCount(), 1);
+        EngineBridge::EngineEntry e;
+        QVERIFY(bridge.entryAt(0, false, e));
+        QCOMPARE(e.name, QStringLiteral("img1.jpg")); // natural order: 1 < 2 < 10
+        QVERIFY(bridge.entryAt(2, false, e));
+        QCOMPARE(e.name, QStringLiteral("img10.jpg"));
+    }
+
+    void directoryManagerOpenIsAsynchronous() {
+        resetFixture();
+        DirectoryManager dm;
+        QSignalSpy loaded(&dm, &DirectoryManager::loaded);
+        QSignalSpy failed(&dm, &DirectoryManager::loadingFailed);
+
+        QVERIFY(dm.setDirectory(fixtureDir));
+        // THE async assertion: listing must NOT be there yet (old code was sync)
+        QCOMPARE(dm.fileCount(), 0UL);
+        QCOMPARE(loaded.count(), 0);
+
+        QTRY_COMPARE_WITH_TIMEOUT(loaded.count(), 1, 10000);
+        QCOMPARE(dm.fileCount(), 3UL);
+        QCOMPARE(dm.dirCount(), 1UL);
+        QCOMPARE(dm.filePathAt(0), fixtureDir + "/img1.jpg");
+        QCOMPARE(dm.filePathAt(2), fixtureDir + "/img10.jpg");
+        QCOMPARE(failed.count(), 0);
+    }
+
+    void missingDirectoryFailsFast() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(!dm.setDirectory("/nonexistent/qimgv-test-42"));
+    }
+
+    void sortingResortsAsynchronously() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        QSignalSpy resort(&dm, &DirectoryManager::sortingChanged);
+        dm.setSortingMode(SORT_NAME_DESC);
+        QTRY_COMPARE_WITH_TIMEOUT(resort.count(), 1, 10000);
+        QCOMPARE(dm.filePathAt(0), fixtureDir + "/img10.jpg");
+        QCOMPARE(dm.filePathAt(2), fixtureDir + "/img1.jpg");
+    }
+
+    void liveFileCreationArrivesViaWatcher() {
+        resetFixture();
+        DirectoryManager dm;
+        QSignalSpy added(&dm, &DirectoryManager::fileAdded);
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        // a file appears while the directory is open; on Linux the engine
+        // watcher applies it incrementally (no rescan involved)
+        makeFile("latecomer.jpg");
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 4UL, 10000);
+        QCOMPARE(added.count(), 1);
+        QCOMPARE(added.at(0).at(0).toString(), fixtureDir + "/latecomer.jpg");
+        // the engine listing is authoritative: natural order kept
+        QCOMPARE(dm.filePathAt(0), fixtureDir + "/img1.jpg");
+        QCOMPARE(dm.filePathAt(3), fixtureDir + "/latecomer.jpg");
+    }
+
+    void liveFileDeletionEmitsRemoved() {
+        resetFixture();
+        DirectoryManager dm;
+        QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        QVERIFY(QFile::remove(fixtureDir + "/img2.jpg"));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 2UL, 10000);
+        QCOMPARE(removed.count(), 1);
+        QCOMPARE(dm.filePathAt(0), fixtureDir + "/img1.jpg");
+        QCOMPARE(dm.filePathAt(1), fixtureDir + "/img10.jpg");
+    }
+
+    void liveRenameSurfacesAsRemoveAndAdd() {
+        // the engine does not pair inotify rename cookies (v1): a rename
+        // surfaces as Removed(old) + Added(new) — ordered and lossless
+        resetFixture();
+        DirectoryManager dm;
+        QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
+        QSignalSpy added(&dm, &DirectoryManager::fileAdded);
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        QVERIFY(QFile::rename(fixtureDir + "/img2.jpg", fixtureDir + "/renamed.jpg"));
+        QTRY_COMPARE_WITH_TIMEOUT(removed.count(), 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(added.count(), 1, 10000);
+        QCOMPARE(removed.at(0).at(0).toString(), fixtureDir + "/img2.jpg");
+        QCOMPARE(added.at(0).at(0).toString(), fixtureDir + "/renamed.jpg");
+        QCOMPARE(dm.fileCount(), 3UL);
+    }
+
+    void forceInsertSurvivesResortViaInclude() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        // mime-valid file the extension filter excludes: forceInsert must
+        // reach the engine (Include) so later mirrors keep it
+        makeFile("mime-ok.xyz");
+        QVERIFY(dm.forceInsertFileEntry(fixtureDir + "/mime-ok.xyz"));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 4UL, 10000);
+
+        dm.setSortingMode(SORT_NAME_DESC);
+        QTRY_COMPARE_WITH_TIMEOUT(dm.sortingMode() == SORT_NAME_DESC, true, 10000);
+        QTest::qWait(400); // allow any (wrongly) converging mirror to land
+        QCOMPARE(dm.fileCount(), 4UL);
+        QCOMPARE(dm.containsFile(fixtureDir + "/mime-ok.xyz"), true);
+    }
+
+    // "Decide when the listing lands" used to be a hand-rolled flag in Core
+    // with three clear/consume sites; whenListed() centralizes the lifecycle,
+    // and these tests pin it.
+
+    void whenListedFiresWhenTheListingLands() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        bool fired = false;
+        dm.whenListed(fixtureDir, [&fired] { fired = true; });
+        QVERIFY(!fired); // armed, the listing is still in flight
+        QTRY_VERIFY_WITH_TIMEOUT(fired, 10000);
+    }
+
+    void whenListedIsSupersededByANewerOpen() {
+        resetFixture();
+        QVERIFY(QDir(fixtureDir).mkdir("second"));
+        QFile f(fixtureDir + "/second/z.jpg");
+        QVERIFY(f.open(QIODevice::WriteOnly));
+
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        bool staleFired = false;
+        dm.whenListed(fixtureDir, [&staleFired] { staleFired = true; });
+        // a newer open supersedes the queue before the stale listing lands
+        QVERIFY(dm.setDirectory(fixtureDir + "/second"));
+        QVERIFY(!staleFired);
+        bool freshFired = false;
+        dm.whenListed(fixtureDir + "/second", [&freshFired] { freshFired = true; });
+        QTRY_VERIFY_WITH_TIMEOUT(freshFired, 10000);
+        QVERIFY(!staleFired);
+    }
+
+    void whenListedCanBeCancelled() {
+        resetFixture();
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        bool fired = false;
+        qint64 token = dm.whenListed(fixtureDir, [&fired] { fired = true; });
+        QVERIFY(dm.cancelListed(token));
+        // the listing lands (the counts arrive), the cancelled action stays
+        // silent, and a double cancel is a no-op rather than an error
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3, 10000);
+        QTest::qWait(300);
+        QVERIFY(!fired);
+        QVERIFY(!dm.cancelListed(token));
+    }
+
+    // In-app file operations touch the disk only; the mirror has exactly one
+    // writer (the engine event applier) and the update arrives through the
+    // watch round trip, the same path an external edit takes.
+
+    void modelFileOperationsRideTheEngineRoundTrip() {
+        resetFixture();
+        DirectoryModel model;
+        QSignalSpy removed(&model, &DirectoryModel::fileRemoved);
+        QSignalSpy added(&model, &DirectoryModel::fileAdded);
+        QVERIFY(model.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 3UL, 10000);
+
+        FileOpResult result;
+        model.removeFile(fixtureDir + "/img2.jpg", false, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        // the removal signal carries the update when the round trip lands,
+        // not synchronously from the operation
+        QTRY_COMPARE_WITH_TIMEOUT(removed.count(), 1, 10000);
+        QCOMPARE(removed.at(0).at(0).toString(), fixtureDir + "/img2.jpg");
+        QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 2UL, 10000);
+
+        // rename in place surfaces as remove+add, exactly like an external one
+        model.renameEntry(fixtureDir + "/img1.jpg", "renamed.jpg", false, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        QTRY_VERIFY_WITH_TIMEOUT(model.containsFile(fixtureDir + "/renamed.jpg"), 10000);
+        QVERIFY(!model.containsFile(fixtureDir + "/img1.jpg"));
+
+        // copy into the watched directory — engine-driven from the start
+        QVERIFY(QFile::copy(fixtureDir + "/renamed.jpg", fixtureDir + "/copy.jpg"));
+        QTRY_VERIFY_WITH_TIMEOUT(model.containsFile(fixtureDir + "/copy.jpg"), 10000);
+        QCOMPARE(model.fileCount(), 2UL + 1UL);
+    }
+};
+
+#include "listing_tests.moc"
+
+int runListingTests(int argc, char **argv) {
+    TestListing test;
+    return runIfOwned(test, argc, argv);
+}

@@ -22,7 +22,7 @@ clazy qproperty-without-notify 3
 clazy detaching-temporary 3
 clazy overridden-signal 2
 clazy container-anti-pattern 2
-clazy no-module-include 2
+clazy no-module-include 1
 clazy use-static-qregularexpression 2
 clazy const-signal-or-slot 1
 clazy non-pod-global-static 1
