@@ -8,6 +8,18 @@
 #
 # Families at zero are NOT baselined: they are -Werror in the build itself
 # (Wuse-after-free, Wsign-compare), which is where they belong.
+#
+# Deliberately NOT fixed (owner decision, do not re-litigate):
+#   conversion / float-conversion — the bulk is GUI coordinate math
+#   (qreal -> int for pixel positions); the truncation is the intent,
+#   not a bug. Adding casts is noise. The directorymodel/manager
+#   size_type->int sites are theoretically reachable only at 2B files.
+#   The settings_table factory conversions are safe by construction.
+#   passedByValue — Qt's implicit sharing makes by-value QString cheap
+#   for cold paths; the hot-path sites were already fixed. The 55
+#   remainder is dialogs/settings cold paths.
+#   duplInheritedMember — Qt-style signal/slot re-declaration patterns
+#   (non-virtual shadowing is intentional in this framework).
 gcc conversion 86
 gcc float-conversion 55
 gcc old-style-cast 30
