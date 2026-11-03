@@ -1205,7 +1205,8 @@ void Core::scalingRequest(QSize size, ScalingFilter filter) {
     if(mw->isVisible() && state.hasActiveImage) {
         std::shared_ptr<Image> forScale = model->getImage(state.currentFilePath);
         if(forScale) {
-            model->scaler->requestScaled(ScalerRequest(forScale, size, state.currentFilePath, filter));
+            model->scaler->requestScaled(ScalerRequest(forScale, size, state.currentFilePath, filter,
+                                                        settings->smoothUpscaling()));
         }
     }
 }
