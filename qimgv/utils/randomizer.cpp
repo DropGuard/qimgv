@@ -29,18 +29,8 @@ void Randomizer::setCurrent(int _current) {
 // this assumes our array contains shuffled int values [0 ... count]
 // which it does in our case
 int Randomizer::indexOf(int item) {
-    int index = -1;
-    if(item >= vec.size())
-        return index;
-    std::vector<int>::iterator it;
-    int i = 0;
-    for (it = vec.begin(); it != vec.end(); ++it, ++i) {
-        if(vec[i] == item) {
-            index = i;
-            break;
-        }
-    }
-    return index;
+    auto it = std::find(vec.begin(), vec.end(), item);
+    return (it == vec.end()) ? -1 : static_cast<int>(std::distance(vec.begin(), it));
 }
 
 void Randomizer::fill() {

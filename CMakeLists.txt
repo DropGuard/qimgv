@@ -76,6 +76,25 @@ FetchContent_MakeAvailable(Corrosion)
 # rely on new code failing loudly here.
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+# clang-tidy / clazy / cppcheck all read the command line rather than guess it,
+# so the compilation database is part of the toolchain, not a convenience.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Three families are at zero findings in this tree, so they are errors. They are
+# the classes this project has actually been bitten by: a descriptor closed
+# twice (use-after-free) and an int compared against a size() (sign-compare).
+# The rest are deliberately NOT compiled in — suggest-override 198 sites,
+# conversion 86, float-conversion 55, old-style-cast 30, shadow 13 — because a
+# build that shouts is a build nobody reads. scripts/lint.py runs them on demand
+# against a baseline that may only shrink.
+add_compile_options(-Werror=sign-compare)
+# -Wuse-after-free is a GCC check; the clang driver that clazy wraps accepts the
+# flag only by warning that it does not know it, so asking for it there would
+# print two lines per TU and enforce nothing.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    add_compile_options(-Wuse-after-free -Werror=use-after-free)
+endif()
+
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/engine/qimgv-engine-ffi/Cargo.toml)
 
 
@@ -103,3 +122,16 @@ add_test(NAME ENGINE_RUST
          COMMAND ${CARGO_EXECUTABLE} test --workspace
          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set_tests_properties(ENGINE_RUST PROPERTIES TIMEOUT 600)
+
+# The static-analysis sweep is minutes, not seconds, so it is not in the default
+# ctest run: -DLINT_TESTS=ON adds it for whoever wants the whole gate in one
+# command. Otherwise scripts/lint.py stays the on-demand path, which is what the
+# baseline rule assumes — the numbers move when a human says they may.
+option(LINT_TESTS "Add the static-analysis sweep to ctest" OFF)
+if(LINT_TESTS)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME LINT
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/lint.py
+                     --gate ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(LINT PROPERTIES LABELS lint TIMEOUT 3600)
+endif()

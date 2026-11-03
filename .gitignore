@@ -1,6 +1,8 @@
 .kdev4/
 *.txt
 !CMakeLists.txt
+# the lint baseline is tracked data: scripts/lint.py fails when it cannot read it
+!scripts/lint-baseline.txt
 !msys2-build-deps.txt
 !msys2-dll-deps.txt
 #build*
