@@ -31,12 +31,6 @@ DirectoryManager::DirectoryManager() :
     mAppliedSort = mSortingMode;
 }
 
-template< typename T, typename Pred >
-typename std::vector<T>::iterator
-insert_sorted(std::vector<T> & vec, T const& item, Pred pred) {
-    return vec.insert(std::upper_bound(vec.begin(), vec.end(), item, pred), item);
-}
-
 bool DirectoryManager::path_entry_compare(const FSEntry &e1, const FSEntry &e2) const {
     return collator.compare(e1.path, e2.path) < 0;
 };
@@ -45,49 +39,10 @@ bool DirectoryManager::path_entry_compare_reverse(const FSEntry &e1, const FSEnt
     return collator.compare(e1.path, e2.path) > 0;
 };
 
-bool DirectoryManager::name_entry_compare(const FSEntry &e1, const FSEntry &e2) const {
-    return collator.compare(e1.name, e2.name) < 0;
-};
-
-bool DirectoryManager::name_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const {
-    return collator.compare(e1.name, e2.name) > 0;
-};
-
-bool DirectoryManager::date_entry_compare(const FSEntry& e1, const FSEntry& e2) const {
-    return e1.modifyTime < e2.modifyTime;
-}
-
-bool DirectoryManager::date_entry_compare_reverse(const FSEntry& e1, const FSEntry& e2) const {
-    return e1.modifyTime > e2.modifyTime;
-}
-
-bool DirectoryManager::size_entry_compare(const FSEntry& e1, const FSEntry& e2) const {
-    return e1.size < e2.size;
-}
-
-bool DirectoryManager::size_entry_compare_reverse(const FSEntry& e1, const FSEntry& e2) const {
-    return e1.size > e2.size;
-}
-
 CompareFunction DirectoryManager::dirComparator() const {
     return (mSortingMode == SortingMode::SORT_NAME_DESC)
         ? &DirectoryManager::path_entry_compare_reverse
         : &DirectoryManager::path_entry_compare;
-}
-
-CompareFunction DirectoryManager::compareFunction() {
-    CompareFunction cmpFn = &DirectoryManager::path_entry_compare;
-    if(mSortingMode == SortingMode::SORT_NAME_DESC)
-        cmpFn = &DirectoryManager::path_entry_compare_reverse;
-    if(mSortingMode == SortingMode::SORT_TIME)
-        cmpFn = &DirectoryManager::date_entry_compare;
-    if(mSortingMode == SortingMode::SORT_TIME_DESC)
-        cmpFn = &DirectoryManager::date_entry_compare_reverse;
-    if(mSortingMode == SortingMode::SORT_SIZE)
-        cmpFn = &DirectoryManager::size_entry_compare;
-    if(mSortingMode == SortingMode::SORT_SIZE_DESC)
-        cmpFn = &DirectoryManager::size_entry_compare_reverse;
-    return cmpFn;
 }
 
 
@@ -348,7 +303,10 @@ bool DirectoryManager::containsDir(const QString &dirPath) const {
 // ##############################################################
 // ###################### PRIVATE METHODS #######################
 // ##############################################################
-// both directories & files
+// the setSubdirsSync bypass is the one local producer of order left: it fills
+// directories only (files stay empty by contract), and the mirror's own file
+// vectors are the engine's order, spliced from the wire — nothing here sorts
+// them
 void DirectoryManager::sortEntryLists() {
     // Directories always order by name. Two producers have to agree on that, and
     // only one of them is configurable by the sort mode:
@@ -361,7 +319,6 @@ void DirectoryManager::sortEntryLists() {
     // order the view does not show. Only NAME_DESC reverses dirs, because that is
     // the one mode whose engine comparator reverses them.
     std::sort(dirEntryVec.begin(), dirEntryVec.end(), std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
-    std::sort(fileEntryVec.begin(), fileEntryVec.end(), std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
 }
 
 void DirectoryManager::setSortingMode(SortingMode mode) {
@@ -393,7 +350,12 @@ bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
     std::filesystem::directory_entry stdEntry(toStdString(filePath));
     QString fileName = QString::fromStdString(stdEntry.path().filename().generic_string()); // isn't it beautiful
     FSEntry FSEntry(filePath, fileName, stdEntry.file_size(), stdEntry.last_write_time(), stdEntry.is_directory());
-    insert_sorted(fileEntryVec, FSEntry, std::bind(compareFunction(), this, std::placeholders::_1, std::placeholders::_2));
+    // The mirror makes no order decision here: the entry lands at the end and
+    // the includePath round trip re-delivers the listing in the engine's own
+    // order within milliseconds. Core's open path needs the entry present
+    // synchronously (indexOfFile right after this call), which is the only
+    // reason this local insert exists at all.
+    fileEntryVec.push_back(std::move(FSEntry));
     if(!directoryPath().isEmpty()) {
         qCDebug(lcWatchPerf) << "fileIns" << filePath << directoryPath();
         emit fileAdded(filePath);
@@ -410,23 +372,6 @@ void DirectoryManager::removeFileEntry(const QString &filePath) {
     fileEntryVec.erase(fileEntryVec.begin() + index);
     qCDebug(lcWatchPerf) << "fileRem" << filePath;
     emit fileRemoved(filePath, index);
-}
-
-void DirectoryManager::updateFileEntry(const QString &filePath) {
-    if(!containsFile(filePath))
-        return;
-    FSEntry newEntry(filePath);
-    if(newEntry.path.isEmpty()) {
-        // the re-stat lost a race with a delete: keep the last known entry
-        // instead of replacing it with an empty one
-        qCDebug(lcWatchPerf) << "fileMod stat failed" << filePath;
-        return;
-    }
-    int index = indexOfFile(filePath);
-    if(fileEntryVec.at(index).modifyTime != newEntry.modifyTime)
-        fileEntryVec.at(index) = newEntry;
-    qCDebug(lcWatchPerf) << "fileMod" << filePath;
-    emit fileModified(filePath);
 }
 
 // ---- dir entries
@@ -745,12 +690,14 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
         }
     }
 
-    // 2. changed files: compare engine metadata against the previous mirror
+    // 2. changed files: compare engine metadata against the previous mirror —
+    //    the signal is all the mirror owes the view; the entry content comes
+    //    from the export in step 3, never from a native re-stat
     for(const auto &f : files) {
         if(oldPaths.contains(f.path)) {
             const auto prev = mPrevFileMeta.constFind(f.path);
             if(prev == mPrevFileMeta.constEnd() || prev->first != f.size || prev->second != f.mtimeMs)
-                updateFileEntry(f.path); // re-stats natively, emits fileModified
+                emit fileModified(f.path);
         }
     }
 

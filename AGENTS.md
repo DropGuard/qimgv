@@ -7,9 +7,14 @@
 
 qimgv 的 fork(KDE/Qt6 优先,GPL),`rustcore` 分支是集成主干:Rust 引擎
 (`engine/qimgv-engine*`)是目录与解码调度的唯一写者,C++ 侧是只读镜像与
-Qt 渲染。架构规则由 `qimgv/tests/architecture_rules.py` 执行(R1 gui 隔离、
-R2 FFI 说话者白名单、R3 rust 封印、R4 settings 解引用、R5 ABI 钉、R6 信号
-重声明)——**结构规则不靠记忆,靠这 5 个测试套件**。
+Qt 渲染。mirror 的内容与顺序都由引擎决定:mutation 事件携带引擎自序索引与
+watcher 已 stat 的数据,C++ 只做机械拼接与替换(收敛契约 =
+`mirrorStaysAFaithfulProjectionOfTheEngineListing`)。已知的两个本地例外,
+均有注释说明理由:forceInsert 的同步 push_back(Core 打开路径需要 index
+立即可用),与 setSubdirsSync 的旁路扫描。架构规则由
+`qimgv/tests/architecture_rules.py` 执行(R1 gui 隔离、R2 FFI 说话者白名单、
+R3 rust 封印、R4 settings 解引用、R5 ABI 钉、R6 信号重声明)——**结构规则
+不靠记忆,靠这 5 个测试套件**。
 
 ## 常用命令
 

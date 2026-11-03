@@ -133,7 +133,6 @@ private:
     // listing has exactly one writer (the engine) and one reader (the mirror)
     void removeFileEntry(const QString &filePath);
     void removeDirEntry(const QString &dirPath);
-    void updateFileEntry(const QString &filePath);
     // MODIFIED applied from the wire: the watcher stat'ed before emitting, so
     // the mirror replaces content and splices to the engine's position — it
     // never re-derives either
@@ -148,18 +147,11 @@ private:
 
     bool path_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
     bool path_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
-    bool name_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
-    bool name_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
-    bool date_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
-    bool date_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
-    CompareFunction compareFunction();
-    // Directories only ever order by name: compareFunction() can pick a time or
-    // size comparator, and those are meaningless for directories because scan.rs
-    // gives every one of them the same size/mtime defaults. Sorting and inserting
-    // have to use the same rule, so both ask for this one.
+    // Directories only ever order by name: the engine's comparator lands on
+    // its name tiebreak because scan.rs gives every directory the same
+    // size/mtime defaults. The bypass's local sort and the engine's own order
+    // both ask for this one rule.
     CompareFunction dirComparator() const;
-    bool size_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
-    bool size_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
 
     void addSubdirsFromDirectory(const QString &directoryPath);
     bool checkFileRange(int index) const;
