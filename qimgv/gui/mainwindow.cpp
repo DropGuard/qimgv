@@ -272,7 +272,7 @@ void MW::showAnimation(std::shared_ptr<QMovie> movie) {
     updateCropPanelData();
 }
 
-void MW::showVideo(QString file) {
+void MW::showVideo(const QString &file) {
     if(settings->autoResizeWindow())
         preShowResize(QSize()); // tmp. find a way to get this though mpv BEFORE playback
     viewerWidget->showVideo(file);
@@ -296,7 +296,7 @@ void MW::onSortingChanged(SortingMode mode) {
     }
 }
 
-void MW::setDirectoryPath(QString path) {
+void MW::setDirectoryPath(const QString &path) {
     //closeImage();
     info.directoryPath = path;
     info.directoryName = path.split("/").last();
@@ -341,7 +341,7 @@ void MW::toggleImageInfoOverlay() {
         imageInfoOverlay->hide();
 }
 
-void MW::toggleRenameOverlay(QString currentName) {
+void MW::toggleRenameOverlay(const QString &currentName) {
     if(!renameOverlay)
         setupRenameOverlay();
     if(renameOverlay->isHidden()) {
@@ -529,7 +529,7 @@ void MW::showDefault() {
     }
 }
 
-void MW::showSaveDialog(QString filePath) {
+void MW::showSaveDialog(const QString &filePath) {
     QString newFilePath = getSaveFileName(filePath);
     if(!newFilePath.isEmpty())
         emit saveAsRequested(newFilePath);
@@ -599,7 +599,7 @@ void MW::showResizeDialog(QSize initialSize) {
     dialog.exec();
 }
 
-DialogResult MW::fileReplaceDialog(QString src, QString dst, FileReplaceMode mode, bool multiple) {
+DialogResult MW::fileReplaceDialog(const QString &src, const QString &dst, FileReplaceMode mode, bool multiple) {
     FileReplaceDialog dialog(this);
     dialog.setModal(true);
     dialog.setSource(src);
@@ -688,7 +688,7 @@ void MW::showChangelogWindow() {
     changelogWindow->show();
 }
 
-void MW::showChangelogWindow(QString text) {
+void MW::showChangelogWindow(const QString &text) {
     changelogWindow->setText(text);
     changelogWindow->show();
 }
@@ -775,7 +775,7 @@ void MW::closeFullScreenOrExit() {
 }
 
 // todo: this is crap, use shared state object
-void MW::setCurrentInfo(int _index, int _fileCount, QString _filePath, QString _fileName, QSize _imageSize, qint64 _fileSize, bool slideshow, bool shuffle, bool edited) {
+void MW::setCurrentInfo(int _index, int _fileCount, const QString &_filePath, const QString &_fileName, QSize _imageSize, qint64 _fileSize, bool slideshow, bool shuffle, bool edited) {
     info.index = _index;
     info.fileCount = _fileCount;
     info.fileName = _fileName;
@@ -845,7 +845,7 @@ void MW::onInfoUpdated() {
 }
 
 // TODO!!! buffer this in mw
-void MW::setExifInfo(QMap<QString, QString> info) {
+void MW::setExifInfo(const QMap<QString, QString> &info) {
     if(imageInfoOverlay)
         imageInfoOverlay->setExifInfo(info);
 }
@@ -859,7 +859,7 @@ std::shared_ptr<ThumbnailStripProxy> MW::getThumbnailPanel() {
 }
 
 // todo: this is crap
-void MW::showMessageDirectory(QString dirName) {
+void MW::showMessageDirectory(const QString &dirName) {
     floatingMessage->showMessage(dirName, FloatingMessageIcon::ICON_DIRECTORY, 1700);
 }
 
@@ -885,23 +885,23 @@ void MW::showMessageFitOriginal() {
     floatingMessage->showMessage(tr("Fit 1:1"), FloatingMessageIcon::NO_ICON, 350);
 }
 
-void MW::showMessage(QString text) {
+void MW::showMessage(const QString &text) {
     floatingMessage->showMessage(text,  FloatingMessageIcon::NO_ICON, 1500);
 }
 
-void MW::showMessage(QString text, int duration) {
+void MW::showMessage(const QString &text, int duration) {
     floatingMessage->showMessage(text, FloatingMessageIcon::NO_ICON, duration);
 }
 
-void MW::showMessageSuccess(QString text) {
+void MW::showMessageSuccess(const QString &text) {
     floatingMessage->showMessage(text,  FloatingMessageIcon::ICON_SUCCESS, 1500);
 }
 
-void MW::showWarning(QString text) {
+void MW::showWarning(const QString &text) {
     floatingMessage->showMessage(text,  FloatingMessageIcon::ICON_WARNING, 1500);
 }
 
-void MW::showError(QString text) {
+void MW::showError(const QString &text) {
     floatingMessage->showMessage(text,  FloatingMessageIcon::ICON_ERROR, 2800);
 }
 

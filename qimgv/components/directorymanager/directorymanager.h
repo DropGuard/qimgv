@@ -43,7 +43,7 @@ class DirectoryManager : public QObject {
 public:
     DirectoryManager();
     // ignored if the same dir is already opened
-    bool setDirectory(QString);
+    bool setDirectory(const QString &);
     // Blocking SUBDIRECTORIES-only scan into this instance, for callers that read
     // the sibling order on the very next line (Core's folder-boundary navigation).
     // setDirectory() cannot serve them: its listing is asynchronous, so the read
@@ -66,31 +66,31 @@ public:
     qint64 whenListed(const QString &dirPath, std::function<void()> action);
     bool cancelListed(qint64 token);
     QString directoryPath() const;
-    int indexOfFile(QString filePath) const;
-    int indexOfDir(QString dirPath) const;
+    int indexOfFile(const QString &filePath) const;
+    int indexOfDir(const QString &dirPath) const;
     QString filePathAt(int index) const;
     unsigned long fileCount() const;
     unsigned long dirCount() const;
-    inline bool isSupportedFile(QString filePath) const;
+    inline bool isSupportedFile(const QString &filePath) const;
     bool isEmpty() const;
-    bool containsFile(QString filePath) const;
+    bool containsFile(const QString &filePath) const;
     QString fileNameAt(int index) const;
-    QString prevOfFile(QString filePath) const;
-    QString nextOfFile(QString filePath) const;
-    QString prevOfDir(QString filePath) const;
-    QString nextOfDir(QString filePath) const;
+    QString prevOfFile(const QString &filePath) const;
+    QString nextOfFile(const QString &filePath) const;
+    QString prevOfDir(const QString &filePath) const;
+    QString nextOfDir(const QString &filePath) const;
     void sortEntryLists();
-    QDateTime lastModified(QString filePath) const;
+    QDateTime lastModified(const QString &filePath) const;
 
     QString firstFile() const;
     QString lastFile() const;
     void setSortingMode(SortingMode mode);
     SortingMode sortingMode() const;
-    bool isFile(QString path) const;
-    bool isDir(QString path) const;
+    bool isFile(const QString &path) const;
+    bool isDir(const QString &path) const;
 
     unsigned long totalCount() const;
-    bool containsDir(QString dirPath) const;
+    bool containsDir(const QString &dirPath) const;
     const FSEntry &fileEntryAt(int index) const;
     QString dirPathAt(int index) const;
     QString dirNameAt(int index) const;
@@ -162,20 +162,20 @@ private:
     bool checkDirRange(int index) const;
 
 private slots:
-    void onEngineDirListed(QString dirPath);
-    void onEngineOpenFailed(QString dirPath, int code);
-    void onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs);
+    void onEngineDirListed(const QString &dirPath);
+    void onEngineOpenFailed(const QString &dirPath, int code);
+    void onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs);
 
 signals:
     void loaded(const QString &path);
     void sortingChanged();
-    void loadingFailed(QString dirPath);
-    void fileRemoved(QString filePath, int);
-    void fileModified(QString filePath);
-    void fileAdded(QString filePath);
-    void fileRenamed(QString fromPath, int indexFrom, QString toPath, int indexTo);
+    void loadingFailed(const QString &dirPath);
+    void fileRemoved(const QString &filePath, int);
+    void fileModified(const QString &filePath);
+    void fileAdded(const QString &filePath);
+    void fileRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
 
-    void dirRemoved(QString dirPath, int);
-    void dirAdded(QString dirPath);
-    void dirRenamed(QString fromPath, int indexFrom, QString toPath, int indexTo);
+    void dirRemoved(const QString &dirPath, int);
+    void dirAdded(const QString &dirPath);
+    void dirRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
 };

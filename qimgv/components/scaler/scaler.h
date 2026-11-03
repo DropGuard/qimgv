@@ -14,18 +14,18 @@ public:
     explicit Scaler(Cache *_cache, QObject *parent = nullptr);
 
 signals:
-    void scalingFinished(QPixmap result, ScalerRequest request);
-    void acceptScalingResult(std::shared_ptr<const QImage> image, ScalerRequest req);
+    void scalingFinished(QPixmap result, const ScalerRequest &request);
+    void acceptScalingResult(std::shared_ptr<const QImage> image, const ScalerRequest &req);
     void startBufferedRequest();
 
 public slots:
-    void requestScaled(ScalerRequest req);
+    void requestScaled(const ScalerRequest &req);
 
 private slots:
-    void onTaskStart(ScalerRequest req);
-    void onTaskFinish(std::shared_ptr<const QImage> scaled, ScalerRequest req);
+    void onTaskStart(const ScalerRequest &req);
+    void onTaskFinish(std::shared_ptr<const QImage> scaled, const ScalerRequest &req);
     void slotStartBufferedRequest();
-    void slotForwardScaledResult(std::shared_ptr<const QImage> image, ScalerRequest req);
+    void slotForwardScaledResult(std::shared_ptr<const QImage> image, const ScalerRequest &req);
 
 private:
     QThreadPool *pool = nullptr;
@@ -36,7 +36,7 @@ private:
 
     Cache *cache;
 
-    void startRequest(ScalerRequest req);
+    void startRequest(const ScalerRequest &req);
 
     QSemaphore *sem = nullptr;
 };

@@ -99,7 +99,7 @@ void DirectoryManager::readSettings() {
     regex.setPattern(settings->supportedFormatsRegex());
 }
 
-bool DirectoryManager::setDirectory(QString dirPath) {
+bool DirectoryManager::setDirectory(const QString &dirPath) {
     if(dirPath.isEmpty()) {
         mEngineDir.clear();
         if(rescanTimer)
@@ -197,7 +197,7 @@ QString DirectoryManager::directoryPath() const {
     return mDirectoryPath;
 }
 
-int DirectoryManager::indexOfFile(QString filePath) const {
+int DirectoryManager::indexOfFile(const QString &filePath) const {
     auto item = find_if(fileEntryVec.begin(), fileEntryVec.end(), [filePath](const FSEntry& e) {
         return e.path == filePath;
     });
@@ -206,7 +206,7 @@ int DirectoryManager::indexOfFile(QString filePath) const {
     return -1;
 }
 
-int DirectoryManager::indexOfDir(QString dirPath) const {
+int DirectoryManager::indexOfDir(const QString &dirPath) const {
     auto item = find_if(dirEntryVec.begin(), dirEntryVec.end(), [dirPath](const FSEntry& e) {
         return e.path == dirPath;
     });
@@ -245,7 +245,7 @@ QString DirectoryManager::lastFile() const {
     return filePath;
 }
 
-QString DirectoryManager::prevOfFile(QString filePath) const {
+QString DirectoryManager::prevOfFile(const QString &filePath) const {
     QString prevFilePath = "";
     int currentIndex = indexOfFile(filePath);
     if(currentIndex > 0)
@@ -253,7 +253,7 @@ QString DirectoryManager::prevOfFile(QString filePath) const {
     return prevFilePath;
 }
 
-QString DirectoryManager::nextOfFile(QString filePath) const {
+QString DirectoryManager::nextOfFile(const QString &filePath) const {
     QString nextFilePath = "";
     int currentIndex = indexOfFile(filePath);
     if(currentIndex >= 0 && currentIndex < static_cast<int>(fileEntryVec.size()) - 1)
@@ -261,7 +261,7 @@ QString DirectoryManager::nextOfFile(QString filePath) const {
     return nextFilePath;
 }
 
-QString DirectoryManager::prevOfDir(QString dirPath) const {
+QString DirectoryManager::prevOfDir(const QString &dirPath) const {
     QString prevDirectoryPath = "";
     int currentIndex = indexOfDir(dirPath);
     if(currentIndex > 0)
@@ -269,7 +269,7 @@ QString DirectoryManager::prevOfDir(QString dirPath) const {
     return prevDirectoryPath;
 }
 
-QString DirectoryManager::nextOfDir(QString dirPath) const {
+QString DirectoryManager::nextOfDir(const QString &dirPath) const {
     QString nextDirectoryPath = "";
     int currentIndex = indexOfDir(dirPath);
     if(currentIndex >= 0 && currentIndex < static_cast<int>(dirEntryVec.size()) - 1)
@@ -304,7 +304,7 @@ const FSEntry &DirectoryManager::fileEntryAt(int index) const {
         return defaultEntry;
 }
 
-QDateTime DirectoryManager::lastModified(QString filePath) const {
+QDateTime DirectoryManager::lastModified(const QString &filePath) const {
     QFileInfo info;
     if(containsFile(filePath))
         info.setFile(filePath);
@@ -313,11 +313,11 @@ QDateTime DirectoryManager::lastModified(QString filePath) const {
 
 // TODO: what about symlinks?
 inline
-bool DirectoryManager::isSupportedFile(QString path) const {
+bool DirectoryManager::isSupportedFile(const QString &path) const {
     return ( isFile(path) && regex.match(path).hasMatch() );
 }
 
-bool DirectoryManager::isFile(QString path) const {
+bool DirectoryManager::isFile(const QString &path) const {
     if(!std::filesystem::exists(toStdString(path)))
         return false;
     if(!std::filesystem::is_regular_file(toStdString(path)))
@@ -325,7 +325,7 @@ bool DirectoryManager::isFile(QString path) const {
     return true;
 }
 
-bool DirectoryManager::isDir(QString path) const {
+bool DirectoryManager::isDir(const QString &path) const {
     if(!std::filesystem::exists(toStdString(path)))
         return false;
     if(!std::filesystem::is_directory(toStdString(path)))
@@ -337,11 +337,11 @@ bool DirectoryManager::isEmpty() const {
     return fileEntryVec.empty();
 }
 
-bool DirectoryManager::containsFile(QString filePath) const {
+bool DirectoryManager::containsFile(const QString &filePath) const {
     return (std::find(fileEntryVec.begin(), fileEntryVec.end(), filePath) != fileEntryVec.end());
 }
 
-bool DirectoryManager::containsDir(QString dirPath) const {
+bool DirectoryManager::containsDir(const QString &dirPath) const {
     return (std::find(dirEntryVec.begin(), dirEntryVec.end(), dirPath) != dirEntryVec.end());
 }
 
@@ -485,7 +485,7 @@ void DirectoryManager::scheduleRescan() {
     rescanTimer->start();
 }
 
-void DirectoryManager::onEngineDirListed(QString dirPath) {
+void DirectoryManager::onEngineDirListed(const QString &dirPath) {
     if(mResyncing || dirPath != mEngineDir)
         return;
     if(mDirectoryPath != dirPath)
@@ -504,7 +504,7 @@ void DirectoryManager::onEngineDirListed(QString dirPath) {
             pending.action();
 }
 
-void DirectoryManager::onEngineMutated(int kind, QString path, bool isDir, quint64 size, qint64 mtimeMs) {
+void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs) {
     if(mResyncing)
         return;
     switch(kind) {
@@ -555,7 +555,7 @@ bool DirectoryManager::cancelListed(qint64 token) {
     return false;
 }
 
-void DirectoryManager::onEngineOpenFailed(QString dirPath, int code) {
+void DirectoryManager::onEngineOpenFailed(const QString &dirPath, int code) {
     if(dirPath != mEngineDir)
         return;
     qWarning() << "[DirectoryManager] engine open failed:" << dirPath << "code" << code;

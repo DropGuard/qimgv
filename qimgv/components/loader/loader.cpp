@@ -14,30 +14,30 @@ bool Loader::isBusy() const {
     return (tasks.count() != 0);
 }
 
-bool Loader::isLoading(QString path) {
+bool Loader::isLoading(const QString &path) {
     return tasks.contains(path);
 }
 
-std::optional<std::shared_ptr<Image>> Loader::load(QString path) {
+std::optional<std::shared_ptr<Image>> Loader::load(const QString &path) {
     // sync path (editing fallback): always full quality
     return ImageFactory::createImage(path, false);
 }
 
 // clears all buffered tasks before loading
-void Loader::loadAsyncPriority(QString path) {
+void Loader::loadAsyncPriority(const QString &path) {
     clearPool();
     doLoadAsync(path, 1, true); // tier-1 scaled for instant display
 }
 
-void Loader::loadAsync(QString path) {
+void Loader::loadAsync(const QString &path) {
     doLoadAsync(path, 0, true);
 }
 
-void Loader::loadAsyncFull(QString path) {
+void Loader::loadAsyncFull(const QString &path) {
     doLoadAsync(path, 0, false); // tier-2 full-res upgrade
 }
 
-void Loader::doLoadAsync(QString path, int priority, bool scaled) {
+void Loader::doLoadAsync(const QString &path, int priority, bool scaled) {
     if(tasks.contains(path)) {
         return;
     }

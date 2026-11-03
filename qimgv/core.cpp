@@ -91,10 +91,10 @@ void Core::connectComponents() {
             this, &Core::loadPath);
 
     connect(&folderViewPresenter, &DirectoryPresenter::draggedOut,
-            this, qOverload<QList<QString>>(&Core::onDraggedOut));
+            this, qOverload<const QList<QString> &>(&Core::onDraggedOut));
 
     connect(&folderViewPresenter, &DirectoryPresenter::droppedInto,
-            this, qOverload<QList<QString>,QString>(&Core::movePathsTo));
+            this, qOverload<const QList<QString> &, const QString &>(&Core::movePathsTo));
 
     connect(scriptManager, &ScriptManager::error, mw, &MW::showError);
 
@@ -102,7 +102,7 @@ void Core::connectComponents() {
     connect(mw, &MW::droppedIn,             this, &Core::onDropIn);
     connect(mw, &MW::copyRequested,         this, &Core::copyCurrentFile);
     connect(mw, &MW::moveRequested,         this, &Core::moveCurrentFile);
-    connect(mw, &MW::copyUrlsRequested,     this, qOverload<QList<QString>, QString>(&Core::copyPathsTo));
+    connect(mw, &MW::copyUrlsRequested,     this, qOverload<const QList<QString> &, const QString &>(&Core::copyPathsTo));
     connect(mw, &MW::moveUrlsRequested,     this, &Core::movePathsTo);
     connect(mw, &MW::cropRequested,         this, &Core::crop);
     connect(mw, &MW::cropAndSaveRequested,  this, &Core::cropAndSave);
@@ -331,7 +331,7 @@ void Core::onModelLoaded() {
         syncRandomizer();
 }
 
-void Core::onDirectoryViewFileActivated(QString filePath) {
+void Core::onDirectoryViewFileActivated(const QString &filePath) {
     // we aren`t using async load so it won't flicker with empty view
     mw->enableDocumentView();
     loadPath(filePath);
@@ -417,7 +417,7 @@ void Core::reloadImage() {
     reloadImage(selectedPath());
 }
 
-void Core::reloadImage(QString filePath) {
+void Core::reloadImage(const QString &filePath) {
     if(model->isEmpty())
         return;
     model->reload(filePath);
@@ -583,7 +583,7 @@ void Core::onDraggedOut() {
     onDraggedOut(currentSelection());
 }
 
-void Core::onDraggedOut(QList<QString> paths) {
+void Core::onDraggedOut(const QList<QString> &paths) {
     if(paths.isEmpty())
         return;
     QMimeData *mimeData;
@@ -637,7 +637,7 @@ void Core::setFoldersDisplay(bool mode) {
         folderViewPresenter.setShowDirs(mode);
 }
 
-void Core::renameCurrentSelection(QString newName) {
+void Core::renameCurrentSelection(const QString &newName) {
     if(!model->fileCount() || newName.isEmpty() || selectedPath().isEmpty())
         return;
     FileOpResult result;
@@ -655,7 +655,7 @@ void Core::renameCurrentSelection(QString newName) {
     outputError(result);
 }
 
-FileOpResult Core::removeFile(QString filePath, bool trash) {
+FileOpResult Core::removeFile(const QString &filePath, bool trash) {
     if(model->isEmpty())
         return FileOpResult::NOTHING_TO_DO;
 
@@ -675,7 +675,7 @@ FileOpResult Core::removeFile(QString filePath, bool trash) {
     return result;
 }
 
-void Core::onFileRemoved(QString filePath, int index) {
+void Core::onFileRemoved(const QString &filePath, int index) {
     // no files left
     if(model->isEmpty()) {
         mw->closeImage();
@@ -695,13 +695,13 @@ void Core::onFileRemoved(QString filePath, int index) {
     updateInfoString();
 }
 
-void Core::onFileRenamed(QString fromPath, int /*indexFrom*/, QString /*toPath*/, int indexTo) {
+void Core::onFileRenamed(const QString &fromPath, int /*indexFrom*/, const QString &/*toPath*/, int indexTo) {
     if(state.currentFilePath == fromPath) {
         loadFileIndex(indexTo, true, settings->usePreloader());
     }
 }
 
-void Core::onFileAdded(QString filePath) {
+void Core::onFileAdded(const QString &filePath) {
     Q_UNUSED(filePath)
     // update file count
     updateInfoString();
@@ -710,7 +710,7 @@ void Core::onFileAdded(QString filePath) {
 }
 
 // !! fixme
-void Core::onFileModified(QString filePath) {
+void Core::onFileModified(const QString &filePath) {
     Q_UNUSED(filePath)
 }
 
@@ -760,7 +760,7 @@ void Core::showInDirectory() {
 #endif
 }
 
-void Core::interactiveCopy(QList<QString> paths, QString destDirectory) {
+void Core::interactiveCopy(const QList<QString> &paths, const QString &destDirectory) {
     DialogResult overwriteFiles;
     for(const auto &path : paths) {
         doInteractiveCopy(path, destDirectory, overwriteFiles);
@@ -770,7 +770,7 @@ void Core::interactiveCopy(QList<QString> paths, QString destDirectory) {
 }
 
 // todo: replacing DIR with a FILE?
-void Core::doInteractiveCopy(QString path, QString destDirectory, DialogResult &overwriteFiles) {
+void Core::doInteractiveCopy(const QString &path, const QString &destDirectory, DialogResult &overwriteFiles) {
     QFileInfo srcFi(path);
 // SINGLE FILE COPY ===========================================================================
     if(!srcFi.isDir()) {
@@ -828,7 +828,7 @@ void Core::doInteractiveCopy(QString path, QString destDirectory, DialogResult &
 }
 // -----------------------------------------------------------------------------------
 
-void Core::interactiveMove(QList<QString> paths, QString destDirectory) {
+void Core::interactiveMove(const QList<QString> &paths, const QString &destDirectory) {
     DialogResult overwriteFiles;
     for(const auto &path : paths) {
         doInteractiveMove(path, destDirectory, overwriteFiles);
@@ -838,7 +838,7 @@ void Core::interactiveMove(QList<QString> paths, QString destDirectory) {
 }
 
 // todo: replacing DIR with a FILE?
-void Core::doInteractiveMove(QString path, QString destDirectory, DialogResult &overwriteFiles) {
+void Core::doInteractiveMove(const QString &path, const QString &destDirectory, DialogResult &overwriteFiles) {
     QFileInfo srcFi(path);
 // SINGLE FILE MOVE ===========================================================================
     if(!srcFi.isDir()) {
@@ -899,15 +899,15 @@ void Core::doInteractiveMove(QString path, QString destDirectory, DialogResult &
 
 // -----------------------------------------------------------------------------------
 
-void Core::copyPathsTo(QList<QString> paths, QString destDirectory) {
+void Core::copyPathsTo(const QList<QString> &paths, const QString &destDirectory) {
     interactiveCopy(paths, destDirectory);
 }
 
-void Core::movePathsTo(QList<QString> paths, QString destDirectory) {
+void Core::movePathsTo(const QList<QString> &paths, const QString &destDirectory) {
     interactiveMove(paths, destDirectory);
 }
 
-void Core::moveCurrentFile(QString destDirectory) {
+void Core::moveCurrentFile(const QString &destDirectory) {
     if(model->isEmpty())
         return;
     // pause updates to avoid flicker
@@ -932,7 +932,7 @@ void Core::moveCurrentFile(QString destDirectory) {
     mw->repaint();
 }
 
-void Core::copyCurrentFile(QString destDirectory) {
+void Core::copyCurrentFile(const QString &destDirectory) {
     if(model->isEmpty())
         return;
     FileOpResult result;
@@ -982,7 +982,7 @@ std::shared_ptr<ImageStatic> Core::getEditableImage(const QString &filePath) {
 }
 
 template<typename... Args>
-void Core::edit_template(bool save, QString action, const std::function<std::unique_ptr<const QImage>(std::shared_ptr<const QImage>, Args...)>& editFunc, Args&&... as) {
+void Core::edit_template(bool save, const QString &action, const std::function<std::unique_ptr<const QImage>(std::shared_ptr<const QImage>, Args...)>& editFunc, Args&&... as) {
     if(model->isEmpty())
         return;
     if(save && !mw->showConfirmation(action, tr("Perform action \"") + action + "\"? \n\n" + tr("Changes will be saved immediately.")))
@@ -1058,7 +1058,7 @@ void Core::saveCurrentFile() {
     saveCurrentFileAs(selectedPath());
 }
 
-void Core::saveCurrentFileAs(QString destPath) {
+void Core::saveCurrentFileAs(const QString &destPath) {
     if(model->isEmpty())
         return;
     if(saveFile(selectedPath(), destPath)) {
@@ -1215,7 +1215,7 @@ void Core::scalingRequest(QSize size, ScalingFilter filter) {
 }
 
 // TODO: don't use connect? otherwise there is no point using unique_ptr
-void Core::onScalingFinished(QPixmap scaled, ScalerRequest req) {
+void Core::onScalingFinished(QPixmap scaled, const ScalerRequest &req) {
     // the viewer takes a unique_ptr, so hand it one from a value instead of
     // passing a naked QPixmap* and hoping somebody deletes it
     if(state.hasActiveImage /* TODO: a better fix > */ && req.path == state.currentFilePath) {
@@ -1280,7 +1280,7 @@ bool Core::loadPath(QString path) {
     }
 }
 
-bool Core::setDirectory(QString path) {
+bool Core::setDirectory(const QString &path) {
     if(model->directoryPath() != path) {
         this->reset();
         if(!model->setDirectory(path)) {
@@ -1507,7 +1507,7 @@ void Core::modelDelayLoad() {
     updateInfoString();
 }
 
-void Core::onModelItemUpdated(QString filePath) {
+void Core::onModelItemUpdated(const QString &filePath) {
     if(filePath == state.currentFilePath) {
         guiSetImage(model->getImage(filePath));
         updateInfoString();

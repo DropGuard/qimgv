@@ -66,17 +66,17 @@ public:
     void onScalingFinished(std::unique_ptr<QPixmap>scaled);
     void showImage(std::unique_ptr<QPixmap> pixmap);
     void showAnimation(std::shared_ptr<QMovie> movie);
-    void showVideo(QString file);
+    void showVideo(const QString &file);
 
-    void setCurrentInfo(int fileIndex, int fileCount, QString filePath, QString fileName, QSize imageSize, qint64 fileSize, bool slideshow, bool shuffle, bool edited);
-    void setExifInfo(QMap<QString, QString>);
+    void setCurrentInfo(int fileIndex, int fileCount, const QString &filePath, const QString &fileName, QSize imageSize, qint64 fileSize, bool slideshow, bool shuffle, bool edited);
+    void setExifInfo(const QMap<QString, QString> &info);
     std::shared_ptr<FolderViewProxy> getFolderView();
     std::shared_ptr<ThumbnailStripProxy> getThumbnailPanel();
 
     ViewMode currentViewMode();
 
     bool showConfirmation(QString title, QString msg);
-    DialogResult fileReplaceDialog(QString source, QString target, FileReplaceMode mode, bool multiple);
+    DialogResult fileReplaceDialog(const QString &source, const QString &target, FileReplaceMode mode, bool multiple);
 
 private:
     std::shared_ptr<ViewerWidget> viewerWidget;
@@ -197,12 +197,12 @@ public slots:
     void enableFolderView();
     void enableDocumentView();
     void showOpenDialog(QString path);
-    void showSaveDialog(QString filePath);
+    void showSaveDialog(const QString &filePath);
     QString getSaveFileName(QString fileName);
     void showResizeDialog(QSize initialSize);
     void showSettings();
     void triggerFullScreen();
-    void showMessageDirectory(QString dirName);
+    void showMessageDirectory(const QString &dirName);
     void showMessageDirectoryEnd();
     void showMessageDirectoryStart();
     void showMessageFitWindow();
@@ -211,11 +211,11 @@ public slots:
     void showFullScreen();
     void showWindowed();
     void triggerCopyOverlay();
-    void showMessage(QString text);
-    void showMessage(QString text, int duration);
-    void showMessageSuccess(QString text);
-    void showWarning(QString text);
-    void showError(QString text);
+    void showMessage(const QString &text);
+    void showMessage(const QString &text, int duration);
+    void showMessageSuccess(const QString &text);
+    void showWarning(const QString &text);
+    void showError(const QString &text);
     void triggerMoveOverlay();
     void closeFullScreenOrExit();
     void close();
@@ -224,7 +224,7 @@ public slots:
     void showSaveOverlay();
     void hideSaveOverlay();
     void showChangelogWindow();
-    void showChangelogWindow(QString text);
+    void showChangelogWindow(const QString &text);
     void fitWindow();
     void fitWidth();
     void fitOriginal();
@@ -235,12 +235,12 @@ public slots:
     void showContextMenu();
     void onSortingChanged(SortingMode);
     void toggleImageInfoOverlay();
-    void toggleRenameOverlay(QString currentName);
+    void toggleRenameOverlay(const QString &currentName);
     void setFilterNearest();
     void setFilterBilinear();
     void setFilter(ScalingFilter filter);
     void toggleScalingFilter();
-    void setDirectoryPath(QString path);
+    void setDirectoryPath(const QString &path);
     void toggleLockZoom();
     void toggleLockView();
     void toggleFullscreenInfoBar();

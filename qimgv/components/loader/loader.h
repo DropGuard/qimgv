@@ -11,21 +11,21 @@ public:
     explicit Loader();
     // nullopt when the file cannot be opened; the async path reports the same
     // case as loadFailed(), so loadFinished() never carries an absent image
-    std::optional<std::shared_ptr<Image>> load(QString path);
+    std::optional<std::shared_ptr<Image>> load(const QString &path);
     // tier-1: decode at screen resolution for instant display
-    void loadAsyncPriority(QString path);
-    void loadAsync(QString path);
+    void loadAsyncPriority(const QString &path);
+    void loadAsync(const QString &path);
     // tier-2: full-resolution re-decode (upgrade)
-    void loadAsyncFull(QString path);
+    void loadAsyncFull(const QString &path);
 
     void clearTasks();
     bool isBusy() const;
-    bool isLoading(QString path);
+    bool isLoading(const QString &path);
 private:
     QHash<QString, LoaderRunnable*> tasks;
     QThreadPool *pool;    
     void clearPool();
-    void doLoadAsync(QString path, int priority, bool scaled);
+    void doLoadAsync(const QString &path, int priority, bool scaled);
 
 signals:
     void loadFinished(std::shared_ptr<Image>, const QString &path, bool scaled);

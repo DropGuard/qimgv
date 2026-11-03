@@ -24,9 +24,9 @@ clazy use-static-qregularexpression 2
 clazy const-signal-or-slot 1
 clazy non-pod-global-static 1
 clazy connect-by-name 1
-cppcheck passedByValue 120
+cppcheck passedByValue 55
 cppcheck duplInheritedMember 29
-cppcheck passedByValueCallback 36
+cppcheck passedByValueCallback 7
 cppcheck returnByReference 10
 cppcheck iterateByValue 4
 cppcheck useInitializationList 2
