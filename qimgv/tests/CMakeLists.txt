@@ -1,4 +1,5 @@
 find_package(Qt6 REQUIRED COMPONENTS Test Widgets)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
@@ -30,3 +31,9 @@ add_test(NAME ENGINE_STACK COMMAND engine_stack_tests)
 add_executable(core_nav_tests core_nav_tests.cpp)
 target_link_libraries(core_nav_tests PRIVATE Qt6::Test qimgv_gui qimgv_nongui)
 add_test(NAME CORE_NAV COMMAND core_nav_tests)
+
+# executable architecture rules (ArchUnit-style): gui isolation, FFI speaker
+# allowlist, rust internal seal
+add_test(NAME ARCH_RULES
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/qimgv/tests/architecture_rules.py)
+set_tests_properties(ARCH_RULES PROPERTIES ENVIRONMENT "PYTHONPATH=")
