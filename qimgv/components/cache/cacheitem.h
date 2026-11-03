@@ -6,11 +6,7 @@
 class CacheItem {
 public:
     CacheItem();
-    CacheItem(std::shared_ptr<Image> _contents);
-    ~CacheItem();
-    // raw owning pointer member: copying would double-delete the semaphore
-    CacheItem(const CacheItem &) = delete;
-    CacheItem &operator=(const CacheItem &) = delete;
+    explicit CacheItem(std::shared_ptr<Image> _contents);
 
     std::shared_ptr<Image> getContents();
 
@@ -20,6 +16,6 @@ public:
     int lockStatus();
 private:
     std::shared_ptr<Image> contents;
-    QSemaphore *sem;
+    QSemaphore sem;
 };
 
