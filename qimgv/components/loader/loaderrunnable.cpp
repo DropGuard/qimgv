@@ -14,7 +14,7 @@ void LoaderRunnable::run() {
     auto image = ImageFactory::createImage(path, scaled);
     // the RESULT decides the tier: only formats with native scaled decode
     // (JPEG) produce a tier-1 image; everything else decodes full here
-    bool resultScaled = scaled && image && image->isScaledResult();
+    bool resultScaled = scaled && image.has_value() && (*image)->isScaledResult();
     qCDebug(lcLoaderPerf) << "L:" << t.elapsed() << "ms" << (resultScaled ? "[scaled]" : "[full]");
     emit finished(image, path, resultScaled);
 }

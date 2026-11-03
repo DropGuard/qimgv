@@ -267,9 +267,13 @@ std::shared_ptr<Image> DirectoryModel::getImageAt(int index) {
 // for async access use loadAsync(), then catch onImageReady()
 std::shared_ptr<Image> DirectoryModel::getImage(QString filePath) {
     std::shared_ptr<Image> img = cache.get(filePath);
-    if(!img)
-        img = loader.load(filePath);
-    return img;
+    if(img)
+        return img;
+    // the one place absence is flattened back into a null pointer, because the
+    // callers of getImage() hand it straight to sinks that test for it
+    // (guiSetImage, getMimeDataForImage). Everything upstream of this line
+    // carries std::optional and cannot forward the question unknowingly.
+    return loader.load(filePath).value_or(nullptr);
 }
 
 void DirectoryModel::updateImage(QString filePath, std::shared_ptr<Image> img) {
@@ -297,8 +301,8 @@ void DirectoryModel::load(QString filePath, bool asyncHint, bool scaled) {
             // sync path (editing): full quality
             auto img = loader.load(filePath);
             if(img) {
-                cache.insert(img);
-                emit imageReady(img, filePath, false);
+                cache.insert(*img);
+                emit imageReady(*img, filePath, false);
             } else {
                 emit loadFailed(filePath);
             }

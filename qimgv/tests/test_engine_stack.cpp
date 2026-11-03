@@ -69,6 +69,9 @@ private slots:
         // the two-tier tests catch imageReady through QSignalSpy, whose queued
         // recording needs the shared_ptr argument registered
         qRegisterMetaType<std::shared_ptr<Image>>("std::shared_ptr<Image>");
+        // the loader's worker -> main hop queues the factory's result, which is
+        // an optional since absence became a case instead of a null pointer
+        qRegisterMetaType<std::optional<std::shared_ptr<Image>>>("std::optional<std::shared_ptr<Image>>");
 
         fixtureBase = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
                       + "/qimgv-engine-stack-test";
@@ -811,14 +814,27 @@ private slots:
         Cache cache;
         auto a = ImageFactory::createImage(fixtureDir + "/img1.jpg", false);
         auto b = ImageFactory::createImage(fixtureDir + "/img2.jpg", false);
-        QVERIFY(a != nullptr);
-        QVERIFY(cache.insert(a));
-        QVERIFY(cache.insert(b));
+        QVERIFY(a.has_value());
+        QVERIFY(b.has_value());
+        // two different absences, and only one of them is the optional: a path
+        // that is not a file at all, versus a file whose suffix qimgv still
+        // tries as an image. The second is not isLoaded() == false either:
+        // ImageStatic::loadGeneric ignores QImageReader::read()'s result and
+        // sets the flag unconditionally, so an undecodable suffix arrives as a
+        // loaded object holding a null QImage. Only the image says so.
+        QVERIFY(!ImageFactory::createImage(fixtureDir + "/missing.jpg", false).has_value());
+        QVERIFY(!ImageFactory::createImage(fixtureDir + "/subdir", false).has_value());
+        auto junk = ImageFactory::createImage(fixtureDir + "/skip.txt", false);
+        QVERIFY(junk.has_value());
+        QVERIFY((*junk)->isLoaded());
+        QVERIFY((*junk)->getImage()->isNull());
+        QVERIFY(cache.insert(*a));
+        QVERIFY(cache.insert(*b));
         QVERIFY(cache.contains(fixtureDir + "/img1.jpg"));
-        QCOMPARE(cache.get(fixtureDir + "/img1.jpg").get(), a.get());
+        QCOMPARE(cache.get(fixtureDir + "/img1.jpg").get(), a->get());
 
         // a duplicate insert is refused, not double-stored
-        QVERIFY(!cache.insert(a));
+        QVERIFY(!cache.insert(*a));
         QCOMPARE(cache.keys().size(), 2);
 
         // a null image must be refused: reporting success for a failed decode
@@ -1254,14 +1270,16 @@ private slots:
         QString srcPath = saveDir + "/noise-src.png";
         QVERIFY(img.save(srcPath, "PNG"));
 
-        auto imgStatic = ImageFactory::createImage(srcPath, false);
-        QVERIFY(imgStatic != nullptr);
+        auto loaded = ImageFactory::createImage(srcPath, false);
+        QVERIFY(loaded.has_value());
+        auto imgStatic = *loaded;
         QVERIFY(imgStatic->getImage() != nullptr);
 
         QVERIFY(imgStatic->save(saveDir + "/round.png"));
         QVERIFY(QFile::exists(saveDir + "/round.png"));
-        auto reloaded = ImageFactory::createImage(saveDir + "/round.png", false);
-        QVERIFY(reloaded != nullptr);
+        auto savedAgain = ImageFactory::createImage(saveDir + "/round.png", false);
+        QVERIFY(savedAgain.has_value());
+        auto reloaded = *savedAgain;
         QCOMPARE(reloaded->getImage()->size(), img.size());
         QCOMPARE(*reloaded->getImage(), img);
         QCOMPARE((int)QDir(saveDir).entryList(QDir::Files).size(), 2);

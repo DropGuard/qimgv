@@ -18,7 +18,7 @@ bool Loader::isLoading(QString path) {
     return tasks.contains(path);
 }
 
-std::shared_ptr<Image> Loader::load(QString path) {
+std::optional<std::shared_ptr<Image>> Loader::load(QString path) {
     // sync path (editing fallback): always full quality
     return ImageFactory::createImage(path, false);
 }
@@ -49,13 +49,15 @@ void Loader::doLoadAsync(QString path, int priority, bool scaled) {
     pool->start(runnable, priority);
 }
 
-void Loader::onLoadFinished(std::shared_ptr<Image> image, const QString &path, bool scaled) {
+void Loader::onLoadFinished(std::optional<std::shared_ptr<Image>> image, const QString &path, bool scaled) {
     auto task = tasks.take(path);
     delete task;
+    // this is where absence stops travelling: loadFinished() only ever fires
+    // with an image, and the caller that cannot show one gets loadFailed()
     if(!image)
         emit loadFailed(path);
     else
-        emit loadFinished(image, path, scaled);
+        emit loadFinished(*image, path, scaled);
 }
 
 void Loader::clearPool() {

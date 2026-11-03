@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QThreadPool>
+#include <optional>
 #include "components/cache/thumbnailcache.h"
 #include "loaderrunnable.h"
 
@@ -8,7 +9,9 @@ class Loader : public QObject {
     Q_OBJECT
 public:
     explicit Loader();
-    std::shared_ptr<Image> load(QString path);
+    // nullopt when the file cannot be opened; the async path reports the same
+    // case as loadFailed(), so loadFinished() never carries an absent image
+    std::optional<std::shared_ptr<Image>> load(QString path);
     // tier-1: decode at screen resolution for instant display
     void loadAsyncPriority(QString path);
     void loadAsync(QString path);
@@ -29,5 +32,5 @@ signals:
     void loadFailed(const QString &path);
 
 private slots:
-    void onLoadFinished(std::shared_ptr<Image>, const QString&, bool scaled);
+    void onLoadFinished(std::optional<std::shared_ptr<Image>>, const QString&, bool scaled);
 };
