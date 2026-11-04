@@ -200,10 +200,28 @@ int qimgv_engine_next_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
 int qimgv_engine_prev_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
 
 /* Returns 1 if an event was written, 0 if none pending, negative on error.
- * dir_buf receives the directory path (for DIR_MUTATED: the changed entry's
- * full path); mutation is filled for DIR_MUTATED, may be NULL otherwise. */
+ *
+ * subject_buf receives ONE STRING whose subject depends on out->kind — read
+ * this table before using it, because the value alone does not say which it is:
+ *
+ *   QIMGV_EVENT_DIR_LISTED     the directory that is now listed
+ *   QIMGV_EVENT_OPEN_FAILED    the directory whose open failed
+ *   QIMGV_EVENT_DIR_MUTATED    the FULL PATH of the changed entry (never a
+ *                              directory; the directory it lives in is not sent)
+ *   QIMGV_EVENT_THUMB_NEXT     the FULL PATH of the file to render
+ *
+ * mutation is filled for DIR_MUTATED and may be NULL otherwise. thumb is filled
+ * for THUMB_NEXT.
+ *
+ * Two more fields are only meaningful in context:
+ *   out->epoch == 0    the event belongs to no open session (THUMB_NEXT), so a
+ *                      receiver must not filter it against the current one.
+ *   mutation->index    a position in the engine's listing at the instant the
+ *                      event was emitted — not a stable id. Consumers splice at
+ *                      it; none may re-derive an order of its own.
+ */
 int qimgv_engine_take_event(qimgv_engine *engine, qimgv_event *out,
-                            char *dir_buf, size_t dir_cap,
+                            char *subject_buf, size_t subject_cap,
                             qimgv_mutation *mutation,
                             qimgv_thumb_req *thumb);
 

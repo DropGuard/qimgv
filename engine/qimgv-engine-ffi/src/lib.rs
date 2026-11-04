@@ -810,14 +810,16 @@ pub extern "C" fn qimgv_engine_supports_watching() -> c_int {
 // --- events -----------------------------------------------------------------
 
 /// Returns 1 if an event was written to `out`, 0 if none is pending, negative
-/// on error. `dir_buf` receives the event's directory path (for mutations:
-/// the changed entry's full path); `mutation` is filled for DIR_MUTATED.
+/// on error. `subject_buf` receives the event's subject, which is the directory
+/// for DIR_LISTED and OPEN_FAILED and the *full path* for DIR_MUTATED and
+/// THUMB_NEXT (the table lives in qimgv_engine.h next to the declaration);
+/// `mutation` is filled for DIR_MUTATED, `thumb` for THUMB_NEXT.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn qimgv_engine_take_event(
     engine: *mut QimgvEngine,
     out: *mut QimgvEvent,
-    dir_buf: *mut c_char,
-    dir_cap: usize,
+    subject_buf: *mut c_char,
+    subject_cap: usize,
     mutation: *mut QimgvMutation,
     thumb: *mut QimgvThumbReq,
 ) -> c_int {
@@ -829,14 +831,14 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
         with_engine(engine, |e| match e.try_event() {
             None => Ok(0),
             Some(Event::DirListed { dir, epoch }) => {
-                write_str(dir_buf, dir_cap, &dir.to_string_lossy())?;
+                write_str(subject_buf, subject_cap, &dir.to_string_lossy())?;
                 unsafe {
                     *out = QimgvEvent { kind: QIMGV_EVENT_DIR_LISTED, code: QIMGV_OK, epoch: epoch as u32 };
                 }
                 Ok(1)
             }
             Some(Event::OpenFailed { dir, error, epoch }) => {
-                write_str(dir_buf, dir_cap, &dir.to_string_lossy())?;
+                write_str(subject_buf, subject_cap, &dir.to_string_lossy())?;
                 let code = map_engine_error(&error);
                 set_last_error(&error.to_string());
                 unsafe {
@@ -845,7 +847,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                 Ok(1)
             }
             Some(Event::ThumbNext { req }) => {
-                write_str(dir_buf, dir_cap, &req.path.to_string_lossy())?;
+                write_str(subject_buf, subject_cap, &req.path.to_string_lossy())?;
                 if !thumb.is_null() {
                     unsafe {
                         *thumb = QimgvThumbReq { size: req.size, crop: req.crop as c_int };
@@ -857,7 +859,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                 Ok(1)
             }
             Some(Event::Mutated { kind, path, name: _, is_dir, size, mtime_ms, index, epoch }) => {
-                write_str(dir_buf, dir_cap, &path)?;
+                write_str(subject_buf, subject_cap, &path)?;
                 let mkind = match kind {
                     qimgv_engine::WatchChangeKind::Added => QIMGV_MUT_ADDED,
                     qimgv_engine::WatchChangeKind::Modified => QIMGV_MUT_MODIFIED,

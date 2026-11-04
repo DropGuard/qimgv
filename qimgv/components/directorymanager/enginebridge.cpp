@@ -276,18 +276,22 @@ void EngineBridge::drainEvents() {
         }
         if (sessionEpoch != 0 && ev.epoch != 0 && ev.epoch < sessionEpoch)
             continue; // event from an older session (dead receiver) — drop
-        const QString dir = QString::fromUtf8(buf);
+        // One string, two subjects: a directory for DIR_LISTED/OPEN_FAILED and a
+        // full file path for DIR_MUTATED/THUMB_NEXT. Named for the ambiguity on
+        // purpose — the kind decides which it is, and the value cannot say so.
+        // See the table at qimgv_engine_take_event in qimgv_engine.h.
+        const QString subject = QString::fromUtf8(buf);
         if (ev.kind == QIMGV_EVENT_DIR_LISTED) {
-            mListedDir = dir;
-            emit dirListed(dir);
+            mListedDir = subject;
+            emit dirListed(subject);
         } else if (ev.kind == QIMGV_EVENT_DIR_MUTATED) {
-            emit dirMutated(mut.kind, dir, mut.is_dir != 0, mut.size, mut.mtime_ms, mut.index);
+            emit dirMutated(mut.kind, subject, mut.is_dir != 0, mut.size, mut.mtime_ms, mut.index);
         } else if (ev.kind == QIMGV_EVENT_THUMB_NEXT) {
-            emit thumbNext(dir, static_cast<int>(treq.size), treq.crop != 0);
+            emit thumbNext(subject, static_cast<int>(treq.size), treq.crop != 0);
         } else if (ev.kind == QIMGV_EVENT_OPEN_FAILED) {
-            qWarning() << "[EngineBridge] open failed:" << dir << "code" << ev.code
+            qWarning() << "[EngineBridge] open failed:" << subject << "code" << ev.code
                        << (qimgv_last_error() ? qimgv_last_error() : "");
-            emit openFailed(dir, ev.code);
+            emit openFailed(subject, ev.code);
         }
     }
 }
