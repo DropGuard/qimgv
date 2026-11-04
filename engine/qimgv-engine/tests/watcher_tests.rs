@@ -1,63 +1,71 @@
-//! Watcher tests: raw buffer parsing, state application, and live watching
-//! through a real engine. The overflow path is tested synthetically (the
-//! kernel only emits IN_Q_OVERFLOW under memory pressure we can't trigger
-//! deterministically without root).
+//! Watcher tests: mask classification, watch attribution, state application,
+//! and live watching through a real engine. The overflow path is tested
+//! synthetically (the kernel only emits IN_Q_OVERFLOW under memory pressure we
+//! can't trigger deterministically without root).
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
-use qimgv_engine::watcher::{apply_event, parse_events, RawWatchEvent, RawWatchKind, WatchAction};
+use qimgv_engine::watcher::{
+    apply_event, classify, event_is_live, is_dir_mask, RawWatchEvent, RawWatchKind, WatchAction,
+};
 use qimgv_engine::{Command, Engine, EngineConfig, NameFilter, SortMode};
 
-// --- raw parsing ------------------------------------------------------------
-
-fn event_bytes(wd: i32, mask: u32, name: Option<&str>) -> Vec<u8> {
-    let mut b = Vec::new();
-    b.extend_from_slice(&wd.to_ne_bytes());
-    b.extend_from_slice(&mask.to_ne_bytes());
-    b.extend_from_slice(&0u32.to_ne_bytes()); // cookie
-    let name = name.unwrap_or("");
-    b.extend_from_slice(&((name.len() + 1) as u32).to_ne_bytes());
-    b.extend_from_slice(name.as_bytes());
-    b.push(0);
-    b
-}
+// --- mask classification ------------------------------------------------------
 
 #[test]
-fn parse_events_read_masks_and_names() {
-    let mut buf = Vec::new();
-    buf.extend_from_slice(&event_bytes(1, 0x100, Some("new.png"))); // CREATE
-    buf.extend_from_slice(&event_bytes(1, 0x2, Some("new.png"))); // MODIFY
-    buf.extend_from_slice(&event_bytes(-1, 0x4000, None)); // Q_OVERFLOW
-    buf.extend_from_slice(&event_bytes(1, 0x4000_0100, Some("subdir"))); // CREATE|ISDIR
-
-    let evs = parse_events(&buf);
-    assert_eq!(evs.len(), 4);
-    assert_eq!(evs[0].kind, RawWatchKind::Created);
-    assert_eq!(evs[0].name.as_deref(), Some("new.png"));
-    assert!(!evs[0].is_dir);
-    assert_eq!(evs[1].kind, RawWatchKind::Modified);
-    assert_eq!(evs[2].kind, RawWatchKind::Overflow);
-    assert!(evs[2].name.is_none());
-    assert_eq!(evs[3].kind, RawWatchKind::Created);
-    assert!(evs[3].is_dir);
+fn classify_maps_masks_and_skips_bookkeeping() {
+    assert_eq!(classify(0x100), Some(RawWatchKind::Created));
+    assert_eq!(classify(0x2), Some(RawWatchKind::Modified));
+    assert_eq!(classify(0x200), Some(RawWatchKind::Deleted));
+    assert_eq!(classify(0x40), Some(RawWatchKind::MovedFrom));
+    assert_eq!(classify(0x80), Some(RawWatchKind::MovedTo));
+    assert_eq!(classify(0x4000), Some(RawWatchKind::Overflow));
+    assert_eq!(classify(0x400), Some(RawWatchKind::WatchGone));
+    assert_eq!(classify(0x800), Some(RawWatchKind::WatchGone));
+    // IN_IGNORED is the kernel telling us a watch we already removed is gone
+    assert_eq!(classify(0x8000), None);
+    // ACCESS/OPEN/CLOSE and friends move no listing row
+    assert_eq!(classify(0x1), None);
+    assert_eq!(classify(0x8), None);
+    // a directory flag must not change the kind it classifies to
+    assert_eq!(classify(0x4000_0100), Some(RawWatchKind::Created));
+    assert!(is_dir_mask(0x4000_0100));
+    assert!(!is_dir_mask(0x100));
 }
 
+// --- which watch an event belongs to -----------------------------------------
+
 #[test]
-fn truncated_tail_is_dropped_silently() {
-    // a partial event (header only claims more bytes than present) must not
-    // panic the parser — a torn read can happen at buffer boundaries
-    let mut buf = event_bytes(1, 0x100, Some("abc.png"));
-    buf.truncate(buf.len() - 2);
-    let evs = parse_events(&buf);
-    assert_eq!(evs.len(), 1); // name parses to "abc.pn"? no: NUL missing →
-    // len says 8 bytes but only 6 present; we clamp to buffer end and take
-    // bytes up to NUL or end → "abc.png" clamped is fine either way
-    assert!(evs[0].name.is_some());
+fn events_of_a_watch_that_is_no_longer_installed_are_dropped() {
+    // The production shape of the bug this pins: a delete for /A is delivered
+    // after the watch moved to /B. With the record's subject discarded, the
+    // consumer joined the name onto its *current* directory and removed a file
+    // that exists — /B/img1.jpg — so a listing lost a row nobody deleted.
+    assert!(event_is_live(7, RawWatchKind::Deleted, Some(7)));
+    assert!(!event_is_live(7, RawWatchKind::Deleted, Some(9)));
+    assert!(!event_is_live(7, RawWatchKind::Created, None));
+    assert!(!event_is_live(7, RawWatchKind::WatchGone, Some(9)));
+    // IN_Q_OVERFLOW carries wd == -1: it names no watch, it describes the
+    // queue. Dropping it would stop the engine reconciling after a kernel-side
+    // loss forever, which is worse than a stale event.
+    assert!(event_is_live(-1, RawWatchKind::Overflow, Some(9)));
+    assert!(event_is_live(-1, RawWatchKind::Overflow, None));
 }
 
 // --- state application --------------------------------------------------------
+
+/// A raw event as the watcher thread would emit it for `dir`.
+fn raw_event(dir: &std::path::Path, name: Option<&str>, is_dir: bool, kind: RawWatchKind) -> RawWatchEvent {
+    RawWatchEvent {
+        wd: 1,
+        dir: dir.to_path_buf(),
+        name: name.map(str::to_owned),
+        is_dir,
+        kind,
+    }
+}
 
 fn state_with_file() -> (qimgv_engine::DirectoryState, tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -86,14 +94,14 @@ fn apply_created_respects_filter_and_adds() {
 
     // filtered out
     std::fs::write(dir.path().join("skip.txt"), b"x").unwrap();
-    let ev = RawWatchEvent { name: Some("skip.txt".into()), is_dir: false, kind: RawWatchKind::Created };
-    assert!(matches!(apply_event(&mut st, dir.path(), &filter, &mut overrides, &ev), WatchAction::Ignored));
+    let ev = raw_event(dir.path(), Some("skip.txt"), false, RawWatchKind::Created);
+    assert!(matches!(apply_event(&mut st, &filter, &mut overrides, &ev), WatchAction::Ignored));
     assert_eq!(st.file_count(), 1);
 
     // allowed → added
     std::fs::write(dir.path().join("b.jpg"), b"xx").unwrap();
-    let ev = RawWatchEvent { name: Some("b.jpg".into()), is_dir: false, kind: RawWatchKind::Created };
-    match apply_event(&mut st, dir.path(), &filter, &mut overrides, &ev) {
+    let ev = raw_event(dir.path(), Some("b.jpg"), false, RawWatchKind::Created);
+    match apply_event(&mut st, &filter, &mut overrides, &ev) {
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Added, path, .. } => {
             assert!(path.ends_with("b.jpg"));
         }
@@ -112,8 +120,8 @@ fn apply_created_adds_directories_even_though_the_filter_rejects_their_names() {
     let mut overrides: std::collections::HashSet<std::path::PathBuf> = Default::default();
 
     std::fs::create_dir(dir.path().join("newfolder")).unwrap();
-    let ev = RawWatchEvent { name: Some("newfolder".into()), is_dir: true, kind: RawWatchKind::Created };
-    match apply_event(&mut st, dir.path(), &filter, &mut overrides, &ev) {
+    let ev = raw_event(dir.path(), Some("newfolder"), true, RawWatchKind::Created);
+    match apply_event(&mut st, &filter, &mut overrides, &ev) {
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Added, path, is_dir, .. } => {
             assert!(path.ends_with("newfolder"));
             assert!(is_dir, "the mutation must still report it as a directory");
@@ -132,16 +140,16 @@ fn apply_deleted_and_modified() {
 
     // modify with fresh mtime → Changed{Modified}
     std::fs::write(&p, b"new content").unwrap();
-    let ev = RawWatchEvent { name: Some("a.jpg".into()), is_dir: false, kind: RawWatchKind::Modified };
+    let ev = raw_event(dir.path(), Some("a.jpg"), false, RawWatchKind::Modified);
     assert!(matches!(
-        apply_event(&mut st, dir.path(), &filter, &mut overrides, &ev),
+        apply_event(&mut st, &filter, &mut overrides, &ev),
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Modified, .. }
     ));
 
     // delete → Changed{Removed}
     std::fs::remove_file(&p).unwrap();
-    let ev = RawWatchEvent { name: Some("a.jpg".into()), is_dir: false, kind: RawWatchKind::Deleted };
-    match apply_event(&mut st, dir.path(), &filter, &mut overrides, &ev) {
+    let ev = raw_event(dir.path(), Some("a.jpg"), false, RawWatchKind::Deleted);
+    match apply_event(&mut st, &filter, &mut overrides, &ev) {
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Removed, path, .. } => {
             assert!(path.ends_with("a.jpg"));
         }
@@ -155,8 +163,39 @@ fn apply_overflow_requests_reconcile() {
     let (mut st, dir, _p) = state_with_file();
     let filter = NameFilter::from_extensions(["jpg"]);
     let mut overrides: std::collections::HashSet<std::path::PathBuf> = Default::default();
-    let ev = RawWatchEvent { name: None, is_dir: false, kind: RawWatchKind::Overflow };
-    assert_eq!(apply_event(&mut st, dir.path(), &filter, &mut overrides, &ev), WatchAction::Reconcile);
+    let ev = raw_event(dir.path(), None, false, RawWatchKind::Overflow);
+    assert_eq!(
+        apply_event(&mut st, &filter, &mut overrides, &ev),
+        WatchAction::Reconcile { dir: dir.path().to_path_buf() }
+    );
+}
+
+#[test]
+fn a_delete_from_another_directory_cannot_empty_this_one() {
+    // The listing's only writer is the engine, so a row disappears when the
+    // event that removes it resolves to a path that is in the listing. This is
+    // the shape of the production bug: /A's delete arriving after the watch
+    // moved to /B. Because apply_event joins onto the directory *named by the
+    // event*, /A/a.jpg is simply not in /B's listing — and a name that happens
+    // to match is not enough.
+    let (mut st, _dir, _p) = state_with_file();
+    let filter = NameFilter::from_extensions(["jpg"]);
+    let mut overrides: std::collections::HashSet<std::path::PathBuf> = Default::default();
+    let other = tempfile::tempdir().unwrap();
+
+    let ev = raw_event(other.path(), Some("a.jpg"), false, RawWatchKind::Deleted);
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, &ev), WatchAction::Ignored);
+    assert_eq!(st.file_count(), 1, "the row for /B/a.jpg survived a delete meant for /A");
+
+    // and a create named elsewhere lands where it was created, not here
+    std::fs::write(other.path().join("c.jpg"), b"x").unwrap();
+    let ev = raw_event(other.path(), Some("c.jpg"), false, RawWatchKind::Created);
+    match apply_event(&mut st, &filter, &mut overrides, &ev) {
+        WatchAction::Changed { path, .. } => panic!("a foreign create must not add a row: {path}"),
+        WatchAction::Ignored => {}
+        other => panic!("unexpected: {other:?}"),
+    }
+    assert_eq!(st.file_count(), 1);
 }
 
 // --- live watching through a real engine ---------------------------------------

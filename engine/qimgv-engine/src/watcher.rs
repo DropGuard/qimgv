@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -22,8 +22,19 @@ use crate::model::DirectoryState;
 // --- raw parsing ------------------------------------------------------------
 
 /// One parsed inotify event, before it touches the engine state.
+///
+/// `dir` is the directory the *watch that produced this event* was added for,
+/// resolved by the watcher thread — not by the consumer. An event that carries
+/// only a name forces the receiver to supply the directory from its own state,
+/// and a stale event then gets a live directory bolted onto it: deleting
+/// `/A/img1.jpg` would remove `/B/img1.jpg`, which is a file that still exists.
+/// With the subject inside the message, that deletion simply does not resolve.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawWatchEvent {
+    /// The kernel's watch descriptor. Only `Overflow` events have no watch
+    /// (`wd == -1`); everything else was produced by exactly one directory.
+    pub wd: i32,
+    pub dir: PathBuf,
     pub name: Option<String>,
     pub is_dir: bool,
     pub kind: RawWatchKind,
@@ -42,8 +53,9 @@ pub enum RawWatchKind {
     WatchGone,
 }
 
-// Raw inotify masks (inotify(7)); kept independent of the crate's bitflags so
-// parse_events can be tested against hand-built buffers.
+// Raw inotify masks (inotify(7)). The kernel's record header is parsed by the
+// inotify crate; these constants classify its mask bits, kept as plain u32 so
+// the mapping can be tested without the crate's bitflags in the public API.
 mod mask {
     pub const MODIFY: u32 = 0x0000_0002;
     pub const MOVED_FROM: u32 = 0x0000_0040;
@@ -57,53 +69,46 @@ mod mask {
     pub const ISDIR: u32 = 0x4000_0000;
 }
 
-/// Parses one read() buffer worth of `struct inotify_event` records.
-pub fn parse_events(buffer: &[u8]) -> Vec<RawWatchEvent> {
-    const HDR: usize = std::mem::size_of::<(i32, u32, u32, u32)>();
-    let mut out = Vec::new();
-    let mut offset = 0usize;
-    while offset + HDR <= buffer.len() {
-        let mask = u32::from_ne_bytes(buffer[offset + 4..offset + 8].try_into().unwrap());
-        let len = u32::from_ne_bytes(buffer[offset + 12..offset + 16].try_into().unwrap()) as usize;
-        let name_bytes = &buffer[offset + HDR..(offset + HDR + len).min(buffer.len())];
-        offset += HDR + len;
+/// Maps one event's mask bits to what the engine cares about. `None` means the
+/// record is bookkeeping the listing does not react to (IN_IGNORED after a
+/// removal, attrib-only changes, and so on).
+pub fn classify(mask: u32) -> Option<RawWatchKind> {
+    let kind = if mask & mask::Q_OVERFLOW != 0 {
+        RawWatchKind::Overflow
+    } else if mask & (mask::DELETE_SELF | mask::MOVE_SELF) != 0 {
+        RawWatchKind::WatchGone
+    } else if mask & mask::IGNORED != 0 {
+        return None; // bookkeeping after rm_watch / auto-removal
+    } else if mask & mask::CREATE != 0 {
+        RawWatchKind::Created
+    } else if mask & mask::MODIFY != 0 {
+        RawWatchKind::Modified
+    } else if mask & mask::DELETE != 0 {
+        RawWatchKind::Deleted
+    } else if mask & mask::MOVED_FROM != 0 {
+        RawWatchKind::MovedFrom
+    } else if mask & mask::MOVED_TO != 0 {
+        RawWatchKind::MovedTo
+    } else {
+        return None;
+    };
+    Some(kind)
+}
 
-        let kind = if mask & mask::Q_OVERFLOW != 0 {
-            RawWatchKind::Overflow
-        } else if mask & (mask::DELETE_SELF | mask::MOVE_SELF) != 0 {
-            RawWatchKind::WatchGone
-        } else if mask & mask::IGNORED != 0 {
-            continue; // bookkeeping after rm_watch / auto-removal
-        } else if mask & mask::CREATE != 0 {
-            RawWatchKind::Created
-        } else if mask & mask::MODIFY != 0 {
-            RawWatchKind::Modified
-        } else if mask & mask::DELETE != 0 {
-            RawWatchKind::Deleted
-        } else if mask & mask::MOVED_FROM != 0 {
-            RawWatchKind::MovedFrom
-        } else if mask & mask::MOVED_TO != 0 {
-            RawWatchKind::MovedTo
-        } else {
-            continue;
-        };
+pub fn is_dir_mask(mask: u32) -> bool {
+    mask & mask::ISDIR != 0
+}
 
-        let name = if matches!(kind, RawWatchKind::Overflow | RawWatchKind::WatchGone) {
-            None
-        } else {
-            let end = name_bytes.iter().position(|&b| b == 0).unwrap_or(name_bytes.len());
-            if end == 0 {
-                continue;
-            }
-            Some(String::from_utf8_lossy(&name_bytes[..end]).into_owned())
-        };
-        out.push(RawWatchEvent {
-            name,
-            is_dir: mask & mask::ISDIR != 0,
-            kind,
-        });
+/// True when an event belongs to the currently installed watch. Overflow is
+/// the exception: it names no watch (the kernel sends `wd == -1`) because it
+/// describes the queue as a whole, and the queue's only subject is the live
+/// directory — dropping it would silently stop the engine from ever
+/// reconciling after a kernel-side loss.
+pub fn event_is_live(wd: i32, kind: RawWatchKind, live_wd: Option<i32>) -> bool {
+    if kind == RawWatchKind::Overflow {
+        return true;
     }
-    out
+    live_wd == Some(wd)
 }
 
 // --- engine-side application --------------------------------------------------
@@ -130,24 +135,34 @@ pub enum WatchAction {
         index: u32,
     },
     /// The watcher snapshot can't be trusted for this directory.
-    Reconcile,
+    Reconcile { dir: PathBuf },
     /// The watched directory is gone.
-    DirGone,
+    DirGone { dir: PathBuf },
     Ignored,
 }
 
-/// Applies one parsed event to the state.
+/// Applies one parsed event to the state. The directory comes from the event:
+/// a caller that supplied its own current directory would apply a stale event
+/// from one folder against another folder's listing.
 pub fn apply_event(
     state: &mut DirectoryState,
-    dir: &Path,
     filter: &NameFilter,
     overrides: &mut std::collections::HashSet<PathBuf>,
     ev: &RawWatchEvent,
 ) -> WatchAction {
     use RawWatchKind as K;
+    let dir = ev.dir.as_path();
+    // The event's subject has to be the directory this state describes. A delete
+    // for elsewhere already resolves to nothing here, but a *create* elsewhere
+    // would otherwise insert a foreign path as a row of this listing — the two
+    // halves of the same mistake, and both closed by one check at the point of
+    // mutation rather than by callers remembering to filter.
+    if state.dir() != Some(dir) {
+        return WatchAction::Ignored;
+    }
     match ev.kind {
-        K::Overflow => WatchAction::Reconcile,
-        K::WatchGone => WatchAction::DirGone,
+        K::Overflow => WatchAction::Reconcile { dir: dir.to_path_buf() },
+        K::WatchGone => WatchAction::DirGone { dir: dir.to_path_buf() },
         K::Created | K::MovedTo => {
             let Some(name) = &ev.name else { return WatchAction::Ignored };
             let path = dir.join(name);
@@ -344,6 +359,8 @@ fn watcher_loop(
         }
     };
     let mut watch: Option<inotify::WatchDescriptor> = None;
+    // the directory `watch` was added for; every event this thread emits names it
+    let mut watch_dir: PathBuf = PathBuf::new();
     let mut watch_gen: u64 = 0;
     let mut buffer = vec![0u8; 64 * 1024];
 
@@ -363,6 +380,44 @@ fn watcher_loop(
         }
         if ready == 0 {
             continue;
+        }
+
+        // The fd is drained before any command is applied. Both orderings are
+        // safe once events carry their own directory, and this one keeps the
+        // generation tag honest: a backlog from the outgoing watch is still
+        // tagged with the outgoing generation instead of the incoming one.
+        if fds[0].revents & libc::POLLIN != 0 {
+            match inotify.read_events(&mut buffer) {
+                Ok(events) => {
+                    let live_wd = watch.as_ref().map(|w| w.get_watch_descriptor_id());
+                    for ev in events {
+                        let Some(kind) = classify(ev.mask.bits()) else { continue };
+                        let wd = ev.wd.get_watch_descriptor_id();
+                        if !event_is_live(wd, kind, live_wd) {
+                            continue; // a record from a watch that is no longer installed
+                        }
+                        let name = ev.name.map(|c| c.to_string_lossy().into_owned());
+                        if name.is_none() && !matches!(kind, RawWatchKind::Overflow | RawWatchKind::WatchGone) {
+                            continue;
+                        }
+                        let raw = RawWatchEvent {
+                            wd,
+                            dir: watch_dir.clone(),
+                            name,
+                            is_dir: is_dir_mask(ev.mask.bits()),
+                            kind,
+                        };
+                        if ev_tx.send((watch_gen, raw)).is_err() {
+                            return;
+                        }
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(e) => {
+                    log::warn!("watcher: read failed: {e}");
+                    return;
+                }
+            }
         }
 
         if fds[1].revents & libc::POLLIN != 0 {
@@ -390,31 +445,17 @@ fn watcher_loop(
                         ) {
                             Ok(wd) => {
                                 watch = Some(wd);
+                                watch_dir = path;
                                 watch_gen = g;
                             }
                             Err(e) => {
                                 log::warn!("watcher: add_watch {:?}: {e}", path);
+                                watch = None;
+                                watch_dir = PathBuf::new();
                                 watch_gen = g; // stay in sync; no events will come
                             }
                         }
                     }
-                }
-            }
-        }
-
-        if fds[0].revents & libc::POLLIN != 0 {
-            match inotify.read_events(&mut buffer) {
-                Ok(_events) => {
-                    for ev in parse_events(&buffer) {
-                        if ev_tx.send((watch_gen, ev)).is_err() {
-                            return;
-                        }
-                    }
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => {
-                    log::warn!("watcher: read failed: {e}");
-                    return;
                 }
             }
         }

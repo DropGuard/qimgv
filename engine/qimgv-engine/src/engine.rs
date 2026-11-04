@@ -361,7 +361,7 @@ impl Engine {
                                     let mut st = state_write(&state);
                                     let mut ov = overrides.lock().unwrap_or_else(|e| e.into_inner());
                                     catch_unwind(AssertUnwindSafe(|| {
-                                        watcher::apply_event(&mut st, &watched_dir, &filter, &mut ov, &raw)
+                                        watcher::apply_event(&mut st, &filter, &mut ov, &raw)
                                     }))
                                     .unwrap_or(watcher::WatchAction::Ignored)
                                 };
@@ -375,15 +375,15 @@ impl Engine {
                                         let _ = ev_tx.send(Event::Mutated { kind, path, name, is_dir, size, mtime_ms, index, epoch: epoch_at() });
                                         fire_notify(&notify);
                                     }
-                                    watcher::WatchAction::Reconcile => {
+                                    watcher::WatchAction::Reconcile { dir } => {
                                         // queue overflow: the kernel dropped events,
                                         // converge with a full rescan
                                         let e = epoch.fetch_add(1, Ordering::Relaxed) + 1;
-                                        let _ = job_tx.send(ScanJob { epoch: e, path: watched_dir.clone() });
+                                        let _ = job_tx.send(ScanJob { epoch: e, path: dir });
                                     }
-                                    watcher::WatchAction::DirGone => {
+                                    watcher::WatchAction::DirGone { dir } => {
                                         let e = epoch.fetch_add(1, Ordering::Relaxed) + 1;
-                                        let _ = job_tx.send(ScanJob { epoch: e, path: watched_dir.clone() });
+                                        let _ = job_tx.send(ScanJob { epoch: e, path: dir });
                                     }
                                     watcher::WatchAction::Ignored => {}
                                 }
