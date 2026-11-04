@@ -6,7 +6,12 @@
  *    and qimgv_last_error() yields a thread-local diagnostic message valid
  *    until the next engine call on the same thread.
  *  - String out-buffers are filled with NUL-terminated UTF-8;
- *    QIMGV_ERR_TRUNCATED signals an undersized buffer.
+ *    QIMGV_ERR_TRUNCATED signals an undersized buffer. A take_event that
+ *    truncates has written nothing and has NOT consumed the event: the engine
+ *    holds it and returns it on the next call, so growing the buffer and
+ *    retrying is always safe. (export_listing instead answers with the size it
+ *    needs and writes nothing until it fits — two different protocols, both
+ *    lossless.)
  *  - `notify` is invoked from an engine thread after each event is queued.
  *    It must not call back into the engine and must not touch Qt objects —
  *    its job is to wake the Qt event loop (e.g. write to an eventfd).

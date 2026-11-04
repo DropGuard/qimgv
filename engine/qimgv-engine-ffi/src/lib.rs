@@ -178,7 +178,13 @@ unsafe impl Sync for SendPtr {}
 
 type NotifyCb = extern "C" fn(user: *mut c_void);
 
-pub struct QimgvEngine(Mutex<Engine>);
+pub struct QimgvEngine {
+    engine: Mutex<Engine>,
+    /// One event that the caller's buffer could not hold, kept for the next
+    /// call. See qimgv_engine_take_event: an event that is popped and then lost
+    /// is indistinguishable from one that never happened.
+    stashed: Mutex<Option<Event>>,
+}
 
 fn map_engine_error(e: &EngineError) -> c_int {
     match e {
@@ -223,7 +229,7 @@ fn write_str(buf: *mut c_char, cap: usize, s: &str) -> Result<(), c_int> {
 /// `engine` must be a live pointer returned by `qimgv_engine_new`, not yet freed.
 fn with_engine<T>(engine: *mut QimgvEngine, f: impl FnOnce(&Engine) -> T) -> T {
     let eng = unsafe { &*engine };
-    let guard = eng.0.lock().unwrap_or_else(|p| p.into_inner());
+    let guard = eng.engine.lock().unwrap_or_else(|p| p.into_inner());
     f(&guard)
 }
 
@@ -268,7 +274,7 @@ pub unsafe extern "C" fn qimgv_engine_new(
             },
             notify_fn,
         );
-        Ok(QimgvEngine(Mutex::new(engine)))
+        Ok(QimgvEngine { engine: Mutex::new(engine), stashed: Mutex::new(None) })
     };
 
     match catch_unwind(attempt) {
@@ -828,25 +834,38 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
         return QIMGV_ERR_INVALID;
     }
     let r = catch_unwind(AssertUnwindSafe(|| {
-        with_engine(engine, |e| match e.try_event() {
+        let eng = unsafe { &*engine };
+        // Lock order is stashed then engine, everywhere; take_event is the only
+        // function that touches both.
+        let mut stash = eng.stashed.lock().unwrap_or_else(|p| p.into_inner());
+        let pending: Option<Event> = match stash.take() {
+            Some(ev) => Some(ev),
+            None => with_engine(engine, |e| e.try_event()),
+        };
+        // An inner closure: the arms' `?` has to mean "this event did not fit",
+        // not "leave take_event" — the latter would skip the put-it-back below,
+        // which is the whole point of the stash.
+        let outcome: Result<c_int, c_int> = (|| -> Result<c_int, c_int> {
+        match pending.as_ref() {
             None => Ok(0),
-            Some(Event::DirListed { dir, epoch }) => {
+            Some(ev) => match ev {
+            Event::DirListed { dir, epoch } => {
                 write_str(subject_buf, subject_cap, &dir.to_string_lossy())?;
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_LISTED, code: QIMGV_OK, epoch: epoch as u32 };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_LISTED, code: QIMGV_OK, epoch: *epoch as u32 };
                 }
                 Ok(1)
             }
-            Some(Event::OpenFailed { dir, error, epoch }) => {
+            Event::OpenFailed { dir, error, epoch } => {
                 write_str(subject_buf, subject_cap, &dir.to_string_lossy())?;
-                let code = map_engine_error(&error);
+                let code = map_engine_error(error);
                 set_last_error(&error.to_string());
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_OPEN_FAILED, code, epoch: epoch as u32 };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_OPEN_FAILED, code, epoch: *epoch as u32 };
                 }
                 Ok(1)
             }
-            Some(Event::ThumbNext { req }) => {
+            Event::ThumbNext { req } => {
                 write_str(subject_buf, subject_cap, &req.path.to_string_lossy())?;
                 if !thumb.is_null() {
                     unsafe {
@@ -858,9 +877,9 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                 }
                 Ok(1)
             }
-            Some(Event::Mutated { kind, path, name: _, is_dir, size, mtime_ms, index, epoch }) => {
-                write_str(subject_buf, subject_cap, &path)?;
-                let mkind = match kind {
+            Event::Mutated { kind, path, name: _, is_dir, size, mtime_ms, index, epoch } => {
+                write_str(subject_buf, subject_cap, path)?;
+                let mkind = match *kind {
                     qimgv_engine::WatchChangeKind::Added => QIMGV_MUT_ADDED,
                     qimgv_engine::WatchChangeKind::Modified => QIMGV_MUT_MODIFIED,
                     qimgv_engine::WatchChangeKind::Removed => QIMGV_MUT_REMOVED,
@@ -869,19 +888,29 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                     unsafe {
                         *mutation = QimgvMutation {
                             kind: mkind,
-                            is_dir: is_dir as c_int,
-                            size,
-                            mtime_ms,
-                            index: index as c_int,
+                            is_dir: *is_dir as c_int,
+                            size: *size,
+                            mtime_ms: *mtime_ms,
+                            index: *index as c_int,
                         };
                     }
                 }
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_MUTATED, code: QIMGV_OK, epoch: epoch as u32 };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_MUTATED, code: QIMGV_OK, epoch: *epoch as u32 };
                 }
                 Ok(1)
             }
-        })
+            },
+        }
+        })();
+        if outcome.is_err() {
+            // Nothing was written: every arm checks the buffer before touching an
+            // out-parameter. Putting the event back keeps take_event total — a
+            // DirListed swallowed by a short buffer looks exactly like an open
+            // that never answers, which is the worse of the two failures.
+            *stash = pending;
+        }
+        outcome
     }));
     match r {
         Ok(Ok(n)) => n,

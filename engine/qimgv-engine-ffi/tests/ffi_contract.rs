@@ -599,3 +599,57 @@ fn free_waits_for_a_notify_callback_that_is_already_running() {
     assert!(NOTIFY_FINISHED.load(Ordering::SeqCst),
         "qimgv_engine_free returned while the caller's callback was still running");
 }
+
+#[test]
+fn a_truncated_take_event_still_owes_the_same_event() {
+    // take_event pops before it marshals. Without a place to put what it cannot
+    // write, a caller holding a too-small buffer DESTROYS the event — and a
+    // DirListed that never arrives is indistinguishable from an open that never
+    // answers. This file owns C-ABI buffer semantics, so the guarantee is pinned
+    // here rather than only in the C++ consumer's retry loop.
+    let flag = AtomicBool::new(false);
+    let engine = new_engine(Some("jpg"), true, &flag);
+
+    // a subject longer than the tiny buffer below, in components the kernel
+    // accepts (255 bytes each)
+    let dir = tempfile::tempdir().unwrap();
+    let mut deep = dir.path().to_path_buf();
+    for _ in 0..3 {
+        deep = deep.join("d".repeat(200));
+    }
+    std::fs::create_dir_all(&deep).unwrap();
+    let path_c = CString::new(deep.to_str().unwrap()).unwrap();
+    unsafe {
+        assert_eq!(qimgv_engine_open_dir(engine, path_c.as_ptr(), 0, std::ptr::null_mut()), QIMGV_OK);
+    }
+    assert!(wait_flag(&flag, Duration::from_secs(5)), "no notify for the open");
+
+    let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+    let mut tiny = [0 as c_char; 8];
+    let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
+    let r = unsafe {
+        qimgv_engine_take_event(engine, &mut ev, tiny.as_mut_ptr(), tiny.len(), &mut m, std::ptr::null_mut())
+    };
+    assert_eq!(r, QIMGV_ERR_TRUNCATED, "a short buffer must report truncation, got {r}");
+
+    // and the event is still owed: the same call with room to spare must return it
+    let mut ev2 = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+    let mut big = vec![0 as c_char; 4096];
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let kind = loop {
+        let rr = unsafe {
+            qimgv_engine_take_event(engine, &mut ev2, big.as_mut_ptr(), big.len(), &mut m, std::ptr::null_mut())
+        };
+        assert!(rr != QIMGV_ERR_TRUNCATED, "the retry with a large buffer still truncated");
+        if rr > 0 {
+            break ev2.kind;
+        }
+        assert!(Instant::now() < deadline, "the truncated event was lost, not deferred");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(kind, QIMGV_EVENT_DIR_LISTED);
+    let written = unsafe { CStr::from_ptr(big.as_ptr()) }.to_string_lossy().into_owned();
+    assert_eq!(written, deep.to_str().unwrap(), "the deferred event must still name its directory");
+
+    unsafe { qimgv_engine_free(engine) };
+}

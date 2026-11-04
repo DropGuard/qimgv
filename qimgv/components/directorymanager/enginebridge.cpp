@@ -263,12 +263,28 @@ void EngineBridge::drainEvents() {
 
     if (!engine)
         return;
+    // Grown on demand instead of fixed: an event the buffer could not hold is
+    // put back by the engine, so retrying with room neither loses it nor
+    // reorders it. A fixed 4096 would instead leave it queued until something
+    // else woke the notifier, which looks like a stalled listing.
+    QByteArray subjectBuf;
+    subjectBuf.resize(4096);
     for (;;) {
         qimgv_event ev{};
         qimgv_mutation mut{};
         qimgv_thumb_req treq{};
-        char buf[4096];
-        const int r = qimgv_engine_take_event(engine, &ev, buf, sizeof(buf), &mut, &treq);
+        int r;
+        for (;;) {
+            r = qimgv_engine_take_event(engine, &ev, subjectBuf.data(),
+                                       size_t(subjectBuf.size()), &mut, &treq);
+            if (r != QIMGV_ERR_TRUNCATED)
+                break;
+            if (subjectBuf.size() >= (1 << 20)) {
+                qWarning() << "[EngineBridge] event subject needs more than 1 MiB";
+                break;
+            }
+            subjectBuf.resize(subjectBuf.size() * 2);
+        }
         if (r <= 0) {
             if (r < 0)
                 qWarning() << "[EngineBridge] take_event failed:" << qimgv_last_error();
@@ -280,7 +296,7 @@ void EngineBridge::drainEvents() {
         // full file path for DIR_MUTATED/THUMB_NEXT. Named for the ambiguity on
         // purpose — the kind decides which it is, and the value cannot say so.
         // See the table at qimgv_engine_take_event in qimgv_engine.h.
-        const QString subject = QString::fromUtf8(buf);
+        const QString subject = QString::fromUtf8(subjectBuf.constData());
         if (ev.kind == QIMGV_EVENT_DIR_LISTED) {
             mListedDir = subject;
             emit dirListed(subject);
