@@ -95,12 +95,22 @@ pub struct EngineConfig {
     pub initial_sort: SortMode,
 }
 
+/// Two clocks travel with a scan, and they answer different questions.
+/// `epoch` is the session the work belongs to — allocated only by a request, and
+/// what the FFI consumer filters on. `seq` says how recent the snapshot is: every
+/// dispatch of a scan takes a new one, whoever asked for it, and the newest
+/// dispatch is the only one allowed to write the listing. Collapsing the two is
+/// what made a queue-overflow rescan either cancel a user's open (when it
+/// allocated a session id) or overwrite the listing with a snapshot taken before
+/// a deletion (when it did not) — the second one resurrects files that are gone.
 struct ScanJob {
     epoch: u64,
+    seq: u64,
     path: PathBuf,
 }
 struct ScanDone {
     epoch: u64,
+    seq: u64,
     path: PathBuf,
     result: Result<ScanOutput, EngineError>,
     scan_ms: u128,
@@ -204,7 +214,7 @@ impl Engine {
                     });
                     let scan_ms = scan_start.elapsed().as_millis();
                     if res_tx
-                        .send(ScanDone { epoch: job.epoch, path: job.path, result, scan_ms })
+                        .send(ScanDone { epoch: job.epoch, seq: job.seq, path: job.path, result, scan_ms })
                         .is_err()
                     {
                         break;
@@ -234,6 +244,9 @@ impl Engine {
             thread::spawn(move || {
                 let mut watch_gen: u64 = 0;
                 let mut watched_dir = PathBuf::new();
+                // every scan dispatch takes the next number; only this thread
+                // dispatches, so this needs no atomic and no lock
+                let mut scan_seq: u64 = 0;
                 let mut thumbs = ThumbScheduler { max_in_flight: 2, ..Default::default() };
                 loop {
                     crossbeam_channel::select! {
@@ -253,7 +266,8 @@ impl Engine {
                                             watch_gen,
                                         });
                                     }
-                                    let _ = job_tx.send(ScanJob { epoch: e, path });
+                                    scan_seq += 1;
+                                    let _ = job_tx.send(ScanJob { epoch: e, seq: scan_seq, path });
                                 }
                                 Ok(Command::SetSort(mode)) => {
                                     let dir = {
@@ -318,9 +332,11 @@ impl Engine {
                         }
                         recv(res_rx) -> done => {
                             let Ok(done) = done else { break };
-                            // Stale scan: a newer OpenDir superseded it. Drop
-                            // silently — this is the slice-1 cancellation path.
-                            if done.epoch != epoch.load(Ordering::Relaxed) {
+                            // Stale scan: a newer dispatch superseded it. This is
+                            // recency, not session — comparing session ids here let
+                            // a rescan whose read_dir predated a deletion apply last
+                            // and put a deleted file back into the listing.
+                            if done.seq != scan_seq {
                                 continue;
                             }
                             match done.result {
@@ -380,12 +396,12 @@ impl Engine {
                                     watcher::WatchAction::Reconcile { dir } => {
                                         // queue overflow: the kernel dropped events,
                                         // converge with a full rescan
-                                        let e = epoch_at();
-                                        let _ = job_tx.send(ScanJob { epoch: e, path: dir });
+                                        scan_seq += 1;
+                                        let _ = job_tx.send(ScanJob { epoch: epoch_at(), seq: scan_seq, path: dir });
                                     }
                                     watcher::WatchAction::DirGone { dir } => {
-                                        let e = epoch_at();
-                                        let _ = job_tx.send(ScanJob { epoch: e, path: dir });
+                                        scan_seq += 1;
+                                        let _ = job_tx.send(ScanJob { epoch: epoch_at(), seq: scan_seq, path: dir });
                                     }
                                     watcher::WatchAction::Ignored => {}
                                 }
