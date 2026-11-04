@@ -120,6 +120,11 @@ private:
     SortingMode mAppliedSort;
     QTimer *rescanTimer = nullptr;
     bool mResyncing = false;
+    // requested from inside the mirror and consumed after mResyncing clears: a
+    // scheduleRescan() call made during mirroring is dropped by its own guard,
+    // which is how the engine-behind rescan never used to happen.
+    bool mWantRescan = false;
+    int mRejectedListings = 0;
     struct PendingListed {
         qint64 token;
         QString dir;
@@ -138,7 +143,9 @@ private:
     // never re-derives either
     void applyEngineModification(const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
     void scheduleRescan();
-    void mirrorEngineListing(const QString &dirPath);
+    // false when the arena was rejected: the mirror keeps what it had, because a
+    // truncation applied is a directory that never existed anywhere.
+    bool mirrorEngineListing(const QString &dirPath);
     static bool directoryUsable(const QString &dirPath);
     static std::filesystem::file_time_type fileTimeFromMs(qint64 ms);
 

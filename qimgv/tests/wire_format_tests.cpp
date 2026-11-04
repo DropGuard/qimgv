@@ -98,14 +98,24 @@ private slots:
         QCOMPARE(int(fullFiles.size()), 3);
         QCOMPARE(int(fullDirs.size()), 1);
 
-        // cut into the final record: the parse must drop it whole and report the
-        // mismatch instead of handing back a half-read name or path
+        // Cut into the final record. A rejected arena yields NOTHING: a prefix
+        // that decoded cleanly is indistinguishable, at the call site, from a
+        // directory that genuinely has fewer entries — and the mirror would
+        // install it as such (missing entries in the view, in the counts and in
+        // end-of-folder navigation, with nothing crashed to point at).
         std::vector<EngineBridge::EngineEntry> files, dirs;
         QVERIFY(!EngineBridge::parseListing(arena.left(arena.size() - 3), files, dirs));
-        QCOMPARE(int(files.size()), 3);
-        QCOMPARE(dirs.size(), size_t(0));
-        for (size_t i = 0; i < files.size(); ++i)
-            QCOMPARE(files[i].name, fullFiles[i].name);
+        QVERIFY(files.empty());
+        QVERIFY(dirs.empty());
+
+        // and a header that overstates the records is rejected the same way
+        const quint32 overstated = fc + 1;
+        QByteArray lyingHeader = arena;
+        lyingHeader.replace(0, 4, QByteArray::fromRawData(
+            reinterpret_cast<const char *>(&overstated), 4));
+        QVERIFY(!EngineBridge::parseListing(lyingHeader, files, dirs));
+        QVERIFY(files.empty());
+        QVERIFY(dirs.empty());
     }
 
     void headerCountsDisagreeingWithTheArenaAreRejected() {

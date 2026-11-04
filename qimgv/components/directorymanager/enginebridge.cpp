@@ -227,7 +227,14 @@ bool EngineBridge::parseListing(const QByteArray &arena, std::vector<EngineEntry
     };
     readRun(fc, false);
     readRun(dc, true);
-    return p == end && files.size() == fc && dirs.size() == dc;
+    if(p == end && files.size() == fc && dirs.size() == dc)
+        return true;
+    // Rejected means "this is not the listing the header promised" — the caller
+    // has no way to tell a truncation from a short directory, so a failure
+    // returns nothing rather than the prefix that happened to decode.
+    files.clear();
+    dirs.clear();
+    return false;
 }
 
 bool EngineBridge::entryAt(int index, bool dirs, EngineEntry &out) const {

@@ -442,8 +442,25 @@ void DirectoryManager::onEngineDirListed(const QString &dirPath) {
     if(mDirectoryPath != dirPath)
         return;
     mResyncing = true;
-    mirrorEngineListing(dirPath);
+    const bool applied = mirrorEngineListing(dirPath);
     mResyncing = false;
+    if(mWantRescan) {
+        mWantRescan = false;
+        scheduleRescan();
+    }
+    if(!applied) {
+        // A rejected arena is not a listing: the actions armed for it must keep
+        // waiting for one that arrives, rather than fire against a mirror that was
+        // never updated. Bounded so a permanently broken engine cannot make the
+        // 150ms rescan timer spin forever.
+        if(++mRejectedListings <= 3)
+            qWarning() << "[DirectoryManager] listing rejected" << mRejectedListings << "times for" << dirPath;
+        else
+            qCritical() << "[DirectoryManager] giving up on mirroring" << dirPath
+                        << ": the engine keeps rejecting its own listing";
+        return;
+    }
+    mRejectedListings = 0;
     // deferred actions armed for this listing run with fresh counts; the
     // leftovers can never fire (the engine lists one directory at a time).
     // The queue is moved out first: an action may re-enter and arm its own
@@ -561,7 +578,7 @@ void DirectoryManager::onEngineOpenFailed(const QString &dirPath, int code) {
     emit loadingFailed(dirPath);
 }
 
-void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
+bool DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     QElapsedTimer rebuildTimer;
     rebuildTimer.start();
     auto &bridge = EngineBridge::instance();
@@ -570,16 +587,23 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     QByteArray listing;
     quint32 newFileCount = 0, newDirCount = 0;
     if(!bridge.exportListing(listing, newFileCount, newDirCount))
-        return;
+        return false;
 
     // parse the arena into mirror entries
     QElapsedTimer parseTimer;
     parseTimer.start();
     std::vector<EngineBridge::EngineEntry> files, dirs;
-    if(!EngineBridge::parseListing(listing, files, dirs))
-        qWarning() << "[DirectoryManager] listing arena not consumed exactly:" << files.size()
-                   << "files" << dirs.size() << "dirs from" << listing.size() << "bytes (counts"
-                   << newFileCount << "+" << newDirCount << ")";
+    if(!EngineBridge::parseListing(listing, files, dirs)) {
+        // Nothing was parsed (a rejected arena yields no records), and installing
+        // the prefix that happened to decode would create a directory that does
+        // not exist anywhere: entries silently missing from the view, from the
+        // counts and from end-of-folder navigation. Keep the old mirror and ask
+        // for another listing.
+        qWarning() << "[DirectoryManager] listing arena rejected:" << listing.size()
+                   << "bytes, header claimed" << newFileCount << "files +" << newDirCount << "dirs";
+        mWantRescan = true;
+        return false;
+    }
     qDebug() << "[DirectoryManager] arena pull+parse" << parseTimer.elapsed() << "ms; parsed"
              << files.size() << "files" << dirs.size() << "dirs; arena" << listing.size() << "bytes";
 
@@ -652,8 +676,8 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
         qDebug() << "[DirectoryManager] listing rebuild (incl. view repopulation)"
                  << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
         if(engineBehind)
-            scheduleRescan();
-        return;
+            mWantRescan = true;   // consumed by onEngineDirListed, past mResyncing
+        return true;
     }
 
     // same directory: granular resync — keep views/selection stable
@@ -738,5 +762,6 @@ void DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     mPrevFileMeta = std::move(newMeta);
     qDebug() << "[DirectoryManager] listing resync" << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
     if(staleSnapshot || engineBehind)
-        scheduleRescan();
+        mWantRescan = true;      // same reason as above: not while mResyncing is set
+    return true;
 }
