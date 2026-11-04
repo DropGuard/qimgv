@@ -253,7 +253,7 @@ private slots:
         QCOMPARE(result, FileOpResult::DESTINATION_DIR_EXISTS);
         FileOperations::rename(fixtureDir + "/destdir/src.png", "renamed.png", false, result);
         QCOMPARE(result, FileOpResult::SUCCESS);
-        QVERIFY(QFileInfo(fixtureDir + "/destdir/renamed.png").exists());
+        QVERIFY(QFileInfo::exists(fixtureDir + "/destdir/renamed.png"));
 
         // copy: a forced overwrite preserves the source's modification time
         QFileInfo destInfo(fixtureDir + "/destdir/renamed.png");
