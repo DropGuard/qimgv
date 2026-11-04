@@ -7,7 +7,7 @@
 
 use std::fs;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -268,11 +268,17 @@ pub fn mtime_ms(t: SystemTime) -> i64 {
 
 // --- the watcher thread -------------------------------------------------------
 
+/// Everything about a folder that has to happen in one order happens on one
+/// thread: install the subscription, then enumerate the baseline. Two threads
+/// cannot promise that ordering to each other, which is why a change used to be
+/// able to fall into a gap where it was in neither the snapshot nor any event —
+/// not unnoticed, but undetectable. `session`/`dispatch` ride along so the
+/// result can be attributed to the request it answers.
 pub(crate) enum WatchCmd {
-    /// (Re)target the watch. Events carry the directory this thread installed the
-    /// watch for, so the consumer can tell what a record belongs to; there is no
-    /// generation number any more, and nothing to keep in sync with it.
-    Watch { path: PathBuf },
+    Watch { path: PathBuf, session: u64, dispatch: u64 },
+    /// Re-enumerate a folder that is already watched (a declared loss: the
+    /// kernel queue overflowed, the folder vanished, or a caller asked).
+    Enumerate { path: PathBuf, session: u64, dispatch: u64 },
     /// Drop the current watch. Explicit, because the previous implementation of
     /// "stop watching" was to add a watch on an empty path and rely on it failing.
     Unwatch,
@@ -290,7 +296,10 @@ pub(crate) struct WatcherHandle {
 }
 
 impl WatcherHandle {
-    pub(crate) fn spawn() -> (WatcherHandle, Receiver<RawWatchEvent>) {
+    pub(crate) fn spawn(
+        options: crate::scan::ScanOptions,
+        res_tx: Sender<crate::engine::ScanDone>,
+    ) -> (WatcherHandle, Receiver<RawWatchEvent>) {
         let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<WatchCmd>();
         let (ev_tx, ev_rx) = crossbeam_channel::unbounded::<RawWatchEvent>();
         let running = Arc::new(AtomicBool::new(true));
@@ -304,7 +313,7 @@ impl WatcherHandle {
 
         let join = std::thread::Builder::new()
             .name("qimgv-watch".into())
-            .spawn(move || watcher_loop(&cmd_rx, &ev_tx, loop_wake, running_flag))
+            .spawn(move || watcher_loop(&cmd_rx, &ev_tx, &res_tx, &options, loop_wake, running_flag))
             .expect("spawn watcher thread");
 
         (
@@ -356,9 +365,39 @@ impl Drop for WatcherHandle {
     }
 }
 
+/// Take the baseline for a folder. Called immediately after the watch is
+/// installed, by the same thread, so "changes from now on are visible" and
+/// "this is what was there" cannot be reordered against each other. The result
+/// goes back to the engine loop, which is the only writer of the listing state.
+fn enumerate_and_report(
+    path: &Path,
+    session: u64,
+    dispatch: u64,
+    res_tx: &Sender<crate::engine::ScanDone>,
+    options: &crate::scan::ScanOptions,
+) {
+    let start = std::time::Instant::now();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::scan::scan_directory(path, options)
+    }))
+    .unwrap_or_else(|_| Err(crate::error::EngineError::Io {
+        path: path.to_path_buf(),
+        source: std::io::Error::other("scan worker panicked"),
+    }));
+    let _ = res_tx.send(crate::engine::ScanDone {
+        session,
+        dispatch,
+        path: path.to_path_buf(),
+        result,
+        scan_ms: start.elapsed().as_millis(),
+    });
+}
+
 fn watcher_loop(
     cmd_rx: &Receiver<WatchCmd>,
     ev_tx: &Sender<RawWatchEvent>,
+    res_tx: &Sender<crate::engine::ScanDone>,
+    options: &crate::scan::ScanOptions,
     wake: OwnedFd,
     running: Arc<AtomicBool>,
 ) {
@@ -442,13 +481,16 @@ fn watcher_loop(
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {
                     WatchCmd::Stop => return,
+                    WatchCmd::Enumerate { path, session, dispatch } => {
+                        enumerate_and_report(&path, session, dispatch, &res_tx, options);
+                    }
                     WatchCmd::Unwatch => {
                         if let Some(w) = watch.take() {
                             let _ = inotify.watches().remove(w);
                         }
                         watch_dir = PathBuf::new();
                     }
-                    WatchCmd::Watch { path } => {
+                    WatchCmd::Watch { path, session, dispatch } => {
                         if let Some(w) = watch.take() {
                             let _ = inotify.watches().remove(w);
                         }
@@ -464,7 +506,7 @@ fn watcher_loop(
                         ) {
                             Ok(wd) => {
                                 watch = Some(wd);
-                                watch_dir = path;
+                                watch_dir = path.clone();
                             }
                             Err(e) => {
                                 log::warn!("watcher: add_watch {:?}: {e}", path);
@@ -472,6 +514,14 @@ fn watcher_loop(
                                 watch_dir = PathBuf::new();
                             }
                         }
+                        // The baseline is taken here, by this thread, after the
+                        // subscription has been installed (or after installing it
+                        // failed, in which case the listing still works and live
+                        // updates do not — visible in the warning above). No other
+                        // thread can enumerate this folder, so a change cannot land
+                        // in a gap between the two acts: it is either in the snapshot
+                        // or it arrives on the event queue afterwards.
+                        enumerate_and_report(&path, session, dispatch, &res_tx, options);
                     }
                 }
             }
