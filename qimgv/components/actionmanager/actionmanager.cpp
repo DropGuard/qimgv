@@ -130,7 +130,7 @@ void ActionManager::removeAllShortcuts() {
 }
 //------------------------------------------------------------------------------
 // Removes all shortcuts for specified action. Slow (reverse map lookup).
-void ActionManager::removeAllShortcuts(QString actionName) {
+void ActionManager::removeAllShortcuts(const QString& actionName) {
     if(validateAction(actionName) == ActionType::ACTION_INVALID)
         return;
 
@@ -153,7 +153,7 @@ void ActionManager::resetDefaults() {
     actionManager->shortcuts = actionManager->defaults;
 }
 //------------------------------------------------------------------------------
-void ActionManager::resetDefaults(QString action) {
+void ActionManager::resetDefaults(const QString& action) {
     actionManager->removeAllShortcuts(action);
     QMapIterator<QString, QString> i(defaults);
     while(i.hasNext()) {
@@ -165,7 +165,7 @@ void ActionManager::resetDefaults(QString action) {
     }
 }
 //------------------------------------------------------------------------------
-void ActionManager::adjustFromVersion(QVersionNumber lastVer) {
+void ActionManager::adjustFromVersion(const QVersionNumber& lastVer) {
     // swap Ctrl-P & P
     if(lastVer < QVersionNumber(0,9,2)) {
         actionManager->resetDefaults("print");
@@ -213,11 +213,11 @@ QString ActionManager::actionForShortcut(const QString &keys) {
 }
 
 // returns first shortcut that is found
-const QString ActionManager::shortcutForAction(QString action) {
+const QString ActionManager::shortcutForAction(const QString& action) {
     return shortcuts.key(action, "");
 }
 
-const QList<QString> ActionManager::shortcutsForAction(QString action) {
+const QList<QString> ActionManager::shortcutsForAction(const QString& action) {
     return shortcuts.keys(action);
 }
 

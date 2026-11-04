@@ -93,10 +93,11 @@ lint --gate 实测 2m20s,留在 push 前手动跑。`--no-verify` 逃生门存�
   Core::setWallpaper)。
 - pimpl 不用:应用不是库,白盒可测性优先于隐藏。
 - 反模式燃烧阶段已于 2026-11 关闭:不再主动全库扫风格族。策略冻结族
-  (conversion/float-conversion/passedByValue/duplInheritedMember)已退役出
-  扫描(lint.py 的 FROZEN 与 REPORT 裁剪),理由留在 lint-baseline.txt 头部。
-  重启条件:无——新族即失败与只缩不涨已经自动守门,重启只在有人拿实测证据
-  证明某个冻结族值得修时发生。
+  (conversion/float-conversion/duplInheritedMember)已退役出扫描,理由留在
+  lint-baseline.txt 头部。passedByValue 曾与它们同批冻结,2026-11-05 因
+  机制纠错重开并清零——“隐式共享让按值免费”是民间传说:拷贝/析构各付一次
+  锁式原子 RMW,无条件;实测对 const 引用 6.4-10.7x。重启条件:无——新族
+  即失败与只缩不涨已经自动守门。
 - state 锁的机器化守卫(行级启发式 R7)于 2026-11-05 否决:启发式扫描把
   规则文件的 green 从"验证过"降级成"抽样过",其余六条的承诺因此被稀释。
   根治路径是 with_state 闭包(guard 不可逃逸,"持锁睡觉"必须显式写进闭包

@@ -24,7 +24,7 @@ public:
     QString selectedAction();
     QString selectedShortcut();
     void setAction(QString);
-    void setShortcut(QString);
+    void setShortcut(const QString&);
 
 private slots:
     void onShortcutEdited();

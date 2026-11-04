@@ -37,7 +37,7 @@ REPORT = ['-Wshadow', '-Wold-style-cast', '-Wsuggest-override']
 # the numbers cannot rot, and the gate stops paying to re-derive them.
 #   cppcheck passedByValue / duplInheritedMember — Qt's implicit sharing and
 #   signal re-declaration idioms make these recommendations wrong here.
-FROZEN = {'passedByValue', 'duplInheritedMember'}
+FROZEN = {'duplInheritedMember'}  # passedByValue re-armed at zero (2026-11-05)
 DIAG = re.compile(r'^(/[^:]+):(\d+):\d+: (?:warning|error): .*?\[-?W?([a-z0-9-]+)\]$')
 CLAZY = re.compile(r'^(/[^:]+):(\d+):\d+: warning: .* \[-Wclazy-([a-z0-9-]+)\]$')
 CPPCHECK = re.compile(r'^(/[^:]+):(\d+):\d+: (?:style|warning|performance|portability): .* \[([a-zA-Z0-9_]+)\]$')
@@ -85,15 +85,29 @@ def clazy_counts(srcs):
 
 def cppcheck_counts():
     found = collections.defaultdict(set)
-    # no -i exclusions: the compile db drives what gets checked (a nonexistent
-    # -i path is ignored, not fatal), and the coverage assertion below catches
-    # any real coverage hole. The autogen TUs the db contains only cost
-    # preprocessor noise, not findings.
+    # The compile db is scrubbed before cppcheck sees it: it contains the
+    # AUTOMOC mocs_compilation TUs, and preprocessing one of those takes the
+    # #error branch — the moc stub expects Q_MOC_OUTPUT_REVISION from the
+    # build context cppcheck does not fully inherit (the db entries lack it;
+    # the real build gets it from the Qt headers an earlier moc include pulls
+    # in). A preprocessor error aborts a whole worker batch, and the findings
+    # set then flaps with thread scheduling — observed: passedByValue 0 vs 24
+    # between identical runs. Generated code is not review surface anyway
+    # (SKIP excludes it from every other pass), so the TUs are dropped from a
+    # filtered copy of the db: cppcheck sees exactly what the other passes
+    # see, and no worker can be poisoned. The coverage assertion below checks
+    # the same filtered set.
+    raw_db = os.path.join(BUILD, 'compile_commands.json')
+    db = os.path.join(BUILD, 'compile_commands.cppcheck.json')
+    db_entries = json.load(open(raw_db))
+    kept = [e for e in db_entries if not any(s in e['file'] for s in SKIP)]
+    with open(db, 'w') as f:
+        json.dump(kept, f)
     # no --quiet: the progress lines ("Checking <file> ...") are the liveness
     # signal — cppcheck answers a broken invocation (phantom -i, unresolvable
     # project) with one error line, exit code 0, and zero findings, which is
     # indistinguishable from a clean scan unless coverage is asserted.
-    cmd = ['cppcheck', f'--project={os.path.abspath(os.path.join(BUILD, "compile_commands.json"))}',
+    cmd = ['cppcheck', f'--project={os.path.abspath(db)}',
            '--library=qt', '--suppress=unknownMacro', '--suppress=syntaxError',
            '--suppress=missingIncludeSystem',
            '--enable=warning,performance,portability', '--inline-suppr']

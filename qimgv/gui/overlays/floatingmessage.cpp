@@ -1,4 +1,6 @@
 #include "floatingmessage.h"
+
+#include <utility>
 #include "ui_floatingmessage.h"
 
 FloatingMessage::FloatingMessage(FloatingWidgetContainer *parent) :
@@ -45,22 +47,22 @@ void FloatingMessage::readSettings() {
 
 void FloatingMessage::showMessage(QString text, FloatingWidgetPosition anchor, FloatingMessageIcon icon, int duration) {
     setPosition(anchor);
-    doShowMessage(text, icon, duration);
+    doShowMessage(std::move(text), icon, duration);
 }
 
 void FloatingMessage::showMessage(QString text, FloatingMessageIcon icon, int duration) {
     setPosition(preferredPosition);
-    doShowMessage(text, icon, duration);
+    doShowMessage(std::move(text), icon, duration);
 }
 
 void FloatingMessage::doShowMessage(QString text, FloatingMessageIcon icon, int duration) {
     hideDelay = duration;
     setIcon(icon);
-    setText(text);
+    setText(std::move(text));
     show();
 }
 
-void FloatingMessage::setText(QString text) {
+void FloatingMessage::setText(const QString& text) {
     ui->textLabel->setText(text);
     text.isEmpty()?ui->textLabel->hide():ui->textLabel->show();
     recalculateGeometry();

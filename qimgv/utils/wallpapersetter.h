@@ -13,5 +13,5 @@ class WallpaperSetter
 public:
     WallpaperSetter();
 
-    static void setWallpaper(QString path);
+    static void setWallpaper(const QString& path);
 };

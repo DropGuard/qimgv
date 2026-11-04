@@ -20,7 +20,7 @@ public:
     ~InfoBar() override;
 
 public slots:
-    void setInfo(QString position, QString fileName, QString info);
+    void setInfo(const QString& position, const QString& fileName, const QString& info);
 protected:
     void paintEvent(QPaintEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;

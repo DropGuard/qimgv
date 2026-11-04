@@ -40,8 +40,8 @@ public:
     void setMulti(bool);
     DialogResult getResult();
 
-    void setSource(QString src);
-    void setDestination(QString dst);
+    void setSource(const QString& src);
+    void setDestination(const QString& dst);
 private slots:
     void onYesClicked();
     void onNoClicked();

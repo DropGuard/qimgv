@@ -1,12 +1,13 @@
 #include "scalerrunnable.h"
 
 #include <QElapsedTimer>
+#include <utility>
 
 ScalerRunnable::ScalerRunnable() {
 }
 
 void ScalerRunnable::setRequest(ScalerRequest r) {
-    req = r;
+    req = std::move(r);
 }
 
 void ScalerRunnable::run() {

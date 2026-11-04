@@ -12,5 +12,5 @@
 
 int clamp(int x, int lower, int upper);
 int probeOS();
-StdString toStdString(QString str);
-QString fromStdString(StdString str);
+StdString toStdString(const QString& str);
+QString fromStdString(const StdString &str);

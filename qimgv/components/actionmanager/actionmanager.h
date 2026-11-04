@@ -26,17 +26,17 @@ public:
     bool processEvent(QInputEvent*);
     void addShortcut(const QString &keys, const QString &action);
     void resetDefaults();
-    void resetDefaults(QString action);
+    void resetDefaults(const QString& action);
     QString actionForShortcut(const QString &keys);
-    const QString shortcutForAction(QString action);
-    const QList<QString> shortcutsForAction(QString action);
+    const QString shortcutForAction(const QString& action);
+    const QList<QString> shortcutsForAction(const QString& action);
     QStringList actionList();
     const QMap<QString,QString>& allShortcuts();
     void removeShortcut(const QString &keys);
     void removeAllShortcuts();
-    void removeAllShortcuts(QString actionName);
+    void removeAllShortcuts(const QString& actionName);
     QString keyForNativeScancode(quint32 scanCode);
-    void adjustFromVersion(QVersionNumber lastVer);
+    void adjustFromVersion(const QVersionNumber& lastVer);
     void saveShortcuts();
 public slots:
     bool invokeAction(const QString &actionName);

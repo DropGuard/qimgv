@@ -13,11 +13,11 @@ FileReplaceDialog::~FileReplaceDialog() {
     delete ui;
 }
 
-void FileReplaceDialog::setSource(QString src) {
+void FileReplaceDialog::setSource(const QString& src) {
     ui->srcLabel->setText(src);
 }
 
-void FileReplaceDialog::setDestination(QString dst) {
+void FileReplaceDialog::setDestination(const QString& dst) {
     ui->dstLabel->setText(dst);
 }
 

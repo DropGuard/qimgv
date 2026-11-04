@@ -1,7 +1,9 @@
 #include "imagefactory.h"
 
+#include <utility>
+
 std::optional<std::shared_ptr<Image>> ImageFactory::createImage(QString path, bool scaled, const LoadPolicy &policy) {
-    std::unique_ptr<DocumentInfo> docInfo(new DocumentInfo(path, policy));
+    std::unique_ptr<DocumentInfo> docInfo(new DocumentInfo(std::move(path), policy));
     auto type = docInfo->type();
     if(type == NONE) {
         qDebug() << "ImageFactory: cannot load " << docInfo->filePath();

@@ -13,7 +13,7 @@ ScriptEditorDialog::ScriptEditorDialog(QWidget *parent) :
     this->onNameChanged(ui->nameLineEdit->text());
 }
 
-ScriptEditorDialog::ScriptEditorDialog(QString name, Script script, QWidget *parent)
+ScriptEditorDialog::ScriptEditorDialog(const QString& name, const Script& script, QWidget *parent)
     : QDialog(parent),
       ui(new Ui::ScriptEditorDialog),
       editMode(true)
@@ -41,7 +41,7 @@ Script ScriptEditorDialog::script() {
     return Script(ui->pathLineEdit->text(), ui->blockingCheckBox->isChecked());
 }
 
-void ScriptEditorDialog::onNameChanged(QString name) {
+void ScriptEditorDialog::onNameChanged(const QString& name) {
     if(name.isEmpty()) {
         ui->messageLabel->setText(tr("Enter script name"));
         ui->acceptButton->setEnabled(false);

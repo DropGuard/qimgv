@@ -1,5 +1,7 @@
 #include "contextmenuitem.h"
 
+#include <utility>
+
 ContextMenuItem::ContextMenuItem(QWidget *parent)
     : MenuItem(parent),
       mAction("")
@@ -10,7 +12,7 @@ ContextMenuItem::~ContextMenuItem() {
 }
 
 void ContextMenuItem::setAction(QString text) {
-    this->mAction = text;
+    this->mAction = std::move(text);
     setShortcutText(actionManager->shortcutForAction(mAction));
 }
 

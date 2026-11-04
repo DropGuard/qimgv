@@ -1,5 +1,7 @@
 #include "entryinfoitem.h"
 
+#include <utility>
+
 EntryInfoItem::EntryInfoItem(QWidget *parent) : QWidget(parent) {
     layout.setContentsMargins(9,0,9,0);
     layout.setSpacing(0);
@@ -17,8 +19,8 @@ EntryInfoItem::EntryInfoItem(QWidget *parent) : QWidget(parent) {
 }
 
 void EntryInfoItem::setInfo(QString _name, QString _value) {
-    name = _name;
-    value = _value;
+    name = std::move(_name);
+    value = std::move(_value);
     nameLabel.setText(name);
     valueLabel.setText(value);
 };

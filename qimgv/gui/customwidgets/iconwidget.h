@@ -18,7 +18,7 @@ class IconWidget : public QWidget {
 public:
     explicit IconWidget(QWidget *parent = nullptr);
     ~IconWidget() override;
-    void setIconPath(QString path);
+    void setIconPath(const QString& path);
     void setIconOffset(int x, int y);
     void setColorMode(IconColorMode _mode);
     void setColor(QColor _color);

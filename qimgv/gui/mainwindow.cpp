@@ -265,7 +265,7 @@ void MW::showImage(std::unique_ptr<QPixmap> pixmap) {
     updateCropPanelData();
 }
 
-void MW::showAnimation(std::shared_ptr<QMovie> movie) {
+void MW::showAnimation(const std::shared_ptr<QMovie>& movie) {
     if(settings->autoResizeWindow())
         preShowResize(movie->frameRect().size());
     viewerWidget->showAnimation(movie);
@@ -535,7 +535,7 @@ void MW::showSaveDialog(const QString &filePath) {
         emit saveAsRequested(newFilePath);
 }
 
-QString MW::getSaveFileName(QString filePath) {
+QString MW::getSaveFileName(const QString& filePath) {
     docWidget->hideFloatingPanel();
     QStringList filters;
     // generate filter for writable images
@@ -578,7 +578,7 @@ QString MW::getSaveFileName(QString filePath) {
     return newFilePath;
 }
 
-void MW::showOpenDialog(QString path) {
+void MW::showOpenDialog(const QString& path) {
     docWidget->hideFloatingPanel();
 
     QFileDialog dialog(this);
@@ -905,7 +905,7 @@ void MW::showError(const QString &text) {
     floatingMessage->showMessage(text,  FloatingMessageIcon::ICON_ERROR, 2800);
 }
 
-bool MW::showConfirmation(QString title, QString msg) {
+bool MW::showConfirmation(const QString& title, const QString& msg) {
     QMessageBox msgBox(this);
     msgBox.setWindowTitle(title);
     msgBox.setText(msg);

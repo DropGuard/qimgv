@@ -18,9 +18,13 @@
 #   not a bug. Adding casts is noise. The directorymodel/manager
 #   size_type->int sites are theoretically reachable only at 2B files.
 #   The settings_table factory conversions are safe by construction.
-#   passedByValue — Qt's implicit sharing makes by-value QString cheap
-#   for cold paths; the hot-path sites were already fixed. The 55
-#   remainder is dialogs/settings cold paths.
+#   passedByValue — REOPENED and swept to zero on 2026-11-05. The old
+#   rationale here (implicit sharing makes by-value cheap) was the
+#   folklore: the copy constructor pays two locked RMW operations on the
+#   shared refcount, unconditionally — measured 6.4-10.7x against
+#   const-ref on a 20M-call loop. Read-only params are const-ref now,
+#   sinks keep by-value + std::move (clang-tidy sweep); the family is
+#   re-armed, a new by-value param in scanned code fails the gate.
 #   duplInheritedMember — Qt-style signal/slot re-declaration patterns
 #   (non-virtual shadowing is intentional in this framework).
 clazy qcolor-from-literal 50
@@ -35,7 +39,6 @@ clazy use-static-qregularexpression 2
 clazy const-signal-or-slot 1
 clazy non-pod-global-static 1
 clazy connect-by-name 1
-cppcheck passedByValueCallback 7
 cppcheck returnByReference 10
 cppcheck iterateByValue 4
 cppcheck useInitializationList 2

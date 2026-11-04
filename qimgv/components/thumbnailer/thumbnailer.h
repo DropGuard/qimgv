@@ -20,7 +20,7 @@ public:
     void waitForDone();
 
 public slots:
-    void getThumbnailAsync(QString path, int size, bool crop, bool force);
+    void getThumbnailAsync(const QString& path, int size, bool crop, bool force);
 
 private:
     EngineBridge &mBridge;
@@ -35,9 +35,9 @@ private:
     bool mBatchStart = true;
 
 private slots:
-    void onTaskStart(QString filePath, int size);
-    void onTaskEnd(std::shared_ptr<Thumbnail> thumbnail, QString filePath, bool crop);
-    void onThumbNext(QString filePath, int size, bool crop);
+    void onTaskStart(const QString& filePath, int size);
+    void onTaskEnd(const std::shared_ptr<Thumbnail>& thumbnail, const QString& filePath, bool crop);
+    void onThumbNext(const QString& filePath, int size, bool crop);
 
 signals:
     void thumbnailReady(std::shared_ptr<Thumbnail> thumbnail, QString filePath);

@@ -3,10 +3,11 @@
 #include "qimgv_engine.h"
 
 #include <QFileInfo>
+#include <utility>
 
 ThumbnailerRunnable::ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, int _size, bool _crop, bool _force,
                                          const LoadPolicy &_policy) :
-    path(_path),
+    path(std::move(_path)),
     size(_size),
     crop(_crop),
     force(_force),
@@ -30,7 +31,7 @@ QString ThumbnailerRunnable::videoFrameTempPath(const QString &tmpDir, const QSt
     return tmpDir + QFileInfo(path).fileName() + "-" + generateIdString(path, 0, false) + ".png";
 }
 
-QString ThumbnailerRunnable::generateIdString(QString path, int size, bool crop) {
+QString ThumbnailerRunnable::generateIdString(const QString& path, int size, bool crop) {
     QString queryStr = path + QString::number(size);
     if(crop)
         queryStr.append("s");
@@ -38,7 +39,7 @@ QString ThumbnailerRunnable::generateIdString(QString path, int size, bool crop)
     return queryStr;
 }
 
-std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, QString path, int size, bool crop, bool force,
+std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, const QString& path, int size, bool crop, bool force,
                                                          const LoadPolicy &policy) {
     // Fast path: ONE file open (header probe) for format/animation/orientation.
     // DocumentInfo (mime sniff + per-format probes, 3-5 opens) is only used for
@@ -136,7 +137,7 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
 ThumbnailerRunnable::~ThumbnailerRunnable() {
 }
 
-std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(QString path, const char *format, int size, bool squared) {
+std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(const QString& path, const char *format, int size, bool squared) {
     QImageReader *reader = new QImageReader(path, format);
     Qt::AspectRatioMode ARMode = squared?
                 (Qt::KeepAspectRatioByExpanding):(Qt::KeepAspectRatio);
@@ -195,7 +196,7 @@ std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(Q
     return std::make_pair(std::move(result), originalSize);
 }
 
-std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbnail(QString path, int size, bool squared,
+std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbnail(const QString& path, int size, bool squared,
                                                                                     const QString &tmpDir, const QString &mpvBinary) {
     QImageReader reader;
     const QString tmpFilePath = videoFrameTempPath(tmpDir, path);

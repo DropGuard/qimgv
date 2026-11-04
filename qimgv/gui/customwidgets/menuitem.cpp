@@ -32,7 +32,7 @@ MenuItem::~MenuItem() {
     delete spacer;
 }
 
-void MenuItem::setText(QString text) {
+void MenuItem::setText(const QString& text) {
     this->mTextLabel.setText(text);
 }
 
@@ -40,7 +40,7 @@ QString MenuItem::text() {
     return mTextLabel.text();
 }
 
-void MenuItem::setShortcutText(QString text) {
+void MenuItem::setShortcutText(const QString& text) {
     this->mShortcutLabel.setText(text);
     this->adjustSize();
 }
@@ -49,7 +49,7 @@ QString MenuItem::shortcut() {
     return mShortcutLabel.text();
 }
 
-void MenuItem::setIconPath(QString path) {
+void MenuItem::setIconPath(const QString& path) {
     mIconWidget.setIconPath(path);
 }
 

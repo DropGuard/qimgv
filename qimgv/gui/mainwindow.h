@@ -65,7 +65,7 @@ public:
     bool isCropPanelActive();
     void onScalingFinished(std::unique_ptr<QPixmap>scaled);
     void showImage(std::unique_ptr<QPixmap> pixmap);
-    void showAnimation(std::shared_ptr<QMovie> movie);
+    void showAnimation(const std::shared_ptr<QMovie>& movie);
     void showVideo(const QString &file);
 
     void setCurrentInfo(int fileIndex, int fileCount, const QString &filePath, const QString &fileName, QSize imageSize, qint64 fileSize, bool slideshow, bool shuffle, bool edited);
@@ -75,7 +75,7 @@ public:
 
     ViewMode currentViewMode();
 
-    bool showConfirmation(QString title, QString msg);
+    bool showConfirmation(const QString& title, const QString& msg);
     DialogResult fileReplaceDialog(const QString &source, const QString &target, FileReplaceMode mode, bool multiple);
 
 private:
@@ -196,9 +196,9 @@ public slots:
     void toggleFolderView();
     void enableFolderView();
     void enableDocumentView();
-    void showOpenDialog(QString path);
+    void showOpenDialog(const QString& path);
     void showSaveDialog(const QString &filePath);
-    QString getSaveFileName(QString fileName);
+    QString getSaveFileName(const QString& fileName);
     void showResizeDialog(QSize initialSize);
     void showSettings();
     void triggerFullScreen();

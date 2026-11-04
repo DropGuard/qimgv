@@ -22,7 +22,7 @@ void IconWidget::onSettingsChanged() {
     }
 }
 
-void IconWidget::setIconPath(QString path) {
+void IconWidget::setIconPath(const QString& path) {
     if(iconPath == path)
         return;
     iconPath = path;

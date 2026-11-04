@@ -1,5 +1,7 @@
 #include "scriptmanager.h"
 
+#include <utility>
+
 ScriptManager *scriptManager = nullptr;
 
 ScriptManager::ScriptManager(QObject *parent)
@@ -29,7 +31,7 @@ void ScriptManager::runScript(const QString &scriptName, std::shared_ptr<Image> 
         QProcess exec(this);
 
         auto arguments = splitCommandLine(script.command);
-        processArguments(arguments, img);
+        processArguments(arguments, std::move(img));
         QString program = arguments.takeAt(0);
 
         if(script.blocking) {
@@ -55,7 +57,7 @@ void ScriptManager::runScript(const QString &scriptName, std::shared_ptr<Image> 
     }
 }
 
-QString ScriptManager::runCommand(QString cmd) {
+QString ScriptManager::runCommand(const QString& cmd) {
     QProcess exec;
     QStringList cmdSplit = ScriptManager::splitCommandLine(cmd);
     exec.start(cmdSplit.takeAt(0), cmdSplit);
@@ -63,13 +65,13 @@ QString ScriptManager::runCommand(QString cmd) {
     return exec.readAllStandardOutput();
 }
 
-void ScriptManager::runCommandDetached(QString cmd) {
+void ScriptManager::runCommandDetached(const QString& cmd) {
     QStringList cmdSplit = ScriptManager::splitCommandLine(cmd);
     QProcess::startDetached(cmdSplit.takeAt(0), cmdSplit);
 }
 
 // TODO: what if filename contains one of the tags?
-void ScriptManager::processArguments(QStringList &cmd, std::shared_ptr<Image> img) {
+void ScriptManager::processArguments(QStringList &cmd, const std::shared_ptr<Image>& img) {
     for (auto& i : cmd) {
         if(i.contains("%file%"))
             i.replace("%file%", img.get()->filePath());
@@ -127,7 +129,7 @@ QStringList ScriptManager::splitCommandLine(const QString &cmdLine) {
 }
 
 
-bool ScriptManager::scriptExists(QString scriptName) {
+bool ScriptManager::scriptExists(const QString& scriptName) {
     return scripts.contains(scriptName);
 }
 
@@ -140,7 +142,7 @@ void ScriptManager::saveScripts() {
 }
 
 // replaces if it already exists
-void ScriptManager::addScript(QString scriptName, Script script) {
+void ScriptManager::addScript(const QString& scriptName, const Script& script) {
     if(scripts.contains(scriptName)) {
         qDebug() << "[ScriptManager] Replacing script" << scriptName;
         scripts.remove(scriptName);
@@ -148,7 +150,7 @@ void ScriptManager::addScript(QString scriptName, Script script) {
     scripts.insert(scriptName, script);
 }
 
-void ScriptManager::removeScript(QString scriptName) {
+void ScriptManager::removeScript(const QString& scriptName) {
     scripts.remove(scriptName);
 }
 
@@ -160,6 +162,6 @@ QList<QString> ScriptManager::scriptNames() {
     return scriptManager->scripts.keys();
 }
 
-Script ScriptManager::getScript(QString scriptName) {
+Script ScriptManager::getScript(const QString& scriptName) {
     return scripts.value(scriptName);
 }

@@ -1,5 +1,7 @@
 #include "ssidebar.h"
 
+#include <utility>
+
 SSideBar::SSideBar(QWidget *parent) : QWidget{parent} {
     layout = new QBoxLayout(QBoxLayout::TopToBottom);
     layout->setSpacing(0);
@@ -16,7 +18,7 @@ SSideBar::SSideBar(QWidget *parent) : QWidget{parent} {
 }
 
 void SSideBar::addEntry(QString icon, QString name) {
-    SSideBarItem *entry = new SSideBarItem(icon, name);
+    SSideBarItem *entry = new SSideBarItem(std::move(icon), std::move(name));
     layout->insertWidget(entries.count(), entry);
     entries.append(entry);
     if(entries.count() == 1)
@@ -69,7 +71,7 @@ void SSideBar::paintEvent(QPaintEvent *event) {
 
 // -------------------------------------------------------------------
 
-SSideBarItem::SSideBarItem(QString icon, QString name, QWidget *parent) : QWidget{parent} {
+SSideBarItem::SSideBarItem(const QString& icon, const QString& name, QWidget *parent) : QWidget{parent} {
     QPalette p;
     if(p.base().color().valueF() <= 0.45f)
         iconWidget.setColor(QColor(184,184,185));

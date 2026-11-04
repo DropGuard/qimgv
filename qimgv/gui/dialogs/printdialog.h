@@ -30,7 +30,7 @@ private slots:
     QRectF getImagePrintRect(QPrinter *printer);
     void updatePreview();
     void setLandscape(bool mode);
-    void onPrinterSelected(QString name);
+    void onPrinterSelected(const QString& name);
     QString pdfPathDialog();
 
 private:
