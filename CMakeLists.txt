@@ -117,6 +117,21 @@ endif()
 
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/engine/qimgv-engine-ffi/Cargo.toml)
 
+# The fast gate wires itself in: every configure sets the repo's hooksPath,
+# so clone -> configure -> build is already commit-enforced. The setup step
+# is the configure, not a line of prose — prose setup steps are exactly the
+# implicit context discipline 4 bans (a forgotten `git config` reopens the
+# hole the hook exists to close). Tarball builds (no .git) skip silently:
+# there is nothing to enforce hooks on. Idempotent by nature; undo with
+# `git config --unset core.hooksPath`.
+find_package(Git QUIET)
+if(GIT_FOUND AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/.git)
+    execute_process(
+        COMMAND ${GIT_EXECUTABLE} config core.hooksPath scripts/hooks
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_QUIET ERROR_QUIET)
+endif()
+
 
 ##############################################################
 

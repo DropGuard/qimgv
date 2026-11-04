@@ -41,12 +41,16 @@ cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=ad
 cmake --build build-asan -j$(nproc) && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
 ```
 
-pre-commit hook 自动跑增量构建 + 5 套件(实测 ~10-30s;`core.hooksPath` 指向
-`scripts/hooks`,新克隆执行一次 `git config core.hooksPath scripts/hooks` 即可)。
+pre-commit hook 自动跑增量构建 + 5 套件(实测 ~10-30s)。hook 是**CMake 自
+组装的**:每次 configure 都会设置 `core.hooksPath` 指向 `scripts/hooks`——
+克隆 → configure → build 这条必经之路本身就是安装步骤,不依赖任何散文记忆。
 lint --gate 实测 2m20s,留在 push 前手动跑。`--no-verify` 逃生门存在,但红门禁
 进历史就是 f8e8b216 六处回归无人看见的成因。
 
 ## 纪律(每条对应一次事故)
+
+机器能吸收的纪律立即被机器吸收(hook、架构规则、门禁、基线);这张清单上
+留下的,只是机器管不了、需要人判断的那部分。
 
 1. **bash 每条命令以 `cd /home/dropguard/try/qimgv` 开头。** cwd 跨调用持久;
    在 build/ 里跑下一条命令,相对路径全部碎裂。曾在一天内失败十余次。

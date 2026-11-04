@@ -5,6 +5,13 @@
 # red gate in history is how f8e8b216's six regressions landed unseen.
 set -e
 cd "$(git rev-parse --show-toplevel)"
+# a fresh clone has no configured build dir: the gate cannot run, and
+# blocking docs-only commits on a full configure would be worse than the
+# hole — skip loudly instead
+if [ ! -f build/CMakeCache.txt ]; then
+    echo "pre-commit: no configured build/ here — gate skipped (run cmake -S . -B build to arm it)" >&2
+    exit 0
+fi
 cmake --build build -j"$(nproc)" > /tmp/qimgv-hook-build.log 2>&1 || {
     echo "pre-commit: build failed:" >&2
     grep -E "error|FAILED" /tmp/qimgv-hook-build.log | head -10 >&2
