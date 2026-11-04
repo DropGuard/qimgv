@@ -19,6 +19,15 @@ void ThumbnailerRunnable::run() {
     emit taskEnd(thumbnail, path, crop);
 }
 
+QString ThumbnailerRunnable::videoFrameTempPath(const QString &tmpDir, const QString &path) {
+    // Two clips named clip.mp4 in different folders used to be handed the same
+    // temp file: one worker read (and then removed) the other's frame and cached
+    // it under its own correct md5(path+size) id, which makes the wrong
+    // thumbnail permanent until the cache is cleared. The basename stays in the
+    // name only to keep a crashed run's leftovers recognisable.
+    return tmpDir + QFileInfo(path).fileName() + "-" + generateIdString(path, 0, false) + ".png";
+}
+
 QString ThumbnailerRunnable::generateIdString(QString path, int size, bool crop) {
     QString queryStr = path + QString::number(size);
     if(crop)
@@ -184,9 +193,8 @@ std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(Q
 }
 
 std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbnail(QString path, int size, bool squared) {
-    QFileInfo fi(path);
     QImageReader reader;
-    QString tmpFilePath = settings->tmpDir() + fi.fileName() + ".png";
+    const QString tmpFilePath = videoFrameTempPath(settings->tmpDir(), path);
     QString tmpFilePathEsc = tmpFilePath;
     tmpFilePathEsc.replace("%", "%%");
     QProcess process;

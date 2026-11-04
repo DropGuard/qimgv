@@ -1,4 +1,5 @@
 #include "engine_stack_fixture.h"
+#include "components/thumbnailer/thumbnailerrunnable.h"
 
 // the machinery that degrades quietly instead of crashing: randomizer, cache,
 // DocumentInfo, thumbnailer accounting
@@ -249,6 +250,21 @@ private slots:
                                            QI_FILTER_BILINEAR, true));
         QTRY_COMPARE_WITH_TIMEOUT(delivered, 1, 10000);
         QCOMPARE(result.size(), QSize(32, 32));
+    }
+
+    void videoFrameTempFilesDoNotCollideAcrossDirectories() {
+        // Two clips that share a basename in different folders used to be handed
+        // the same temp file in the shared tmpDir: one worker read and removed the
+        // other's frame, then cached it under its own correct id — a wrong
+        // thumbnail that stays wrong. The name has to be per source path, and
+        // stable for one source because the writer deletes it after use.
+        const QString a = ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mp4");
+        const QString b = ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/y/clip.mp4");
+        QVERIFY2(a != b, "same basename in different folders shared one temp file");
+        QCOMPARE(a, ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mp4"));
+        QVERIFY(a.startsWith("/tmp/t/clip.mp4-"));
+        // a source that differs by more than its directory still differs
+        QVERIFY(a != ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mkv"));
     }
 
     void thumbnailerAccountingSurvivesAClearMidFlight() {
