@@ -95,13 +95,13 @@ fn apply_created_respects_filter_and_adds() {
     // filtered out
     std::fs::write(dir.path().join("skip.txt"), b"x").unwrap();
     let ev = raw_event(dir.path(), Some("skip.txt"), false, RawWatchKind::Created);
-    assert!(matches!(apply_event(&mut st, &filter, &mut overrides, &ev), WatchAction::Ignored));
+    assert!(matches!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored));
     assert_eq!(st.file_count(), 1);
 
     // allowed → added
     std::fs::write(dir.path().join("b.jpg"), b"xx").unwrap();
     let ev = raw_event(dir.path(), Some("b.jpg"), false, RawWatchKind::Created);
-    match apply_event(&mut st, &filter, &mut overrides, &ev) {
+    match apply_event(&mut st, &filter, &mut overrides, false, &ev) {
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Added, path, .. } => {
             assert!(path.ends_with("b.jpg"));
         }
@@ -121,7 +121,7 @@ fn apply_created_adds_directories_even_though_the_filter_rejects_their_names() {
 
     std::fs::create_dir(dir.path().join("newfolder")).unwrap();
     let ev = raw_event(dir.path(), Some("newfolder"), true, RawWatchKind::Created);
-    match apply_event(&mut st, &filter, &mut overrides, &ev) {
+    match apply_event(&mut st, &filter, &mut overrides, false, &ev) {
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Added, path, is_dir, .. } => {
             assert!(path.ends_with("newfolder"));
             assert!(is_dir, "the mutation must still report it as a directory");
@@ -142,14 +142,14 @@ fn apply_deleted_and_modified() {
     std::fs::write(&p, b"new content").unwrap();
     let ev = raw_event(dir.path(), Some("a.jpg"), false, RawWatchKind::Modified);
     assert!(matches!(
-        apply_event(&mut st, &filter, &mut overrides, &ev),
+        apply_event(&mut st, &filter, &mut overrides, false, &ev),
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Modified, .. }
     ));
 
     // delete → Changed{Removed}
     std::fs::remove_file(&p).unwrap();
     let ev = raw_event(dir.path(), Some("a.jpg"), false, RawWatchKind::Deleted);
-    match apply_event(&mut st, &filter, &mut overrides, &ev) {
+    match apply_event(&mut st, &filter, &mut overrides, false, &ev) {
         WatchAction::Changed { kind: qimgv_engine::watcher::Applied::Removed, path, .. } => {
             assert!(path.ends_with("a.jpg"));
         }
@@ -165,7 +165,7 @@ fn apply_overflow_requests_reconcile() {
     let mut overrides: std::collections::HashSet<std::path::PathBuf> = Default::default();
     let ev = raw_event(dir.path(), None, false, RawWatchKind::Overflow);
     assert_eq!(
-        apply_event(&mut st, &filter, &mut overrides, &ev),
+        apply_event(&mut st, &filter, &mut overrides, false, &ev),
         WatchAction::Reconcile { dir: dir.path().to_path_buf() }
     );
 }
@@ -184,18 +184,47 @@ fn a_delete_from_another_directory_cannot_empty_this_one() {
     let other = tempfile::tempdir().unwrap();
 
     let ev = raw_event(other.path(), Some("a.jpg"), false, RawWatchKind::Deleted);
-    assert_eq!(apply_event(&mut st, &filter, &mut overrides, &ev), WatchAction::Ignored);
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored);
     assert_eq!(st.file_count(), 1, "the row for /B/a.jpg survived a delete meant for /A");
 
     // and a create named elsewhere lands where it was created, not here
     std::fs::write(other.path().join("c.jpg"), b"x").unwrap();
     let ev = raw_event(other.path(), Some("c.jpg"), false, RawWatchKind::Created);
-    match apply_event(&mut st, &filter, &mut overrides, &ev) {
+    match apply_event(&mut st, &filter, &mut overrides, false, &ev) {
         WatchAction::Changed { path, .. } => panic!("a foreign create must not add a row: {path}"),
         WatchAction::Ignored => {}
         other => panic!("unexpected: {other:?}"),
     }
     assert_eq!(st.file_count(), 1);
+}
+
+#[test]
+fn the_hidden_rule_is_the_scanner_s_rule() {
+    // Both halves, because the scanner skips hidden entries BEFORE it reaches the
+    // file/dir branch: a dot-named folder was not a member either. Before this,
+    // the watcher admitted what the scanner had refused, and the next rescan took
+    // the row back out — a listing that changed with nobody having changed it.
+    let (mut st, dir, _p) = state_with_file();
+    let filter = NameFilter::from_extensions(["jpg"]);
+    let mut overrides: std::collections::HashSet<std::path::PathBuf> = Default::default();
+
+    std::fs::write(dir.path().join(".secret.jpg"), b"x").unwrap();
+    let ev = raw_event(dir.path(), Some(".secret.jpg"), false, RawWatchKind::Created);
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored);
+    assert_eq!(st.file_count(), 1, "a hidden file must not join the listing");
+
+    std::fs::create_dir(dir.path().join(".git")).unwrap();
+    let ev = raw_event(dir.path(), Some(".git"), true, RawWatchKind::Created);
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored);
+    assert_eq!(st.dir_count(), 0, "nor may a hidden directory");
+
+    // and the flag really is consulted rather than the check being hardcoded
+    let ev = raw_event(dir.path(), Some(".secret.jpg"), false, RawWatchKind::Created);
+    assert!(matches!(
+        apply_event(&mut st, &filter, &mut overrides, true, &ev),
+        WatchAction::Changed { .. }
+    ));
+    assert_eq!(st.file_count(), 2, "show_hidden admits it, as the scanner would");
 }
 
 // --- live watching through a real engine ---------------------------------------

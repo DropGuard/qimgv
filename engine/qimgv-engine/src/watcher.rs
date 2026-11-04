@@ -148,6 +148,7 @@ pub fn apply_event(
     state: &mut DirectoryState,
     filter: &NameFilter,
     overrides: &mut std::collections::HashSet<PathBuf>,
+    show_hidden: bool,
     ev: &RawWatchEvent,
 ) -> WatchAction {
     use RawWatchKind as K;
@@ -166,6 +167,11 @@ pub fn apply_event(
         K::Created | K::MovedTo => {
             let Some(name) = &ev.name else { return WatchAction::Ignored };
             let path = dir.join(name);
+            // The scanner's membership rules apply here too, in the same order:
+            // a hidden entry is not admitted whatever else would have allowed it.
+            if crate::scan::is_hidden(&path, name) && !show_hidden {
+                return WatchAction::Ignored;
+            }
             // Directories bypass the extension whitelist. scan.rs puts every
             // directory in the listing without consulting it, and the watcher used
             // to run dir names through it too — so an external mkdir matched no

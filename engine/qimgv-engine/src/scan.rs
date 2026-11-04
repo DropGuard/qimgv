@@ -30,6 +30,24 @@ pub struct ScanOutput {
 /// Note on parity with directorymanager.cpp: directory entries get no
 /// size/mtime (same as FSEntry defaults); symlink targets are followed for
 /// type detection (fs::directory_entry::is_directory() behavior).
+/// The listing's hidden rule, in one place. The scanner consulted it and the
+/// watcher did not, so a dot-named file or folder created while show_hidden was
+/// false became a row the next rescan would remove: one path was a member and a
+/// non-member depending on which code looked at it. Note the order — hidden is
+/// decided before the extension whitelist and before `overrides`, so a
+/// force-included path is still not admitted while it is hidden.
+pub fn is_hidden(path: &Path, name: &str) -> bool {
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        name.starts_with('.')
+    }
+    #[cfg(windows)]
+    std::fs::metadata(path)
+        .map(|m| std::os::windows::fs::MetadataExt::file_attributes(&m) & 0x2 != 0)
+        .unwrap_or(false)
+}
+
 pub fn scan_directory(path: &Path, opts: &ScanOptions) -> Result<ScanOutput, EngineError> {
     let show_hidden = opts.show_hidden.load(AtomicOrdering::Relaxed);
     let mut out = ScanOutput::default();
@@ -52,14 +70,7 @@ pub fn scan_directory(path: &Path, opts: &ScanOptions) -> Result<ScanOutput, Eng
                 continue;
             }
         };
-        #[cfg(unix)]
-        let hidden = name.starts_with('.');
-        #[cfg(windows)]
-        let hidden = entry
-            .metadata()
-            .map(|m| m.file_attributes() & 0x2 != 0)
-            .unwrap_or(false);
-        if hidden && !show_hidden {
+        if is_hidden(&entry.path(), &name) && !show_hidden {
             continue;
         }
 

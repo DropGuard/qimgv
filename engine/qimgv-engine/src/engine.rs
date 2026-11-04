@@ -223,6 +223,7 @@ impl Engine {
 
         let loop_join = {
             let state = Arc::clone(&state);
+            let show_hidden = Arc::clone(&show_hidden);
             let epoch = Arc::clone(&epoch);
             let overrides = Arc::clone(&overrides);
             let filter = filter.clone();
@@ -361,7 +362,8 @@ impl Engine {
                                     let mut st = state_write(&state);
                                     let mut ov = overrides.lock().unwrap_or_else(|e| e.into_inner());
                                     catch_unwind(AssertUnwindSafe(|| {
-                                        watcher::apply_event(&mut st, &filter, &mut ov, &raw)
+                                        watcher::apply_event(&mut st, &filter, &mut ov,
+                                                             show_hidden.load(Ordering::Relaxed), &raw)
                                     }))
                                     .unwrap_or(watcher::WatchAction::Ignored)
                                 };
