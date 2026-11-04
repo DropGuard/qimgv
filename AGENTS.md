@@ -110,6 +110,10 @@ lint --gate 实测 2m20s,留在 push 前手动跑。`--no-verify` 逃生门存�
   跨界者带数据**。最后一块(R4 DEBT:thumbnailerrunnable/documentinfo/
   imagestatic/video 的 off-thread settings 读取)已搬进 LoadPolicy 与请求
   参数,DEBT 清零,R4 成为纯断言。重启条件:新事故。
+- #16(镜像与引擎列表的残余发散)于 2026-11-05 结构性修复后进入观察期:
+  200 轮全套件 1 次未归因失败,随后一次目击的 signature = engine 持有已删除
+  文件 + mirror 缺失新建文件(两侧各丢不同事件)。QIMGV_ENGINE_TRACE=1 +
+  时间戳已武装,目击即取 /tmp 时间线归因。挂起直到零目击窗口足够长。
 - 消毒树首轮(2026-11-05)收获已修:CentralWidget::mode 与
   OverlayWidget::position 未初始化枚举读、qApp 错误下转型(测试跑的是
   QGuiApplication)、Cache 无析构泄漏全部条目。挂账:测试退出仍有 ~58KB
