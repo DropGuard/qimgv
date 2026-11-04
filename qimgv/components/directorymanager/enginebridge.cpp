@@ -164,11 +164,22 @@ bool EngineBridge::exportListing(QByteArray &out, quint32 &fileCount, quint32 &d
         dirCount = dc;
         return true;
     }
-    out.resize(int(needed));
-    if (qimgv_engine_export_listing(engine, reinterpret_cast<unsigned char *>(out.data()),
-                                    size_t(out.size()), &needed, &fc, &dc) != QIMGV_OK) {
-        qWarning() << "[EngineBridge] export listing failed:" << qimgv_last_error();
-        return false;
+    // Probe-then-write is two lock passes, and the listing is not frozen between
+    // them: a folder being written while it is read grows the arena, the write
+    // pass finds its buffer short and reports TRUNCATED with a larger `needed`,
+    // and treating that as a failure would throw away a good listing. Go round
+    // again on the new size, bounded so a permanently racing caller cannot spin.
+    for (int attempt = 0;; ++attempt) {
+        out.resize(int(needed));
+        const int rc = qimgv_engine_export_listing(engine,
+                                                   reinterpret_cast<unsigned char *>(out.data()),
+                                                   size_t(out.size()), &needed, &fc, &dc);
+        if (rc == QIMGV_OK)
+            break;
+        if (rc != QIMGV_ERR_TRUNCATED || needed <= size_t(out.size()) || attempt >= 16) {
+            qWarning() << "[EngineBridge] export listing failed:" << qimgv_last_error();
+            return false;
+        }
     }
     fileCount = fc;
     dirCount = dc;

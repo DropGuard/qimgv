@@ -260,6 +260,19 @@ private slots:
         QVERIFY(EngineBridge::instance().exportListing(arena, fileCount, dirCount));
         std::vector<EngineBridge::EngineEntry> files, dirs;
         QVERIFY(EngineBridge::parseListing(arena, files, dirs));
+        // name the difference before aborting on it: a count that disagrees says
+        // "the mirror is wrong", which is not actionable, while the two lists say
+        // which entry the mirror never heard about
+        if(files.size() != dm.fileCount()) {
+            QStringList engineNames, mirrorNames;
+            for(const auto &f : files)
+                engineNames << f.name;
+            for(unsigned long i = 0; i < dm.fileCount(); ++i)
+                mirrorNames << dm.fileNameAt(int(i));
+            QVERIFY2(false, qPrintable(QStringLiteral("engine: %1 files [%2] / mirror: %3 [%4]")
+                                           .arg(files.size()).arg(engineNames.join(QLatin1Char(' ')))
+                                           .arg(dm.fileCount()).arg(mirrorNames.join(QLatin1Char(' ')))));
+        }
         QCOMPARE(files.size(), dm.fileCount());
         QCOMPARE(dirs.size(), dm.dirCount());
         for(quint32 i = 0; i < fileCount; ++i)
