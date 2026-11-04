@@ -3,7 +3,8 @@
 
 VideoControls::VideoControls(FloatingWidgetContainer *parent) :
     OverlayWidget(parent),
-    ui(new Ui::VideoControls)
+    ui(new Ui::VideoControls),
+    mode(PLAYBACK_ANIMATION)
 {
     ui->setupUi(this);
     this->setAttribute(Qt::WA_NoMousePropagation, true);

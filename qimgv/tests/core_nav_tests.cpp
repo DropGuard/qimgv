@@ -291,7 +291,7 @@ private slots:
     void videoControlsPlaybackPositionFollowsTheArgument() {
         FloatingWidgetContainer container;
         VideoControls controls(&container);
-        controls.setMode(PLAYBACK_VIDEO); // the ctor leaves mode uninitialized
+        controls.setMode(PLAYBACK_VIDEO); // exercise the video branch of the label
         controls.setPlaybackPosition(42);
         QCOMPARE(controls.playbackPosition(), 42);
         // a repeat is the dedup no-op, not a corruption
