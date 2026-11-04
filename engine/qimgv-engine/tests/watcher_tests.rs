@@ -8,7 +8,8 @@ use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use qimgv_engine::watcher::{
-    apply_event, classify, event_is_live, is_dir_mask, RawWatchEvent, RawWatchKind, WatchAction,
+    apply_event, classify, event_is_live, is_dir_mask, IgnoreReason, RawWatchEvent, RawWatchKind,
+    WatchAction,
 };
 use qimgv_engine::{Command, Engine, EngineConfig, Event, NameFilter, SortMode};
 
@@ -95,7 +96,8 @@ fn apply_created_respects_filter_and_adds() {
     // filtered out
     std::fs::write(dir.path().join("skip.txt"), b"x").unwrap();
     let ev = raw_event(dir.path(), Some("skip.txt"), false, RawWatchKind::Created);
-    assert!(matches!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored));
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev),
+             WatchAction::Ignored(IgnoreReason::ExtensionRejected));
     assert_eq!(st.file_count(), 1);
 
     // allowed → added
@@ -184,7 +186,8 @@ fn a_delete_from_another_directory_cannot_empty_this_one() {
     let other = tempfile::tempdir().unwrap();
 
     let ev = raw_event(other.path(), Some("a.jpg"), false, RawWatchKind::Deleted);
-    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored);
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev),
+             WatchAction::Ignored(IgnoreReason::WrongSubject));
     assert_eq!(st.file_count(), 1, "the row for /B/a.jpg survived a delete meant for /A");
 
     // and a create named elsewhere lands where it was created, not here
@@ -192,7 +195,7 @@ fn a_delete_from_another_directory_cannot_empty_this_one() {
     let ev = raw_event(other.path(), Some("c.jpg"), false, RawWatchKind::Created);
     match apply_event(&mut st, &filter, &mut overrides, false, &ev) {
         WatchAction::Changed { path, .. } => panic!("a foreign create must not add a row: {path}"),
-        WatchAction::Ignored => {}
+        WatchAction::Ignored(IgnoreReason::WrongSubject) => {}
         other => panic!("unexpected: {other:?}"),
     }
     assert_eq!(st.file_count(), 1);
@@ -210,12 +213,14 @@ fn the_hidden_rule_is_the_scanner_s_rule() {
 
     std::fs::write(dir.path().join(".secret.jpg"), b"x").unwrap();
     let ev = raw_event(dir.path(), Some(".secret.jpg"), false, RawWatchKind::Created);
-    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored);
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev),
+             WatchAction::Ignored(IgnoreReason::Hidden));
     assert_eq!(st.file_count(), 1, "a hidden file must not join the listing");
 
     std::fs::create_dir(dir.path().join(".git")).unwrap();
     let ev = raw_event(dir.path(), Some(".git"), true, RawWatchKind::Created);
-    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev), WatchAction::Ignored);
+    assert_eq!(apply_event(&mut st, &filter, &mut overrides, false, &ev),
+             WatchAction::Ignored(IgnoreReason::Hidden));
     assert_eq!(st.dir_count(), 0, "nor may a hidden directory");
 
     // and the flag really is consulted rather than the check being hardcoded
@@ -357,4 +362,75 @@ fn include_path_bypasses_filter_and_survives_rescan() {
     wait_for(&engine, |st| st.sort() == SortMode::NameDesc, 10);
     std::thread::sleep(Duration::from_millis(200));
     assert_eq!(engine.state.read().unwrap().file_count(), 2, "override lost on resort");
+}
+
+#[test]
+fn operations_on_a_settled_folder_all_land_in_the_listing() {
+    // The C++ suite's remaining divergence happens with the folder already
+    // settled: everything below occurs after the initial scan landed, so this
+    // reproduces the shape without racing a watch installation. If an operation
+    // is lost, it was lost by something named here — a filter, a membership test,
+    // or the kernel not telling us at all — and the message says which end state
+    // was reached.
+    let (tx, _rx) = mpsc::channel::<()>();
+    let engine = Engine::spawn(config(), Arc::new(move || {
+        let _ = tx.send(());
+    }));
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["img1.jpg", "img2.jpg", "img10.jpg"] {
+        std::fs::write(dir.path().join(name), b"x").unwrap();
+    }
+    std::fs::create_dir(dir.path().join("subdir")).unwrap();
+    engine
+        .send(Command::OpenDir { path: dir.path().to_owned(), sort: None, epoch: engine.next_epoch() })
+        .unwrap();
+    // settled first: three jpgs listed, skip-nothing, and the folder is quiet
+    wait_for(&engine, |st| st.file_count() == 3, 10);
+    std::thread::sleep(Duration::from_millis(50));
+
+    std::fs::write(dir.path().join("IMG2.jpg"), b"x").unwrap();
+    std::fs::write(dir.path().join("img 10.jpg"), b"x").unwrap();
+    std::fs::write(dir.path().join("10.jpg"), b"x").unwrap();
+    std::fs::remove_file(dir.path().join("img1.jpg")).unwrap();
+    let f = dir.path().join("img2.jpg");
+    let mut h = std::fs::OpenOptions::new().append(true).open(&f).unwrap();
+    std::io::Write::write_all(&mut h, b"appended").unwrap();
+    drop(h);
+
+    let want: Vec<String> = {
+        let mut v: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".jpg"))
+            .collect();
+        v.sort();
+        v
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let got = loop {
+        // the read guard dies with this block, BEFORE the sleep: a guard held
+        // across the wait starves the engine loop's writer for the whole
+        // deadline (std's RwLock has no writer priority), and the state this
+        // loop is waiting for can never land
+        let v: Vec<String> = {
+            let st = engine.state.read().unwrap();
+            (0..st.file_count())
+                .filter_map(|i| st.file_at(i).map(|r| r.data.name.clone()))
+                .collect()
+        };
+        let mut sorted = v;
+        sorted.sort();
+        if sorted == want || std::time::Instant::now() >= deadline {
+            break sorted;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(
+        got,
+        want,
+        "engine listing holds {:?} while the folder holds {:?}",
+        got,
+        want
+    );
 }

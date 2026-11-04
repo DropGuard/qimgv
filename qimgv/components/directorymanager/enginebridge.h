@@ -69,6 +69,13 @@ public:
     static QByteArray extensionListFor(const QList<QByteArray> &formats);
 
     static bool supportsWatching();
+    // The event-path trace, on when QIMGV_ENGINE_TRACE is set to anything but
+    // "0". The engine reads the same variable name on its side, so a line
+    // printed here and a line printed there are the same run; the seq in
+    // qimgv_event is what lets the two halves be matched up. Shared rather than
+    // duplicated because a switch that has to be turned on twice is a switch
+    // that gets turned on once.
+    static bool traceEnabled();
     bool includePath(const QString &path);
     void stopWatch();
 

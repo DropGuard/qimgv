@@ -79,6 +79,9 @@ pub enum Event {
     /// entry's position in the engine's own order — the single order decision,
     /// handed to the mirror so it never re-derives one.
     Mutated {
+        /// This engine's own count of the mutations it has emitted, starting at
+        /// 1. Crosses the ABI as `qimgv_event.seq`.
+        seq: u64,
         kind: WatchChangeKind,
         path: String,
         name: String,
@@ -243,6 +246,12 @@ impl Engine {
                 let mut listing: Option<ListingRequest> = None;
                 // only this thread dispatches scans, so the number needs no atomic
                 let mut next_dispatch: u64 = 0;
+                // Ordinal of the mutations this engine has emitted. Assigned at
+                // birth, before the event can be dropped or truncated by anyone:
+                // a number printed by the engine and a number printed by the C++
+                // mirror identify the same event, which is what makes the two
+                // halves of a trace comparable when one of them is missing a line.
+                let mut next_mutation: u64 = 0;
                 let mut thumbs = ThumbScheduler { max_in_flight: 2, ..Default::default() };
                 loop {
                     crossbeam_channel::select! {
@@ -398,6 +407,11 @@ impl Engine {
                                 // so a change during the enumeration is either in the
                                 // baseline or reaches this channel after it.
                                 if !matches!(&listing, Some(req) if req.dir == raw.dir) {
+                                    crate::trace::line("drop", || {
+                                        let wanted = listing.as_ref().map(|r| r.dir.clone())
+                                            .unwrap_or_default();
+                                        format!("subject {:?} is not the requested {:?}", raw.dir, wanted)
+                                    });
                                     continue;
                                 }
                                 let req_session = listing.as_ref().map(|r| r.session).unwrap_or(0);
@@ -408,8 +422,21 @@ impl Engine {
                                         watcher::apply_event(&mut st, &filter, &mut ov,
                                                              show_hidden.load(Ordering::Relaxed), &raw)
                                     }))
-                                    .unwrap_or(watcher::WatchAction::Ignored)
+                                    .unwrap_or_else(|payload| {
+                                        // The guard exists so one bad event cannot
+                                        // end the loop, but a guard that swallows
+                                        // its payload turns a crash into a missing
+                                        // file — indistinguishable from "nothing
+                                        // happened". Say what actually unwound.
+                                        let msg = payload
+                                            .downcast_ref::<&str>().map(|s| (*s).to_string())
+                                            .or_else(|| payload.downcast_ref::<String>().cloned())
+                                            .unwrap_or_else(|| "<non-string payload>".to_string());
+                                        eprintln!("[engine] watch event application panicked: {msg}");
+                                        watcher::WatchAction::Ignored(watcher::IgnoreReason::Panicked)
+                                    })
                                 };
+                                crate::trace::line("apply", || format!("{raw:?} -> {action:?}"));
                                 match action {
                                     watcher::WatchAction::Changed { kind, path, name, is_dir, size, mtime_ms, index } => {
                                         let kind = match kind {
@@ -417,18 +444,24 @@ impl Engine {
                                             watcher::Applied::Modified => WatchChangeKind::Modified,
                                             watcher::Applied::Removed => WatchChangeKind::Removed,
                                         };
-                                        let _ = ev_tx.send(Event::Mutated { kind, path, name, is_dir, size, mtime_ms, index, epoch: req_session });
+                                        next_mutation += 1;
+                                        crate::trace::line("emit", || format!(
+                                            "seq={next_mutation} {kind:?} {path} index={index} session={req_session}"));
+                                        let _ = ev_tx.send(Event::Mutated { seq: next_mutation, kind, path, name, is_dir, size, mtime_ms, index, epoch: req_session });
                                         fire_notify(&notify);
                                     }
                                     watcher::WatchAction::Reconcile { dir } => {
                                         // queue overflow: the kernel dropped events,
                                         // converge with a full rescan
+                                        crate::trace::line("reconcile", || format!("{dir:?}"));
                                         let _ = cmd_tx_for_loop.send(Command::Rescan(dir));
                                     }
                                     watcher::WatchAction::DirGone { dir } => {
+                                        crate::trace::line("reconcile", || format!("gone {dir:?}"));
                                         let _ = cmd_tx_for_loop.send(Command::Rescan(dir));
                                     }
-                                    watcher::WatchAction::Ignored => {}
+                                    // named by the apply line above
+                                    watcher::WatchAction::Ignored(_) => {}
                                 }
                             }
                             #[cfg(not(target_os = "linux"))]

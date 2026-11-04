@@ -10,6 +10,7 @@ pub mod meta;
 pub mod model;
 pub mod scan;
 pub mod sort;
+pub mod trace;
 #[cfg(target_os = "linux")]
 pub mod watcher;
 

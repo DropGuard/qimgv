@@ -570,8 +570,12 @@ void DirectoryManager::applyEngineModification(const QString &path, bool isDir, 
 }
 
 void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index) {
-    if(mResyncing)
+    const bool tracing = EngineBridge::traceEnabled();
+    if(mResyncing) {
+        if (tracing)
+            qDebug() << "[mirror trace] drop (resync in progress)" << path;
         return;
+    }
     // A mutation edits the listing the vectors currently hold, so its path has
     // to live in the directory those vectors describe. The wire carries no
     // directory for a mutation, and the engine's order index is computed
@@ -585,8 +589,11 @@ void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir
     }
     switch(kind) {
         case QIMGV_MUT_ADDED: {
-            if(containsFile(path) || containsDir(path))
+            if(containsFile(path) || containsDir(path)) {
+                if (tracing)
+                    qDebug() << "[mirror trace] drop (already mirrored)" << path;
                 return; // already mirrored (racing duplicate)
+            }
             FSEntry entry;
             entry.path = path;
             entry.name = QFileInfo(path).fileName();
@@ -609,6 +616,12 @@ void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir
             removeDirEntry(path);
             removeFileEntry(path);
             break;
+    }
+    if (tracing) {
+        // the counts, not just the kind: the failure this trace exists to name is
+        // a mutation that lands and still leaves the mirror one entry short
+        qDebug() << "[mirror trace] applied kind" << kind << path << "index" << index
+                 << "files" << fileEntryVec.size() << "dirs" << dirEntryVec.size();
     }
 }
 

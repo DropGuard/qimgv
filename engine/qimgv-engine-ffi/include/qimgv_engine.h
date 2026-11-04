@@ -80,6 +80,14 @@ typedef struct qimgv_event {
     int kind;          /* QIMGV_EVENT_* */
     int code;          /* QIMGV_ERR_* (QIMGV_OK for DIR_LISTED) */
     uint32_t epoch;    /* session; drop events older than your open_dir epoch */
+    /* For DIR_MUTATED: the engine's ordinal of this mutation, assigned before
+     * the event could be dropped downstream. 0 for the other kinds. Nothing
+     * compares it — a listing does not have to be the same size at the same
+     * number — so it is a log key, not a version: it lets a line printed by the
+     * engine and a line printed by the consumer be matched by someone reading
+     * both, which is the difference between "the mirror did not apply it" and
+     * "the engine never emitted it". Set QIMGV_ENGINE_TRACE=1 to get both. */
+    uint32_t seq;
 } qimgv_event;
 
 typedef struct qimgv_mutation {
@@ -133,11 +141,12 @@ QIMGV_PIN("qimgv_entry_meta.size", offsetof(qimgv_entry_meta, size) == 8);
 QIMGV_PIN("qimgv_entry_meta.mtime_ms", offsetof(qimgv_entry_meta, mtime_ms) == 16);
 QIMGV_PIN("qimgv_entry_meta.is_dir", offsetof(qimgv_entry_meta, is_dir) == 24);
 
-/* (int,int,u32) */
-QIMGV_PIN("qimgv_event", sizeof(qimgv_event) == 12);
+/* (int,int,u32,u32) */
+QIMGV_PIN("qimgv_event", sizeof(qimgv_event) == 16);
 QIMGV_PIN("qimgv_event.kind", offsetof(qimgv_event, kind) == 0);
 QIMGV_PIN("qimgv_event.code", offsetof(qimgv_event, code) == 4);
 QIMGV_PIN("qimgv_event.epoch", offsetof(qimgv_event, epoch) == 8);
+QIMGV_PIN("qimgv_event.seq", offsetof(qimgv_event, seq) == 12);
 
 /* (int32,int32,u64,int64,int32) — index packs at 24, size pads to 32 */
 QIMGV_PIN("qimgv_mutation", sizeof(qimgv_mutation) == 32);

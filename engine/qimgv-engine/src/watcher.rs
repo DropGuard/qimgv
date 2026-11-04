@@ -121,6 +121,37 @@ pub enum Applied {
     Removed,
 }
 
+/// Why an event touched nothing. A bare "ignored" is the one answer that cannot
+/// be investigated: when a file is missing from the listing, "the watcher never
+/// reported it", "the filter refused its name" and "it was already in the
+/// listing" all look identical from outside, and only the first means a bug. So
+/// every `Ignored` has to say which of them it is, and a trace line can name it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IgnoreReason {
+    /// The event is about a folder other than the one this state describes.
+    WrongSubject,
+    /// A create or move with no name attached — inotify always supplies one, so
+    /// reaching this means the parse produced something it should not have.
+    NoName,
+    /// Dotfile, and the scanner's hidden rule says it is not listable.
+    Hidden,
+    /// Not a directory and its name matches neither the whitelist nor an override.
+    ExtensionRejected,
+    /// The path was gone by the time it was stat'd.
+    StatFailed,
+    /// A create for a path the listing already holds.
+    AlreadyListed,
+    /// A delete or modify for a path this listing never contained.
+    NotListed,
+    /// A modify on a directory: its own mtime has no listing meaning.
+    DirIsCanonical,
+    /// A modify whose on-disk mtime equals the one already stored.
+    MtimeUnchanged,
+    /// The application step panicked; the engine loop's guard reports this and
+    /// prints the payload.
+    Panicked,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum WatchAction {
     Changed {
@@ -138,7 +169,7 @@ pub enum WatchAction {
     Reconcile { dir: PathBuf },
     /// The watched directory is gone.
     DirGone { dir: PathBuf },
-    Ignored,
+    Ignored(IgnoreReason),
 }
 
 /// Applies one parsed event to the state. The directory comes from the event:
@@ -159,29 +190,30 @@ pub fn apply_event(
     // halves of the same mistake, and both closed by one check at the point of
     // mutation rather than by callers remembering to filter.
     if state.dir() != Some(dir) {
-        return WatchAction::Ignored;
+        return WatchAction::Ignored(IgnoreReason::WrongSubject);
     }
     match ev.kind {
         K::Overflow => WatchAction::Reconcile { dir: dir.to_path_buf() },
         K::WatchGone => WatchAction::DirGone { dir: dir.to_path_buf() },
         K::Created | K::MovedTo => {
-            let Some(name) = &ev.name else { return WatchAction::Ignored };
+            let Some(name) = &ev.name else { return WatchAction::Ignored(IgnoreReason::NoName) };
             let path = dir.join(name);
             // The scanner's membership rules apply here too, in the same order:
             // a hidden entry is not admitted whatever else would have allowed it.
             if crate::scan::is_hidden(&path, name) && !show_hidden {
-                return WatchAction::Ignored;
+                return WatchAction::Ignored(IgnoreReason::Hidden);
             }
             // Directories bypass the extension whitelist. scan.rs puts every
             // directory in the listing without consulting it, and the watcher used
             // to run dir names through it too — so an external mkdir matched no
             // image extension and the folder never appeared until a full rescan.
             if !ev.is_dir && !filter.matches(name) && !overrides.contains(&path) {
-                return WatchAction::Ignored;
+                return WatchAction::Ignored(IgnoreReason::ExtensionRejected);
             }
             let meta = match fs::metadata(&path) {
                 Ok(m) => m,
-                Err(_) => return WatchAction::Ignored, // vanished already
+                // vanished already
+                Err(_) => return WatchAction::Ignored(IgnoreReason::StatFailed),
             };
             let entry = crate::model::EntryData {
                 name: name.clone(),
@@ -205,7 +237,7 @@ pub fn apply_event(
                     index,
                 }
             } else {
-                WatchAction::Ignored
+                WatchAction::Ignored(IgnoreReason::AlreadyListed)
             }
         }
         K::Deleted | K::MovedFrom => {
@@ -222,7 +254,7 @@ pub fn apply_event(
                     index,
                 }
             } else {
-                WatchAction::Ignored
+                WatchAction::Ignored(IgnoreReason::NotListed)
             }
         }
         K::Modified => {
@@ -230,24 +262,24 @@ pub fn apply_event(
             // canonical-dir note above), and no consumer mirrors it: the
             // engine state stays exactly as the scanner left it.
             if ev.is_dir {
-                return WatchAction::Ignored;
+                return WatchAction::Ignored(IgnoreReason::DirIsCanonical);
             }
             let path = dir.join(ev.name.as_deref().unwrap_or(""));
             let path = path.to_string_lossy().into_owned();
             let Some((_, old_mtime)) = state.entry_meta(&path) else {
-                return WatchAction::Ignored;
+                return WatchAction::Ignored(IgnoreReason::NotListed);
             };
             let meta = match fs::metadata(&path) {
                 Ok(m) => m,
-                Err(_) => return WatchAction::Ignored,
+                Err(_) => return WatchAction::Ignored(IgnoreReason::StatFailed),
             };
             let mtime = meta.modified().unwrap_or(UNIX_EPOCH);
             if mtime == old_mtime {
-                return WatchAction::Ignored;
+                return WatchAction::Ignored(IgnoreReason::MtimeUnchanged);
             }
             let size = meta.len();
             let Some(index) = state.update_entry_meta(&path, size, mtime) else {
-                return WatchAction::Ignored;
+                return WatchAction::Ignored(IgnoreReason::NotListed);
             };
             WatchAction::Changed {
                 kind: Applied::Modified,
@@ -440,16 +472,24 @@ fn watcher_loop(
                 Ok(events) => {
                     let live_wd = watch.as_ref().map(|w| w.get_watch_descriptor_id());
                     for ev in events {
-                        let Some(kind) = classify(ev.mask.bits()) else { continue };
+                        let Some(kind) = classify(ev.mask.bits()) else {
+                            crate::trace::line("drop", || format!("mask={:#x} bookkeeping", ev.mask.bits()));
+                            continue;
+                        };
                         let wd = ev.wd.get_watch_descriptor_id();
                         if !event_is_live(wd, kind, live_wd) {
-                            continue; // a record from a watch that is no longer installed
+                            // a record from a watch that is no longer installed
+                            crate::trace::line("drop", || format!("kind={kind:?} wd={wd} live={live_wd:?}"));
+                            continue;
                         }
                         if watch_dir.as_os_str().is_empty() {
-                            continue; // overflow reported with no live folder to attribute
+                            // overflow reported with no live folder to attribute
+                            crate::trace::line("drop", || format!("kind={kind:?} no directory to attribute"));
+                            continue;
                         }
                         let name = ev.name.map(|c| c.to_string_lossy().into_owned());
                         if name.is_none() && !matches!(kind, RawWatchKind::Overflow | RawWatchKind::WatchGone) {
+                            crate::trace::line("drop", || format!("kind={kind:?} no name"));
                             continue;
                         }
                         let raw = RawWatchEvent {
@@ -459,6 +499,7 @@ fn watcher_loop(
                             is_dir: is_dir_mask(ev.mask.bits()),
                             kind,
                         };
+                        crate::trace::line("read", || format!("{raw:?}"));
                         if ev_tx.send(raw).is_err() {
                             return;
                         }

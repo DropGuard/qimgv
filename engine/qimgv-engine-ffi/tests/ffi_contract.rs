@@ -33,7 +33,7 @@ fn wait_flag(flag: &AtomicBool, timeout: Duration) -> bool {
 fn take_event(engine: *mut QimgvEngine, timeout: Duration) -> Option<(c_int, c_int, String)> {
     let deadline = Instant::now() + timeout;
     loop {
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 512];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()) };
@@ -80,7 +80,7 @@ fn fresh_engine_state_and_free() {
     unsafe {
         assert_eq!(qimgv_engine_file_count(engine), 0);
         assert_eq!(qimgv_engine_dir_count(engine), 0);
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 64];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
@@ -186,7 +186,7 @@ fn open_dir_event_queries_and_truncation() {
         );
 
         // the single DirListed event was already drained
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 64];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
@@ -292,7 +292,7 @@ fn null_extension_list_accepts_everything_via_ffi() {
 fn take_thumb(engine: *mut QimgvEngine, timeout: Duration) -> Option<(String, u32, bool)> {
     let deadline = Instant::now() + timeout;
     loop {
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 4096];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let mut t = QimgvThumbReq { size: 0, crop: 0 };
@@ -449,7 +449,7 @@ fn thumb_round_trip_works_while_a_directory_open_is_in_flight() {
     let mut got_listing = false;
     let deadline = Instant::now() + Duration::from_secs(5);
     while !(got_thumb && got_listing) {
-        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+        let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 4096];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let mut t = QimgvThumbReq { size: 0, crop: 0 };
@@ -624,7 +624,7 @@ fn a_truncated_take_event_still_owes_the_same_event() {
     }
     assert!(wait_flag(&flag, Duration::from_secs(5)), "no notify for the open");
 
-    let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+    let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
     let mut tiny = [0 as c_char; 8];
     let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
     let r = unsafe {
@@ -633,7 +633,7 @@ fn a_truncated_take_event_still_owes_the_same_event() {
     assert_eq!(r, QIMGV_ERR_TRUNCATED, "a short buffer must report truncation, got {r}");
 
     // and the event is still owed: the same call with room to spare must return it
-    let mut ev2 = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0 };
+    let mut ev2 = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
     let mut big = vec![0 as c_char; 4096];
     let deadline = Instant::now() + Duration::from_secs(5);
     let kind = loop {

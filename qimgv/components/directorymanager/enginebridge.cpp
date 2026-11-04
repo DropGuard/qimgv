@@ -115,6 +115,16 @@ bool EngineBridge::supportsWatching() {
     return qimgv_engine_supports_watching() != 0;
 }
 
+bool EngineBridge::traceEnabled() {
+    // Read once: the value is a debugging switch, and a getenv per event would
+    // make the trace change the timing of the thing it is tracing.
+    static const bool on = [] {
+        const QString value = qEnvironmentVariable("QIMGV_ENGINE_TRACE");
+        return !value.isEmpty() && value != QLatin1String("0");
+    }();
+    return on;
+}
+
 bool EngineBridge::includePath(const QString &path) {
     if (!engine)
         return false;
@@ -308,13 +318,25 @@ void EngineBridge::drainEvents() {
                 qWarning() << "[EngineBridge] take_event failed:" << qimgv_last_error();
             break;
         }
-        if (sessionEpoch != 0 && ev.epoch != 0 && ev.epoch < sessionEpoch)
+        if (sessionEpoch != 0 && ev.epoch != 0 && ev.epoch < sessionEpoch) {
+            if (EngineBridge::traceEnabled()) {
+                qDebug() << "[bridge trace] drop seq" << ev.seq << "kind" << ev.kind
+                         << "epoch" << ev.epoch << "older than session" << sessionEpoch;
+            }
             continue; // event from an older session (dead receiver) — drop
+        }
         // One string, two subjects: a directory for DIR_LISTED/OPEN_FAILED and a
         // full file path for DIR_MUTATED/THUMB_NEXT. Named for the ambiguity on
         // purpose — the kind decides which it is, and the value cannot say so.
         // See the table at qimgv_engine_take_event in qimgv_engine.h.
         const QString subject = QString::fromUtf8(subjectBuf.constData());
+        if (EngineBridge::traceEnabled()) {
+            // The last point where a mutation can vanish without the engine
+            // knowing. Everything a consumer does with it is decided on the next
+            // line, so "took" followed by nothing is the shape to look for.
+            qDebug() << "[bridge trace] took kind" << ev.kind << "seq" << ev.seq
+                     << "epoch" << ev.epoch << "index" << mut.index << subject;
+        }
         if (ev.kind == QIMGV_EVENT_DIR_LISTED) {
             mListedDir = subject;
             emit dirListed(subject);

@@ -97,6 +97,15 @@ pub struct QimgvEvent {
     /// Session the event belongs to; open_dir hands out the session id and
     /// consumers drop events from older sessions.
     pub epoch: u32,
+    /// For DIR_MUTATED: the engine's own ordinal of this mutation, assigned
+    /// before the event could be dropped anywhere downstream. 0 for the other
+    /// kinds. It carries no authority — nothing compares it, and a listing does
+    /// not have to be the same size at the same number — it exists so a line
+    /// printed by the engine and a line printed by the C++ mirror can be
+    /// matched by a human reading both. Truncated from the engine's u64 for
+    /// that reason: at 4 billion mutations it wraps, and a wrap changes which
+    /// number is printed, never which event follows which.
+    pub seq: u32,
 }
 
 #[repr(C)]
@@ -140,10 +149,11 @@ const _: () = {
     assert!(offset_of!(QimgvEntryMeta, size) == 8);
     assert!(offset_of!(QimgvEntryMeta, mtime_ms) == 16);
     assert!(offset_of!(QimgvEntryMeta, is_dir) == 24);
-    assert!(size_of::<QimgvEvent>() == 12);
+    assert!(size_of::<QimgvEvent>() == 16);
     assert!(offset_of!(QimgvEvent, kind) == 0);
     assert!(offset_of!(QimgvEvent, code) == 4);
     assert!(offset_of!(QimgvEvent, epoch) == 8);
+    assert!(offset_of!(QimgvEvent, seq) == 12);
     assert!(size_of::<QimgvMutation>() == 32);
     assert!(offset_of!(QimgvMutation, kind) == 0);
     assert!(offset_of!(QimgvMutation, is_dir) == 4);
@@ -852,7 +862,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
             Event::DirListed { dir, epoch } => {
                 write_str(subject_buf, subject_cap, &dir.to_string_lossy())?;
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_LISTED, code: QIMGV_OK, epoch: *epoch as u32 };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_LISTED, code: QIMGV_OK, epoch: *epoch as u32, seq: 0 };
                 }
                 Ok(1)
             }
@@ -861,7 +871,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                 let code = map_engine_error(error);
                 set_last_error(&error.to_string());
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_OPEN_FAILED, code, epoch: *epoch as u32 };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_OPEN_FAILED, code, epoch: *epoch as u32, seq: 0 };
                 }
                 Ok(1)
             }
@@ -873,11 +883,11 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                     }
                 }
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_THUMB_NEXT, code: QIMGV_OK, epoch: 0 };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_THUMB_NEXT, code: QIMGV_OK, epoch: 0, seq: 0 };
                 }
                 Ok(1)
             }
-            Event::Mutated { kind, path, name: _, is_dir, size, mtime_ms, index, epoch } => {
+            Event::Mutated { seq, kind, path, name: _, is_dir, size, mtime_ms, index, epoch } => {
                 write_str(subject_buf, subject_cap, path)?;
                 let mkind = match *kind {
                     qimgv_engine::WatchChangeKind::Added => QIMGV_MUT_ADDED,
@@ -896,7 +906,7 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                     }
                 }
                 unsafe {
-                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_MUTATED, code: QIMGV_OK, epoch: *epoch as u32 };
+                    *out = QimgvEvent { kind: QIMGV_EVENT_DIR_MUTATED, code: QIMGV_OK, epoch: *epoch as u32, seq: *seq as u32 };
                 }
                 Ok(1)
             }
