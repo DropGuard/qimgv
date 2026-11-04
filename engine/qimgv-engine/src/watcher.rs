@@ -269,8 +269,13 @@ pub fn mtime_ms(t: SystemTime) -> i64 {
 // --- the watcher thread -------------------------------------------------------
 
 pub(crate) enum WatchCmd {
-    /// (Re)target the watch; `watch_gen` tags all subsequent events.
-    Watch { path: PathBuf, watch_gen: u64 },
+    /// (Re)target the watch. Events carry the directory this thread installed the
+    /// watch for, so the consumer can tell what a record belongs to; there is no
+    /// generation number any more, and nothing to keep in sync with it.
+    Watch { path: PathBuf },
+    /// Drop the current watch. Explicit, because the previous implementation of
+    /// "stop watching" was to add a watch on an empty path and rely on it failing.
+    Unwatch,
     Stop,
 }
 
@@ -285,9 +290,9 @@ pub(crate) struct WatcherHandle {
 }
 
 impl WatcherHandle {
-    pub(crate) fn spawn() -> (WatcherHandle, Receiver<(u64, RawWatchEvent)>) {
+    pub(crate) fn spawn() -> (WatcherHandle, Receiver<RawWatchEvent>) {
         let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<WatchCmd>();
-        let (ev_tx, ev_rx) = crossbeam_channel::unbounded::<(u64, RawWatchEvent)>();
+        let (ev_tx, ev_rx) = crossbeam_channel::unbounded::<RawWatchEvent>();
         let running = Arc::new(AtomicBool::new(true));
         let running_flag = Arc::clone(&running);
 
@@ -353,7 +358,7 @@ impl Drop for WatcherHandle {
 
 fn watcher_loop(
     cmd_rx: &Receiver<WatchCmd>,
-    ev_tx: &Sender<(u64, RawWatchEvent)>,
+    ev_tx: &Sender<RawWatchEvent>,
     wake: OwnedFd,
     running: Arc<AtomicBool>,
 ) {
@@ -367,7 +372,6 @@ fn watcher_loop(
     let mut watch: Option<inotify::WatchDescriptor> = None;
     // the directory `watch` was added for; every event this thread emits names it
     let mut watch_dir: PathBuf = PathBuf::new();
-    let mut watch_gen: u64 = 0;
     let mut buffer = vec![0u8; 64 * 1024];
 
     while running.load(Ordering::Relaxed) {
@@ -402,6 +406,9 @@ fn watcher_loop(
                         if !event_is_live(wd, kind, live_wd) {
                             continue; // a record from a watch that is no longer installed
                         }
+                        if watch_dir.as_os_str().is_empty() {
+                            continue; // overflow reported with no live folder to attribute
+                        }
                         let name = ev.name.map(|c| c.to_string_lossy().into_owned());
                         if name.is_none() && !matches!(kind, RawWatchKind::Overflow | RawWatchKind::WatchGone) {
                             continue;
@@ -413,7 +420,7 @@ fn watcher_loop(
                             is_dir: is_dir_mask(ev.mask.bits()),
                             kind,
                         };
-                        if ev_tx.send((watch_gen, raw)).is_err() {
+                        if ev_tx.send(raw).is_err() {
                             return;
                         }
                     }
@@ -435,7 +442,13 @@ fn watcher_loop(
             while let Ok(cmd) = cmd_rx.try_recv() {
                 match cmd {
                     WatchCmd::Stop => return,
-                    WatchCmd::Watch { path, watch_gen: g } => {
+                    WatchCmd::Unwatch => {
+                        if let Some(w) = watch.take() {
+                            let _ = inotify.watches().remove(w);
+                        }
+                        watch_dir = PathBuf::new();
+                    }
+                    WatchCmd::Watch { path } => {
                         if let Some(w) = watch.take() {
                             let _ = inotify.watches().remove(w);
                         }
@@ -452,13 +465,11 @@ fn watcher_loop(
                             Ok(wd) => {
                                 watch = Some(wd);
                                 watch_dir = path;
-                                watch_gen = g;
                             }
                             Err(e) => {
                                 log::warn!("watcher: add_watch {:?}: {e}", path);
                                 watch = None;
                                 watch_dir = PathBuf::new();
-                                watch_gen = g; // stay in sync; no events will come
                             }
                         }
                     }

@@ -34,6 +34,11 @@ pub enum Command {
     IncludePath(PathBuf),
     /// Stops watching the current directory (listing reset on the C++ side).
     StopWatch,
+    /// Re-read the folder of the current request. Raised by the engine itself when
+    /// the kernel queue overflowed or the watched folder vanished, and by a scan
+    /// that was interrupted mid-flight; addressable from a test for the same reason
+    /// it is needed in production: both are "the answer I have is not stable".
+    Rescan(PathBuf),
     /// Thumbnail scheduling: submit one request. `replace_batch` clears all
     /// pending (not yet dispatched) requests first — the caller sends it on
     /// the FIRST request of a fresh viewport batch, so an older batch dies
@@ -103,14 +108,49 @@ pub struct EngineConfig {
 /// what made a queue-overflow rescan either cancel a user's open (when it
 /// allocated a session id) or overwrite the listing with a snapshot taken before
 /// a deletion (when it did not) — the second one resurrects files that are gone.
+/// One directory-listing request, and the only place the loop decides whether a
+/// result is still wanted. It replaces three loose counters that each answered a
+/// piece of that question — `session` (whose answer the FFI filters on), a dispatch
+/// number (newest scan writes the listing), and `watch_gen` (does this event belong
+/// to the folder on screen, now answered by the event's own directory) — and adds
+/// the two the counters could not express at all: whether a scan is in flight, and
+/// whether the folder changed underneath it. A scan that was interrupted is not an
+/// answer: it is taken again, because otherwise a file created or deleted inside
+/// the window between asking for a watch and installing it would be in neither the
+/// snapshot nor any event, and the listing and the mirror would settle on different
+/// sets while their counts agreed.
+struct ListingRequest {
+    dir: PathBuf,
+    session: u64,
+    dispatch: u64,
+    in_flight: bool,
+    interrupted: bool,
+    /// bound on the reconcile loop: a folder being rewritten as fast as we read it
+    /// must not make us read it forever
+    rounds: u32,
+}
+
+impl ListingRequest {
+    /// Take the listing again, as the same session: a rescan answers the request
+    /// that already exists, it does not start one.
+    fn rescan(&mut self, next: &mut u64) -> ScanJob {
+        *next += 1;
+        self.dispatch = *next;
+        self.in_flight = true;
+        self.interrupted = false;
+        self.rounds += 1;
+        ScanJob { session: self.session, dispatch: self.dispatch, path: self.dir.clone() }
+    }
+}
+
 struct ScanJob {
-    epoch: u64,
-    seq: u64,
+    session: u64,
+    dispatch: u64,
     path: PathBuf,
 }
 struct ScanDone {
-    epoch: u64,
-    seq: u64,
+    session: u64,
+    dispatch: u64,
     path: PathBuf,
     result: Result<ScanOutput, EngineError>,
     scan_ms: u128,
@@ -214,7 +254,7 @@ impl Engine {
                     });
                     let scan_ms = scan_start.elapsed().as_millis();
                     if res_tx
-                        .send(ScanDone { epoch: job.epoch, seq: job.seq, path: job.path, result, scan_ms })
+                        .send(ScanDone { session: job.session, dispatch: job.dispatch, path: job.path, result, scan_ms })
                         .is_err()
                     {
                         break;
@@ -229,7 +269,7 @@ impl Engine {
             (Some(handle), rx)
         };
         #[cfg(not(target_os = "linux"))]
-        let watch_ev_rx: Receiver<(u64, ())> = crossbeam_channel::never();
+        let watch_ev_rx: Receiver<()> = crossbeam_channel::never();
 
         let loop_join = {
             let state = Arc::clone(&state);
@@ -237,16 +277,16 @@ impl Engine {
             let epoch = Arc::clone(&epoch);
             let overrides = Arc::clone(&overrides);
             let filter = filter.clone();
+            let cmd_tx_for_loop = cmd_tx.clone();
             let epoch_at = {
                 let e = Arc::clone(&epoch);
                 move || e.load(Ordering::Relaxed)
             };
             thread::spawn(move || {
-                let mut watch_gen: u64 = 0;
-                let mut watched_dir = PathBuf::new();
-                // every scan dispatch takes the next number; only this thread
-                // dispatches, so this needs no atomic and no lock
-                let mut scan_seq: u64 = 0;
+                const MAX_RESCAN_ROUNDS: u32 = 8;
+                let mut listing: Option<ListingRequest> = None;
+                // only this thread dispatches scans, so the number needs no atomic
+                let mut next_dispatch: u64 = 0;
                 let mut thumbs = ThumbScheduler { max_in_flight: 2, ..Default::default() };
                 loop {
                     crossbeam_channel::select! {
@@ -254,20 +294,36 @@ impl Engine {
                             match cmd {
                                 Err(_) | Ok(Command::Shutdown) => break,
                                 Ok(Command::OpenDir { path, sort, epoch: e }) => {
-                                    watch_gen += 1;
                                     if let Some(mode) = sort {
                                         state_write(&state).resort(mode);
                                     }
-                                    watched_dir = path.clone();
                                     #[cfg(target_os = "linux")]
                                     if let Some(w) = &watcher {
-                                        w.send(watcher::WatchCmd::Watch {
-                                            path: path.clone(),
-                                            watch_gen,
-                                        });
+                                        w.send(watcher::WatchCmd::Watch { path: path.clone() });
                                     }
-                                    scan_seq += 1;
-                                    let _ = job_tx.send(ScanJob { epoch: e, seq: scan_seq, path });
+                                    let mut req = ListingRequest {
+                                        dir: path.clone(),
+                                        session: e,
+                                        dispatch: 0,
+                                        in_flight: false,
+                                        interrupted: false,
+                                        rounds: 0,
+                                    };
+                                    let job = req.rescan(&mut next_dispatch);
+                                    listing = Some(req);
+                                    let _ = job_tx.send(job);
+                                }
+                                Ok(Command::Rescan(dir)) => {
+                                    // only the folder the current request is about
+                                    // can be re-read; anything else is a result for
+                                    // a folder nobody asked about any more
+                                    let job = match &mut listing {
+                                        Some(req) if req.dir == dir => Some(req.rescan(&mut next_dispatch)),
+                                        _ => None,
+                                    };
+                                    if let Some(job) = job {
+                                        let _ = job_tx.send(job);
+                                    }
                                 }
                                 Ok(Command::SetSort(mode)) => {
                                     let dir = {
@@ -318,26 +374,44 @@ impl Engine {
                                     thumbs.pump(&ev_tx, &notify);
                                 }
                                 Ok(Command::StopWatch) => {
-                                    watch_gen += 1;
-                                    watched_dir.clear();
+                                    listing = None;
                                     #[cfg(target_os = "linux")]
                                     if let Some(w) = &watcher {
-                                        w.send(watcher::WatchCmd::Watch {
-                                            path: PathBuf::new(),
-                                            watch_gen,
-                                        });
+                                        w.send(watcher::WatchCmd::Unwatch);
                                     }
                                 }
                             }
                         }
                         recv(res_rx) -> done => {
                             let Ok(done) = done else { break };
-                            // Stale scan: a newer dispatch superseded it. This is
-                            // recency, not session — comparing session ids here let
-                            // a rescan whose read_dir predated a deletion apply last
-                            // and put a deleted file back into the listing.
-                            if done.seq != scan_seq {
+                            // Three questions, in order, and the record answers all
+                            // of them: is this the dispatch that still owns the
+                            // answer; did the folder change while the scan ran; and
+                            // only then — what does the answer say. A superseded
+                            // dispatch is dropped silently because its replacement is
+                            // already on its way; an interrupted one is not an answer
+                            // at all, so nothing is reported until a scan lands with
+                            // the folder quiet.
+                            let current = listing.as_ref().map(|r| r.dispatch == done.dispatch).unwrap_or(false);
+                            if !current {
                                 continue;
+                            }
+                            let requeue = {
+                                let req = listing.as_mut().unwrap();
+                                req.in_flight = false;
+                                req.interrupted && req.rounds < MAX_RESCAN_ROUNDS
+                            };
+                            if requeue {
+                                let job = listing.as_mut().unwrap().rescan(&mut next_dispatch);
+                                let _ = job_tx.send(job);
+                                continue;
+                            }
+                            if listing.as_ref().map(|r| r.interrupted).unwrap_or(false) {
+                                log::warn!(
+                                    "engine: folder {} kept changing through {} reads; answering with the last one",
+                                    done.path.display(),
+                                    listing.as_ref().map(|r| r.rounds).unwrap_or(0)
+                                );
                             }
                             match done.result {
                                 Ok(out) => {
@@ -354,14 +428,14 @@ impl Engine {
                                         apply_start.elapsed().as_millis(),
                                         entry_count
                                     );
-                                    let _ = ev_tx.send(Event::DirListed { dir, epoch: done.epoch });
+                                    let _ = ev_tx.send(Event::DirListed { dir, epoch: done.session });
                                     fire_notify(&notify);
                                 }
                                 Err(e) => {
                                     let _ = ev_tx.send(Event::OpenFailed {
                                         dir: done.path,
                                         error: Arc::new(e),
-                                        epoch: done.epoch,
+                                        epoch: done.session,
                                     });
                                     fire_notify(&notify);
                                 }
@@ -370,10 +444,22 @@ impl Engine {
                         recv(watch_ev_rx) -> tagged => {
                             #[cfg(target_os = "linux")]
                             {
-                                let Ok((ev_gen, raw)) = tagged else { break };
-                                if ev_gen != watch_gen || watched_dir.as_os_str().is_empty() {
-                                    continue; // in-flight event for a previous target
+                                let Ok(raw) = tagged else { break };
+                                // The event names the directory of the watch that
+                                // produced it, so belonging to the current request is
+                                // a comparison of two paths — not a counter that
+                                // someone else has to remember to advance.
+                                match &mut listing {
+                                    Some(req) if req.dir == raw.dir => {
+                                        if req.in_flight {
+                                            // whatever this event changed, the scan
+                                            // running right now may have missed it
+                                            req.interrupted = true;
+                                        }
+                                    }
+                                    _ => continue,
                                 }
+                                let req_session = listing.as_ref().map(|r| r.session).unwrap_or(0);
                                 let action = {
                                     let mut st = state_write(&state);
                                     let mut ov = overrides.lock().unwrap_or_else(|e| e.into_inner());
@@ -390,18 +476,16 @@ impl Engine {
                                             watcher::Applied::Modified => WatchChangeKind::Modified,
                                             watcher::Applied::Removed => WatchChangeKind::Removed,
                                         };
-                                        let _ = ev_tx.send(Event::Mutated { kind, path, name, is_dir, size, mtime_ms, index, epoch: epoch_at() });
+                                        let _ = ev_tx.send(Event::Mutated { kind, path, name, is_dir, size, mtime_ms, index, epoch: req_session });
                                         fire_notify(&notify);
                                     }
                                     watcher::WatchAction::Reconcile { dir } => {
                                         // queue overflow: the kernel dropped events,
                                         // converge with a full rescan
-                                        scan_seq += 1;
-                                        let _ = job_tx.send(ScanJob { epoch: epoch_at(), seq: scan_seq, path: dir });
+                                        let _ = cmd_tx_for_loop.send(Command::Rescan(dir));
                                     }
                                     watcher::WatchAction::DirGone { dir } => {
-                                        scan_seq += 1;
-                                        let _ = job_tx.send(ScanJob { epoch: epoch_at(), seq: scan_seq, path: dir });
+                                        let _ = cmd_tx_for_loop.send(Command::Rescan(dir));
                                     }
                                     watcher::WatchAction::Ignored => {}
                                 }
