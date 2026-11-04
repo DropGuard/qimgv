@@ -252,6 +252,52 @@ private slots:
         QCOMPARE(result.size(), QSize(32, 32));
     }
 
+    void threeSynchronousRequestsHandOffExactlyTwice() {
+        // The Scaler decides "a task is in flight" at the moment it hands the
+        // request to the pool. It used to learn it from the pool instead, through
+        // a DirectConnection that set `running` on the worker thread — so until
+        // that thread woke up, every request looked like the first one, and each
+        // of them re-used the single ScalerRunnable object and overwrote the
+        // request of the task already queued. Those extra hand-offs all happen
+        // synchronously, before this test returns control to the event loop, so
+        // what is delivered is deterministic: the buffered result, once.
+        resetFixture();
+        const QSize orig(64, 64);
+        QVERIFY(writeBigImage(fixtureDir + "/a.png", "png", orig));
+        QVERIFY(writeBigImage(fixtureDir + "/b.png", "png", orig));
+        auto a = *ImageFactory::createImage(fixtureDir + "/a.png", false);
+        auto b = *ImageFactory::createImage(fixtureDir + "/b.png", false);
+
+        Cache cache;
+        cache.insert(a);
+        cache.insert(b);
+        Scaler scaler(&cache);
+        int delivered = 0;
+        QSize gotSize;
+        QString gotPath;
+        QObject::connect(&scaler, &Scaler::scalingFinished,
+                         [&](QPixmap pix, ScalerRequest req) {
+            ++delivered;
+            gotSize = pix.size();
+            gotPath = req.path;
+        });
+
+        scaler.requestScaled(ScalerRequest(a, QSize(32, 32), fixtureDir + "/a.png",
+                                           QI_FILTER_BILINEAR, true));
+        scaler.requestScaled(ScalerRequest(b, QSize(40, 20), fixtureDir + "/b.png",
+                                           QI_FILTER_BILINEAR, true));
+        scaler.requestScaled(ScalerRequest(b, QSize(48, 24), fixtureDir + "/b.png",
+                                           QI_FILTER_BILINEAR, true));
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivered, 1, 10000);
+        QCOMPARE(gotSize, QSize(48, 24));   // the last request, not the first
+        QCOMPARE(gotPath, fixtureDir + "/b.png");
+        // the middle request (40x20) must never have been scaled and delivered:
+        // every hand-off is synchronous above, so nothing can arrive later
+        QTest::qWait(300);
+        QCOMPARE(delivered, 1);
+    }
+
     void videoFrameTempFilesDoNotCollideAcrossDirectories() {
         // Two clips that share a basename in different folders used to be handed
         // the same temp file in the shared tmpDir: one worker read and removed the

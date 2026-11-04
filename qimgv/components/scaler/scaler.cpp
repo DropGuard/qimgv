@@ -12,22 +12,23 @@ Scaler::Scaler(Cache *_cache, QObject *parent)
     : QObject(parent),
       buffered(false),
       running(false),
-      currentRequestTimestamp(0),
       cache(_cache)
 {
-    sem = new QSemaphore(1);
     pool = new QThreadPool(this);
     pool->setMaxThreadCount(1);
     runnable = new ScalerRunnable();
     runnable->setAutoDelete(false);
-    connect(this, &Scaler::startBufferedRequest, this, &Scaler::slotStartBufferedRequest, Qt::DirectConnection);
-    connect(runnable, &ScalerRunnable::started, this, &Scaler::onTaskStart, Qt::DirectConnection);
-    connect(runnable, &ScalerRunnable::finished, this, &Scaler::onTaskFinish, Qt::DirectConnection);
+    // no explicit connection type: `finished` is emitted on a pool thread and
+    // received here, so it is queued by construction and the state machine runs
+    // on the UI thread. DirectConnection used to run these slots on the pool
+    // thread, where they wrote `running`/`buffered`/`startedRequest` and reached
+    // Cache's QMap through a semaphore that nothing else in the app shared.
+    connect(runnable, &ScalerRunnable::finished, this, &Scaler::onTaskFinish);
     connect(this, &Scaler::acceptScalingResult, this, &Scaler::slotForwardScaledResult, Qt::QueuedConnection);
 }
 
 void Scaler::requestScaled(const ScalerRequest &req) {
-    sem->acquire(1);
+    Q_ASSERT(QThread::currentThread() == thread());
     if(!running) {
 //////////////////////////////////
         if(!buffered) {
@@ -75,23 +76,10 @@ void Scaler::requestScaled(const ScalerRequest &req) {
             }
         }
     }
-    sem->release(1);
-}
-
-void Scaler::onTaskStart(const ScalerRequest &req) {
-    sem->acquire(1);
-    running = true;
-    // clear buffered flag if there were no requests after us
-    if(buffered && bufferedRequest == req) {
-        buffered = false;
-    }
-    startedRequest = req;
-  //qDebug() << "onTaskStart(): " << req.image->name();
-    sem->release(1);
 }
 
 void Scaler::onTaskFinish(std::shared_ptr<const QImage> scaled, const ScalerRequest &req) {
-    sem->acquire(1);
+    Q_ASSERT(QThread::currentThread() == thread());
     running = false;
     if(buffered && bufferedRequest.image == req.image) {
     } else {
@@ -102,17 +90,10 @@ void Scaler::onTaskFinish(std::shared_ptr<const QImage> scaled, const ScalerRequ
     if(buffered) {
       //qDebug() << "onTaskFinish - startingBuffered: " << bufferedRequest.string;
         // the discarded result frees itself
-        //startRequest(bufferedRequest);
-        emit startBufferedRequest();
-        sem->release(1);
+        startRequest(bufferedRequest);
     } else {
-        sem->release(1);
         emit acceptScalingResult(scaled, req);
     }
-}
-
-void Scaler::slotStartBufferedRequest() {
-    startRequest(bufferedRequest);
 }
 
 void Scaler::slotForwardScaledResult(std::shared_ptr<const QImage> image, const ScalerRequest &req) {
@@ -124,6 +105,11 @@ void Scaler::slotForwardScaledResult(std::shared_ptr<const QImage> image, const 
 }
 
 void Scaler::startRequest(const ScalerRequest &req) {
+    running = true;
+    startedRequest = req;
+    // clear the buffered flag if there were no requests after this one
+    if(buffered && bufferedRequest == req)
+        buffered = false;
     runnable->setRequest(req);
     pool->start(runnable);
 }

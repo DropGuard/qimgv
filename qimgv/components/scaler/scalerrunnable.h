@@ -17,7 +17,6 @@ public:
     void setRequest(ScalerRequest r);
     void run() override;
 signals:
-    void started(ScalerRequest);
     // the result is shared, not handed over as a naked pointer: this signal is
     // emitted on a pool thread
     void finished(std::shared_ptr<const QImage>, ScalerRequest);

@@ -10,7 +10,6 @@ void ScalerRunnable::setRequest(ScalerRequest r) {
 }
 
 void ScalerRunnable::run() {
-    emit started(req);
     //QElapsedTimer t;
     //t.start();
     std::shared_ptr<const QImage> scaled;
