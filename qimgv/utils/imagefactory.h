@@ -12,11 +12,12 @@
 
 class ImageFactory {
 public:
-    // nullopt when the file is not a document type this app can open. Not a
-    // null shared_ptr: the hops between here and the loader all have to name
-    // the case they are in, which is the one thing a nullable pointer cannot
-    // ask of a compiler. The policy is carried, never looked up: dispatch
-    // sites capture it on the UI thread (LoadPolicy::fromSettings) and the
-    // pool receives values.
+    // nullopt when the file is not a document type this app can open, or when
+    // its decode produced no pixels (an undecodable file is absence, not a
+    // "loaded" object holding a null image). Not a null shared_ptr: the hops
+    // between here and the loader all have to name the case they are in, which
+    // is the one thing a nullable pointer cannot ask of a compiler. The policy
+    // is carried, never looked up: dispatch sites capture it on the UI thread
+    // (LoadPolicy::fromSettings) and the pool receives values.
     static std::optional<std::shared_ptr<Image>> createImage(QString path, bool scaled, const LoadPolicy &policy);
 };

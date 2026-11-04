@@ -78,30 +78,29 @@ private slots:
 
     void cacheRoundTripsInsertsAndTrims() {
         resetFixture();
+        // the factory now refuses pixel-less objects, so the cache fixtures
+        // must be real decodable images, not one-byte listing placeholders
+        QVERIFY(writeBigImage(fixtureDir + "/img1.jpg", "jpg", QSize(8, 8)));
+        QVERIFY(writeBigImage(fixtureDir + "/img2.jpg", "jpg", QSize(8, 8)));
         Cache cache;
         auto a = ImageFactory::createImage(fixtureDir + "/img1.jpg", false, loadPolicy());
         auto b = ImageFactory::createImage(fixtureDir + "/img2.jpg", false, loadPolicy());
         QVERIFY(a.has_value());
         QVERIFY(b.has_value());
-        // two different absences, and only one of them is the optional: a path
-        // that is not a file at all, versus a file whose suffix qimgv still
-        // tries as an image. The second is not isLoaded() == false either:
-        // ImageStatic::loadGeneric ignores QImageReader::read()'s result and
-        // sets the flag unconditionally, so an undecodable suffix arrives as a
-        // loaded object holding a null QImage. Only the image says so.
+        // every absence is the optional: a missing file, a directory, and a
+        // file whose suffix qimgv still tries but cannot decode — the factory
+        // never hands out an object whose pixels do not exist, so no consumer
+        // downstream ever needs a null-check
         QVERIFY(!ImageFactory::createImage(fixtureDir + "/missing.jpg", false, loadPolicy()).has_value());
         QVERIFY(!ImageFactory::createImage(fixtureDir + "/subdir", false, loadPolicy()).has_value());
-        auto junk = ImageFactory::createImage(fixtureDir + "/skip.txt", false, loadPolicy());
-        QVERIFY(junk.has_value());
-        // the object exists and the load was attempted, but the pixels are
-        // null — getImage() is the only public question that distinguishes
-        QVERIFY((*junk)->getImage()->isNull());
-        // and the pretence stops there: loadGeneric has always set its
-        // attempted-flag unconditionally, so the only honest statement about a
-        // file that never decoded is its null image — and a save must fail
-        // rather than write a 0x0 file over something real
-        QVERIFY(!(*junk)->save(fixtureDir + "/junk-copy.png", 95));
-        QVERIFY(!QFile::exists(fixtureDir + "/junk-copy.png"));
+        QVERIFY(!ImageFactory::createImage(fixtureDir + "/skip.txt", false, loadPolicy()).has_value());
+        // the animated side holds the same contract
+        QByteArray junkAnim = "GIF89a-not-really";
+        QFile jf(fixtureDir + "/broken.gif");
+        QVERIFY(jf.open(QIODevice::WriteOnly));
+        jf.write(junkAnim);
+        jf.close();
+        QVERIFY(!ImageFactory::createImage(fixtureDir + "/broken.gif", false, loadPolicy()).has_value());
         QVERIFY(cache.insert(*a));
         QVERIFY(cache.insert(*b));
         QVERIFY(cache.contains(fixtureDir + "/img1.jpg"));
