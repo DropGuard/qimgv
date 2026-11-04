@@ -352,7 +352,7 @@ private slots:
 
     void thumbnailerAccountingSurvivesAClearMidFlight() {
         resetFixture();
-        Thumbnailer thumb;
+        Thumbnailer thumb(EngineBridge::instance());
         QSignalSpy ready(&thumb, &Thumbnailer::thumbnailReady);
         QVERIFY(ready.isValid());
 

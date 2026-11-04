@@ -10,9 +10,10 @@ class Thumbnailer : public QObject
 {
     Q_OBJECT
 public:
-    // The bridge is injectable so tests can drive a thumbnailer against an
-    // isolated engine; production keeps using the process-wide instance.
-    explicit Thumbnailer(EngineBridge &bridge = EngineBridge::instance());
+    // The bridge is required, not defaulted: production names the process-wide
+    // instance at the construction site, tests name their isolated one. A
+    // default lets every call site keep the hidden choice (00cf517e's rule).
+    explicit Thumbnailer(EngineBridge &bridge);
     ~Thumbnailer() override;
     static std::shared_ptr<Thumbnail> getThumbnail(QString filePath, int size);
     void clearTasks();
