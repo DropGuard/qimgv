@@ -71,6 +71,58 @@ private slots:
         QVERIFY(!QDir(fixtureDir + "/nowhere").exists());
     }
 
+    // Two ways a failed save can still cost you something, asserted separately
+    // because QCOMPARE stops a slot at its first failure.
+    //
+    // (1) The rollback deleted mDocInfo->filePath() and moved the backup of
+    // destPath INTO it. For a Save As those are different files, so undoing a
+    // failed write to target.xyz replaced the untouched original image with the
+    // other file's contents — the assert below is on content, because a
+    // "does the original still exist" check passes happily while it holds the
+    // wrong bytes.
+    void failedSaveToAnotherPathDoesNotTouchTheOriginal() {
+        resetFixture();
+        QVERIFY(writeBigImage(fixtureDir + "/orig.png", "png", QSize(24, 24)));
+        QFile orig(fixtureDir + "/orig.png");
+        QVERIFY(orig.open(QIODevice::ReadOnly));
+        const QByteArray origBefore = orig.readAll();
+        orig.close();
+        const QByteArray targetBefore("ORIGINAL TARGET CONTENTS");
+        {
+            QFile t(fixtureDir + "/target.xyz");
+            QVERIFY(t.open(QIODevice::WriteOnly));
+            t.write(targetBefore);
+        }
+
+        auto image = *ImageFactory::createImage(fixtureDir + "/orig.png", false);
+        QVERIFY(!image->save(fixtureDir + "/target.xyz"));      // "xyz" is not encodable
+
+        QFile after(fixtureDir + "/orig.png");
+        QVERIFY(after.open(QIODevice::ReadOnly));
+        QCOMPARE(after.readAll(), origBefore);
+        after.close();
+        QFile target(fixtureDir + "/target.xyz");
+        QVERIFY(target.open(QIODevice::ReadOnly));
+        QCOMPARE(target.readAll(), targetBefore);
+        QCOMPARE(int(QDir(fixtureDir).entryList(QStringList() << QStringLiteral("target.xyz_*"),
+                                                QDir::Files).size()), 0);
+    }
+
+    // (2) The edited image was swapped and discarded before `success` was
+    // consulted, so every failed save also threw away unsaved work.
+    void failedSaveKeepsTheUnsavedEdit() {
+        resetFixture();
+        QVERIFY(writeBigImage(fixtureDir + "/orig.png", "png", QSize(24, 24)));
+        auto image = std::dynamic_pointer_cast<ImageStatic>(
+            *ImageFactory::createImage(fixtureDir + "/orig.png", false));
+        QVERIFY(image != nullptr);
+        image->setEditedImage(std::make_unique<const QImage>(image->getImage()->copy(QRect(0, 0, 8, 8))));
+        QVERIFY(image->isEdited());
+        QVERIFY(!image->save(fixtureDir + "/orig.xyz"));
+        QVERIFY2(image->isEdited(), "a failed save threw away the unsaved edit");
+        QCOMPARE(image->getImage()->size(), QSize(8, 8));
+    }
+
     void imageStaticSaveRoundTripAndQuality() {
         FreshSettings fresh;
 

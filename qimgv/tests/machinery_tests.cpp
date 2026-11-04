@@ -92,6 +92,12 @@ private slots:
         // the object exists and the load was attempted, but the pixels are
         // null — getImage() is the only public question that distinguishes
         QVERIFY((*junk)->getImage()->isNull());
+        // and the pretence stops there: loadGeneric has always set its
+        // attempted-flag unconditionally, so the only honest statement about a
+        // file that never decoded is its null image — and a save must fail
+        // rather than write a 0x0 file over something real
+        QVERIFY(!(*junk)->save(fixtureDir + "/junk-copy.png"));
+        QVERIFY(!QFile::exists(fixtureDir + "/junk-copy.png"));
         QVERIFY(cache.insert(*a));
         QVERIFY(cache.insert(*b));
         QVERIFY(cache.contains(fixtureDir + "/img1.jpg"));

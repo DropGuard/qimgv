@@ -104,8 +104,11 @@ void FileOperations::copyFileTo(const QString &srcFilePath, const QString &destD
         // remove just in case it exists
         tmpPath = destFile.absoluteFilePath() + "_" + generateHash(destFile.absoluteFilePath());
         QFile::remove(tmpPath);
-        // move backup
-        QFile::rename(destFile.absoluteFilePath(), tmpPath);
+        // move backup — and only claim a backup exists if the move happened
+        if(!QFile::rename(destFile.absoluteFilePath(), tmpPath)) {
+            result = FileOpResult::OTHER_ERROR;
+            return;
+        }
         exists = true;
     }
     // copy
@@ -127,8 +130,11 @@ void FileOperations::copyFileTo(const QString &srcFilePath, const QString &destD
             QFile::remove(tmpPath);
     } else {
         result = FileOpResult::OTHER_ERROR;
-        // fail; revert
-        QFile::rename(tmpPath, destFile.absoluteFilePath());
+        // fail; revert — a revert that itself fails means the previous file only
+        // exists as the backup, so say where it is instead of losing the trail
+        if(exists && !QFile::rename(tmpPath, destFile.absoluteFilePath()))
+            qCritical() << "[FileOperations] copy failed and the backup could not be"
+                        << "restored to" << destFile.absoluteFilePath() << "— it is still in" << tmpPath;
     }
     return;
 }
