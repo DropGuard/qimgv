@@ -19,9 +19,18 @@ int runInfraTests(int argc, char **argv);
 int main(int argc, char **argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QGuiApplication app(argc, argv);
-    // one sweep per process, at the point where nothing is watched yet
-    QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)
-         + "/qimgv-engine-stack-test").removeRecursively();
+    // This process's own tree, at the point where nothing is watched yet — and
+    // the leftovers of runs whose process is gone. Sweeping the whole base was
+    // wrong: it deletes the directories a concurrently running instance is
+    // watching, which shows up later as a listing that fails or goes stale.
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+                         + "/qimgv-engine-stack-test";
+    const QString mine = base + "/pid" + QString::number(QCoreApplication::applicationPid());
+    QDir(mine).removeRecursively();
+    QDir(base).mkpath(QFileInfo(mine).fileName());
+    for(const QString &stale : QDir(base).entryList(QStringList() << QStringLiteral("pid*"), QDir::Dirs))
+        if(!QFile::exists(QStringLiteral("/proc/%1").arg(stale.mid(3))))
+            QDir(base + "/" + stale).removeRecursively();
     int failures = 0;
     int (*const runs[])(int, char **) = {
         runListingTests,

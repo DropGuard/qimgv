@@ -40,6 +40,14 @@ public:
     void setSort(int sortMode);
     void setShowHidden(bool show);
 
+    // The directory the reads below currently describe. openDir is accepted
+    // asynchronously and the engine swaps its whole listing in one lock when the
+    // scan finishes, so between the call and the dirListed event these reads
+    // return the PREVIOUS directory — legitimately, and the reason a caller that
+    // waits on a count alone can read someone else's listing. Comes from the
+    // engine's own event, not from what was requested.
+    QString listedDirectory() const;
+
     // synchronous reads of the engine's current listing (for mirroring)
     int fileCount() const;
     int dirCount() const;
@@ -87,4 +95,5 @@ private:
     int eventFd = -1;
     QSocketNotifier *notifier = nullptr;
     quint32 sessionEpoch = 0;
+    QString mListedDir;
 };

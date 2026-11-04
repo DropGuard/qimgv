@@ -43,8 +43,12 @@
 class EngineStackFixture {
 public:
     explicit EngineStackFixture(const QString &domain)
+        // the pid is in the path because two instances of this binary can run at
+        // once (a manual run beside a ctest run), and a shared tree means one
+        // process deletes directories the other is still watching
         : fixtureBase(QStandardPaths::writableLocation(QStandardPaths::TempLocation)
-                      + "/qimgv-engine-stack-test/" + domain) {}
+                      + "/qimgv-engine-stack-test/pid" + QString::number(QCoreApplication::applicationPid())
+                      + "/" + domain) {}
 
     void makeFile(const QString &name) {
         QFile f(fixtureDir + "/" + name);
@@ -87,6 +91,20 @@ public:
         return spy.at(row).at(0).value<std::shared_ptr<Image>>();
     }
 
+    // Open and wait until the listing the bridge reports belongs to THIS
+    // directory. Waiting on a count cannot do that: the engine keeps serving the
+    // previous listing until its scan swaps the new one in, so a count can be
+    // satisfied by another test's directory — which is how file names from a
+    // previous slot turned up in a round-trip assertion, passing whenever the
+    // machine happened to be fast enough to finish the scan first.
+    void openListed(EngineBridge &bridge, const QString &dir, int sortMode = 0, bool hidden = false) {
+        QSignalSpy listed(&bridge, &EngineBridge::dirListed);
+        QVERIFY(bridge.openDir(dir, sortMode, hidden));
+        if(bridge.listedDirectory() != dir)
+            QVERIFY(listed.wait(10000));
+        QCOMPARE(bridge.listedDirectory(), dir);
+    }
+
     void init() {
         QVERIFY(home.path() != nullptr);
         // IsolatedHome already redirected HOME and the config identity
@@ -101,8 +119,8 @@ public:
         qRegisterMetaType<ScalerRequest>("ScalerRequest");
         // no removeRecursively here: the engine keeps inotify watches on these
         // paths for the life of the process, and deleting a watched directory out
-        // from under it is how a later listing dies with EBADF. main() sweeps the
-        // whole tree once, before any fixture has opened anything.
+        // from under it is how a later listing dies with EBADF. main() sweeps
+        // this process's own tree, before any fixture has opened anything.
         QVERIFY(QDir().mkpath(fixtureBase));
     }
 

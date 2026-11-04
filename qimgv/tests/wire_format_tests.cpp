@@ -23,8 +23,9 @@ private slots:
         makeFile(QString(120, QChar('x')) + QStringLiteral(".jpg")); // past any fixed buffer
 
         auto &bridge = EngineBridge::instance();
-        QVERIFY(bridge.openDir(fixtureDir, 0 /*QIMGV_SORT_NAME*/, false));
-        QTRY_COMPARE_WITH_TIMEOUT(bridge.fileCount(), 5, 10000);
+        openListed(bridge, fixtureDir, 0, false);
+
+        QCOMPARE(bridge.fileCount(), 5);
         QCOMPARE(bridge.dirCount(), 1);
 
         QByteArray arena;
@@ -62,8 +63,9 @@ private slots:
         makeFile(wide);
 
         auto &bridge = EngineBridge::instance();
-        QVERIFY(bridge.openDir(fixtureDir, 0, false));
-        QTRY_COMPARE_WITH_TIMEOUT(bridge.fileCount(), 4, 10000);
+        openListed(bridge, fixtureDir, 0, false);
+
+        QCOMPARE(bridge.fileCount(), 4);
 
         QByteArray arena;
         quint32 fc = 0, dc = 0;
@@ -84,8 +86,9 @@ private slots:
     void truncatedArenaStopsAtARecordBoundary() {
         resetFixture();
         auto &bridge = EngineBridge::instance();
-        QVERIFY(bridge.openDir(fixtureDir, 0, false));
-        QTRY_COMPARE_WITH_TIMEOUT(bridge.fileCount(), 3, 10000);
+        openListed(bridge, fixtureDir, 0, false);
+
+        QCOMPARE(bridge.fileCount(), 3);
 
         QByteArray arena;
         quint32 fc = 0, dc = 0;

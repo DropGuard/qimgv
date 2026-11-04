@@ -93,6 +93,10 @@ void EngineBridge::setShowHidden(bool show) {
         qimgv_engine_set_show_hidden(engine, show ? 1 : 0);
 }
 
+QString EngineBridge::listedDirectory() const {
+    return mListedDir;
+}
+
 int EngineBridge::fileCount() const {
     if (!engine)
         return 0;
@@ -267,6 +271,7 @@ void EngineBridge::drainEvents() {
             continue; // event from an older session (dead receiver) — drop
         const QString dir = QString::fromUtf8(buf);
         if (ev.kind == QIMGV_EVENT_DIR_LISTED) {
+            mListedDir = dir;
             emit dirListed(dir);
         } else if (ev.kind == QIMGV_EVENT_DIR_MUTATED) {
             emit dirMutated(mut.kind, dir, mut.is_dir != 0, mut.size, mut.mtime_ms, mut.index);

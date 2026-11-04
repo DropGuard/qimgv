@@ -33,7 +33,10 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(listedB.count(), 1, 10000);
         QCOMPARE(listedA.at(0).at(0).toString(), fixtureDir);
         QCOMPARE(listedB.at(0).at(0).toString(), fixtureDir + "/other");
-        // and the listings do not cross: each instance reports its own engine
+        // and the listings do not cross: each instance reports its own engine,
+        // including which directory its reads describe
+        QCOMPARE(bridgeA.listedDirectory(), fixtureDir);
+        QCOMPARE(bridgeB.listedDirectory(), fixtureDir + "/other");
         QCOMPARE(bridgeA.fileCount(), 3);
         QCOMPARE(bridgeB.fileCount(), 1);
     }

@@ -36,3 +36,5 @@ _deps/
 cmake_uninstall.cmake
 install_manifest.txt
 build-clazy/
+# a ctest run from the source dir drops this next to the sources
+Testing/

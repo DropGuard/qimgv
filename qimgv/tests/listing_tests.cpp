@@ -18,6 +18,8 @@ private slots:
 
         QVERIFY(bridge.openDir(fixtureDir, 0 /*QIMGV_SORT_NAME*/, false));
         QTRY_COMPARE_WITH_TIMEOUT(listed.count(), 1, 10000);
+        // the event, not a count, is what says this listing is ours
+        QCOMPARE(bridge.listedDirectory(), fixtureDir);
 
         QCOMPARE(bridge.fileCount(), 3); // txt filtered
         QCOMPARE(bridge.dirCount(), 1);
