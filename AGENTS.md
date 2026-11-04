@@ -13,8 +13,8 @@ watcher 已 stat 的数据,C++ 只做机械拼接与替换(收敛契约 =
 均有注释说明理由:forceInsert 的同步 push_back(Core 打开路径需要 index
 立即可用),与 setSubdirsSync 的旁路扫描。架构规则由
 `qimgv/tests/architecture_rules.py` 执行(R1 gui 隔离、R2 FFI 说话者白名单、
-R3 rust 封印、R4 settings 解引用、R5 ABI 钉、R6 信号重声明)——**结构规则
-不靠记忆,靠这 5 个测试套件**。
+R3 rust 封印、R4 settings 解引用、R5 ABI 钉、R6 信号重声明、R7 锁不跨等待)
+——**结构规则不靠记忆,靠这 5 个测试套件**。
 
 ## 常用命令
 
@@ -55,6 +55,10 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
    写进提交信息,而那段代码在 crate 层面就够不着。要动别的平台先拿事实:
    `rustup target add x86_64-pc-windows-gnu` + `cargo check --target ...`
    (check 不链接,编译验证在这里做得到,做不到的只有运行时)。
+7. **state 的锁不得跨等待持有。** guard 活到所在块结束,不是分号;轮询循环
+   里抱着读锁 sleep,std 的 RwLock 无写者优先,引擎写者被饿死整个 deadline
+   (b583e1aa 的验收测试就是这么红的,trace 加了时间戳才照出来)。R7 是这条
+   的机器形态;同文件里 wait_for 的写法是正确参照。
 
 ## 已知债务(有基线,只许缩)
 

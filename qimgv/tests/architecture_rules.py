@@ -203,6 +203,47 @@ for name, sigs in sorted(signals_of.items()):
             failures.append(f"R6 signal re-declared: {name}::{sig}() also exists in {parent} — "
                             f"connections made through &{parent}::{sig} will never fire")
 
+# Rule 7: a state-lock guard's scope never contains a wait. A Rust guard lives
+# until the end of its block — not to the semicolon — so a poll loop that binds
+# the guard and then sleeps inside the same block holds the lock across the
+# wait. std's RwLock has no writer priority: the engine loop's writer starved
+# for the whole 5s deadline while the test waited for exactly the state that
+# writer could not land (b583e1aa). wait_for in the same file is the correct
+# shape — the guard is a temporary inside the predicate expression and dies
+# before the sleep. This is a line-scoped heuristic: it sees the incident's
+# shape (a guard binding and a wait sharing a block), not arbitrary control
+# flow, and it reads the Rust tree because the state lock lives there.
+RUST_ROOT = os.path.join(ROOT, 'engine/qimgv-engine')
+GUARD_RE = re.compile(r'^\s*let\s+\w+[^=]*=\s*(?:.*\.(?:read|write)\(\)|.*state_write\()')
+WAIT_RE = re.compile(r'thread::sleep|[^.\w]sleep\(|recv_timeout\(|wait_for\(')
+
+def strip_rs(line):
+    # code-only text: comments and string literals out, so their braces and
+    # prose cannot move the depth counter (format! strings are full of {})
+    line = re.sub(r'//.*', '', line)
+    line = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)
+    return line
+
+if os.path.isdir(RUST_ROOT):
+    for dirpath, dirnames, filenames in os.walk(RUST_ROOT):
+        for f in filenames:
+            if not f.endswith('.rs'):
+                continue
+            path = os.path.join(dirpath, f)
+            rel = os.path.relpath(path, ROOT).replace(os.sep, '/')
+            scanned['R7'] = scanned.get('R7', 0) + 1
+            depth, guards = 0, []
+            for i, raw in enumerate(text_of(path).splitlines(), 1):
+                line = strip_rs(raw)
+                pre = depth
+                if WAIT_RE.search(line) and any(g <= pre for g, _ in guards):
+                    failures.append(f"R7 lock held across a wait: {rel}:{i} — scope the "
+                                    f"guard to the read (see wait_for) so the engine's writer can land")
+                if GUARD_RE.search(line):
+                    guards.append((pre, i))
+                depth += line.count('{') - line.count('}')
+                guards = [g for g in guards if g[0] <= depth]
+
 if failures:
     print("architecture violations:")
     for f in failures:
