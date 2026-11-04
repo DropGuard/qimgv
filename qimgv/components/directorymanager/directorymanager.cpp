@@ -79,8 +79,7 @@ bool DirectoryManager::setDirectory(const QString &dirPath) {
     mDirectoryPath = dirPath;
     mEngineDir = dirPath;
     mAppliedSort = mSortingMode;
-    mMirror = MirrorState::Synced;
-    mBehindRescans = 0;
+    markListingInSync();
     // a newer open supersedes everything armed for the previous session
     pendingOnListed.clear();
     return true;
@@ -354,7 +353,6 @@ bool DirectoryManager::isSettled() const {
         && mAppliedSort == mSortingMode
         && !mResyncing
         && !mWantRescan
-        && mMirror != MirrorState::Diverged
         && !(rescanTimer && rescanTimer->isActive());
 }
 
@@ -439,33 +437,12 @@ std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
 // engine has not caught up with). Rescanning is the right response, but only a
 // bounded number of times: a permanent disagreement is a bug to report, not a
 // timer to run forever.
-void DirectoryManager::requestRescanIfBehind(bool behind) {
-    if(!behind) {
-        // A listing that agrees leaves no repair outstanding. Without this the
-        // same call path that flagged the staleness (an entry kept because it
-        // still exists on disk) would keep asking for a rescan it just proved it
-        // does not need, and isSettled() would stay false for a reason the mirror
-        // has already resolved.
-        mBehindRescans = 0;
-        mWantRescan = false;
-        mMirror = MirrorState::Synced;
-        return;
-    }
-    if(mBehindRescans >= 3) {
-        if(mMirror != MirrorState::Diverged)
-            qWarning() << "[DirectoryManager] engine listing disagrees with the mirror for"
-                       << mDirectoryPath << "after" << mBehindRescans << "rescans; giving up and"
-                       << "reporting the folder as unsettled from now on";
-        mMirror = MirrorState::Diverged;
-        // We are not going to rescan, so do not leave that claimed: with the flag
-        // still set, isSettled() would be false for "a repair is pending" and the
-        // divergence itself would stay invisible behind it.
-        mWantRescan = false;
-        return;
-    }
-    ++mBehindRescans;
-    mMirror = MirrorState::Behind;
-    mWantRescan = true;
+// The repair ladder this used to carry (bounded rescan rounds, a Behind/Diverged
+// give-up state) died with the stat-based keep: nothing drives the mirror out of
+// agreement anymore, so there is nothing to bound. What remains is the agreement
+// mark a landed listing makes.
+void DirectoryManager::markListingInSync() {
+    mWantRescan = false;
 }
 
 void DirectoryManager::scheduleRescan() {
@@ -742,7 +719,7 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
         qDebug() << "[DirectoryManager] listing rebuild (incl. view repopulation)"
                  << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
         // a fresh listing is the definition of agreement
-        requestRescanIfBehind(false);
+        markListingInSync();
         return true;
     }
 
@@ -819,6 +796,6 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
 
     mPrevFileMeta = std::move(newMeta);
     qDebug() << "[DirectoryManager] listing resync" << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
-    requestRescanIfBehind(false);
+    markListingInSync();
     return true;
 }

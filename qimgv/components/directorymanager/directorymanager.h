@@ -91,9 +91,8 @@ public:
     // The half of mirroring that applies a listing, split out so a test can hand
     // the mirror one the engine does not currently hold. Nothing in production
     // calls it directly: mirrorEngineListing pulls the arena and forwards. This
-    // is the only way to reach the states a real filesystem will not produce on
-    // demand — an engine snapshot that lags a file which still exists, for
-    // instance, which is what MirrorState::Diverged is about.
+    // lets a test describe divergence directly instead of hoping the
+    // filesystem produces it on demand.
     bool applyArena(const QString &dirPath, const QByteArray &listing,
                     quint32 newFileCount, quint32 newDirCount);
 
@@ -143,14 +142,6 @@ private:
     QString mEngineDir;      // dir we asked the engine to open
     QString mMirroredDir;    // dir the vectors currently reflect
     SortingMode mAppliedSort;
-    // Where the mirror stands relative to the engine. Giving up has to be a state
-    // rather than silence: the resync bound below stops asking after a few rounds,
-    // and before this existed the give-up path left mWantRescan false, so
-    // isSettled() answered "settled" to a folder this instance knows it disagrees
-    // with. Diverged is not repaired by waiting — it clears when a listing arrives
-    // that agrees, or when a new directory is opened (a fresh claim, not a retry).
-    enum class MirrorState { Synced, Behind, Diverged };
-    MirrorState mMirror = MirrorState::Synced;
     QTimer *rescanTimer = nullptr;
     bool mResyncing = false;
     // requested from inside the mirror and consumed after mResyncing clears: a
@@ -158,12 +149,6 @@ private:
     // which is how the engine-behind rescan never used to happen.
     bool mWantRescan = false;
     int mRejectedListings = 0;
-    // a mirror-driven rescan request must be bounded: if the engine and the
-    // mirror disagree permanently, an unbounded 150ms re-open is a livelock
-    // (it took one test slot 152 seconds the day the dead call was revived).
-    // The bound is the point of Diverged: stopping is legitimate, pretending to
-    // have converged is not.
-    int mBehindRescans = 0;
     struct PendingListed {
         qint64 token;
         QString dir;
@@ -182,7 +167,9 @@ private:
     // never re-derives either
     void applyEngineModification(const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
     void scheduleRescan();
-    void requestRescanIfBehind(bool behind);
+    // a landed listing is the definition of agreement: it clears any repair
+    // the mirror still owed from an earlier pass
+    void markListingInSync();
     // false when the arena was rejected: the mirror keeps what it had, because a
     // truncation applied is a directory that never existed anywhere.
     bool mirrorEngineListing(const QString &dirPath);
