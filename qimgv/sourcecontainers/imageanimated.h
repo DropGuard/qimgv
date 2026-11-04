@@ -6,7 +6,6 @@
 
 class ImageAnimated : public Image {
 public:
-    ImageAnimated(QString _path);
     ImageAnimated(std::unique_ptr<DocumentInfo> _info);
     ~ImageAnimated() override;
 
@@ -22,8 +21,7 @@ public:
 
     int frameCount();
 public slots:
-    bool save() override;
-    bool save(QString destPath) override;
+    bool save(QString destPath, int jpegQuality) override;
 
 signals:
     void frameChanged(QPixmap*);

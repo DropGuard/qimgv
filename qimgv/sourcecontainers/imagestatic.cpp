@@ -3,14 +3,10 @@
 #include <QScreen>
 #include <time.h>
 
-ImageStatic::ImageStatic(QString _path)
-    : Image(_path)
-{
-    load();
-}
-
-ImageStatic::ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled)
-    : Image(std::move(_info)), mScaledRequest(scaled)
+ImageStatic::ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled, const LoadPolicy &policy)
+    : Image(std::move(_info)),
+      mScaledRequest(scaled),
+      mAllocationLimitMb(policy.allocationLimitMb)
 {
     load();
 }
@@ -41,7 +37,7 @@ void ImageStatic::loadGeneric() {
      * tldr: qimage bad
      */
     QImageReader r(mPath, mDocInfo->format().toStdString().c_str());
-    r.setAllocationLimit(settings->memoryAllocationLimit());
+    r.setAllocationLimit(mAllocationLimitMb);
     if(mScaledRequest && mDocInfo->format() == "jpg") {
         // tier-1: decode at screen resolution via libjpeg DCT scaling
         // (1/2 edge = 1/4 pixels). Full-res follows as tier-2 upgrade.
@@ -92,7 +88,7 @@ QString ImageStatic::generateHash(QString str) {
 }
 
 // TODO: move saving to directorymodel
-bool ImageStatic::save(QString destPath) {
+bool ImageStatic::save(QString destPath, int jpegQuality) {
     QString tmpPath = destPath + "_" + generateHash(destPath);
     QFileInfo fi(destPath);
     QString ext = fi.suffix();
@@ -103,7 +99,7 @@ bool ImageStatic::save(QString destPath) {
     if(ext.compare("png", Qt::CaseInsensitive) == 0)
         quality = 30;
     else if(ext.compare("jpg", Qt::CaseInsensitive) == 0 || ext.compare("jpeg", Qt::CaseInsensitive) == 0)
-        quality = settings->JPEGSaveQuality();
+        quality = jpegQuality;
 
     bool backupExists = false, success = false, originalExists = false;
 
@@ -156,10 +152,6 @@ bool ImageStatic::save(QString destPath) {
     if(destPath == mPath && success)
         mDocInfo->refresh();
     return success;
-}
-
-bool ImageStatic::save() {
-    return save(mPath);
 }
 
 std::unique_ptr<QPixmap> ImageStatic::getPixmap() {

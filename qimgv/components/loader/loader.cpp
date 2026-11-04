@@ -18,31 +18,31 @@ bool Loader::isLoading(const QString &path) {
     return tasks.contains(path);
 }
 
-std::optional<std::shared_ptr<Image>> Loader::load(const QString &path) {
+std::optional<std::shared_ptr<Image>> Loader::load(const QString &path, const LoadPolicy &policy) {
     // sync path (editing fallback): always full quality
-    return ImageFactory::createImage(path, false);
+    return ImageFactory::createImage(path, false, policy);
 }
 
 // clears all buffered tasks before loading
-void Loader::loadAsyncPriority(const QString &path) {
+void Loader::loadAsyncPriority(const QString &path, const LoadPolicy &policy) {
     clearPool();
-    doLoadAsync(path, 1, true); // tier-1 scaled for instant display
+    doLoadAsync(path, 1, true, policy); // tier-1 scaled for instant display
 }
 
-void Loader::loadAsync(const QString &path) {
-    doLoadAsync(path, 0, true);
+void Loader::loadAsync(const QString &path, const LoadPolicy &policy) {
+    doLoadAsync(path, 0, true, policy);
 }
 
-void Loader::loadAsyncFull(const QString &path) {
-    doLoadAsync(path, 0, false); // tier-2 full-res upgrade
+void Loader::loadAsyncFull(const QString &path, const LoadPolicy &policy) {
+    doLoadAsync(path, 0, false, policy); // tier-2 full-res upgrade
 }
 
-void Loader::doLoadAsync(const QString &path, int priority, bool scaled) {
+void Loader::doLoadAsync(const QString &path, int priority, bool scaled, const LoadPolicy &policy) {
     if(tasks.contains(path)) {
         return;
     }
 
-    auto runnable = new LoaderRunnable(path, scaled);
+    auto runnable = new LoaderRunnable(path, scaled, policy);
     runnable->setAutoDelete(false);
     tasks.insert(path, runnable);
     connect(runnable, &LoaderRunnable::finished, this, &Loader::onLoadFinished, Qt::UniqueConnection);

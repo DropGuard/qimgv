@@ -39,7 +39,7 @@ void Thumbnailer::clearTasks() {
 }
 
 std::shared_ptr<Thumbnail> Thumbnailer::getThumbnail(QString filePath, int size) {
-    return ThumbnailerRunnable::generate(nullptr, filePath, size, false, false);
+    return ThumbnailerRunnable::generate(nullptr, filePath, size, false, false, LoadPolicy::fromSettings());
 }
 
 void Thumbnailer::getThumbnailAsync(QString path, int size, bool crop, bool force) {
@@ -55,7 +55,8 @@ void Thumbnailer::getThumbnailAsync(QString path, int size, bool crop, bool forc
 }
 
 void Thumbnailer::startThumbnailerThread(QString filePath, int size, bool crop, bool force) {
-    auto runnable = new ThumbnailerRunnable(settings->useThumbnailCache() ? cache : nullptr, filePath, size, crop, force);
+    auto runnable = new ThumbnailerRunnable(settings->useThumbnailCache() ? cache : nullptr, filePath, size, crop, force,
+                                            LoadPolicy::fromSettings());
     connect(runnable, &ThumbnailerRunnable::taskStart, this, &Thumbnailer::onTaskStart);
     connect(runnable, &ThumbnailerRunnable::taskEnd, this, &Thumbnailer::onTaskEnd);
     runnable->setAutoDelete(true);

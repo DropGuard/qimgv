@@ -4,18 +4,20 @@
 
 #include <QFileInfo>
 
-ThumbnailerRunnable::ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, int _size, bool _crop, bool _force) :
+ThumbnailerRunnable::ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, int _size, bool _crop, bool _force,
+                                         const LoadPolicy &_policy) :
     path(_path),
     size(_size),
     crop(_crop),
     force(_force),
+    policy(_policy),
     cache(_cache)
 {
 }
 
 void ThumbnailerRunnable::run() {
     emit taskStart(path, size);
-    std::shared_ptr<Thumbnail> thumbnail = generate(cache, path, size, crop, force);
+    std::shared_ptr<Thumbnail> thumbnail = generate(cache, path, size, crop, force, policy);
     emit taskEnd(thumbnail, path, crop);
 }
 
@@ -36,7 +38,8 @@ QString ThumbnailerRunnable::generateIdString(QString path, int size, bool crop)
     return queryStr;
 }
 
-std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, QString path, int size, bool crop, bool force) {
+std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, QString path, int size, bool crop, bool force,
+                                                         const LoadPolicy &policy) {
     // Fast path: ONE file open (header probe) for format/animation/orientation.
     // DocumentInfo (mime sniff + per-format probes, 3-5 opens) is only used for
     // videos and formats the header parser doesn't know.
@@ -62,7 +65,7 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
         type = pr.animated ? DocumentType::ANIMATED : DocumentType::STATIC;
         orientation = (pr.orientation >= 1 && pr.orientation <= 8) ? pr.orientation : 1;
     } else {
-        imgInfo = std::make_unique<DocumentInfo>(path);
+        imgInfo = std::make_unique<DocumentInfo>(path, policy);
         type = imgInfo->type();
         format = imgInfo->format();
         orientation = imgInfo->exifOrientation();
@@ -86,7 +89,7 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
         }
         std::pair<std::unique_ptr<QImage>, QSize> pair;
         if(type == VIDEO)
-            pair = createVideoThumbnail(path, size, crop);
+            pair = createVideoThumbnail(path, size, crop, policy.tmpDir, policy.mpvBinary);
         else
             pair = createThumbnail(fileInfo.absoluteFilePath(), format.toStdString().c_str(), size, crop);
         image = std::move(pair.first);
@@ -192,14 +195,15 @@ std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(Q
     return std::make_pair(std::move(result), originalSize);
 }
 
-std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbnail(QString path, int size, bool squared) {
+std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbnail(QString path, int size, bool squared,
+                                                                                    const QString &tmpDir, const QString &mpvBinary) {
     QImageReader reader;
-    const QString tmpFilePath = videoFrameTempPath(settings->tmpDir(), path);
+    const QString tmpFilePath = videoFrameTempPath(tmpDir, path);
     QString tmpFilePathEsc = tmpFilePath;
     tmpFilePathEsc.replace("%", "%%");
     QProcess process;
     process.setProcessChannelMode(QProcess::MergedChannels);
-    process.start(settings->mpvBinary(),
+    process.start(mpvBinary,
                   QStringList() << "--start=30%"
                                 << "--frames=1"
                                 << "--aid=no"

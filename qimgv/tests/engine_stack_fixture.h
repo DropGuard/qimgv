@@ -71,6 +71,10 @@ public:
         QVERIFY(QDir(fixtureDir).mkdir("subdir"));
     }
 
+    // the load environment for factory calls: tests run on their own thread,
+    // so capturing from settings here is the legal side of R4's line
+    LoadPolicy loadPolicy() const { return LoadPolicy::fromSettings(); }
+
     QSize offscreenScreenPixels() {
         QScreen *screen = QApplication::primaryScreen();
         Q_ASSERT(screen != nullptr); // the offscreen platform always provides one

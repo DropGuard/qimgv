@@ -76,8 +76,8 @@ private slots:
     void cacheRoundTripsInsertsAndTrims() {
         resetFixture();
         Cache cache;
-        auto a = ImageFactory::createImage(fixtureDir + "/img1.jpg", false);
-        auto b = ImageFactory::createImage(fixtureDir + "/img2.jpg", false);
+        auto a = ImageFactory::createImage(fixtureDir + "/img1.jpg", false, loadPolicy());
+        auto b = ImageFactory::createImage(fixtureDir + "/img2.jpg", false, loadPolicy());
         QVERIFY(a.has_value());
         QVERIFY(b.has_value());
         // two different absences, and only one of them is the optional: a path
@@ -86,9 +86,9 @@ private slots:
         // ImageStatic::loadGeneric ignores QImageReader::read()'s result and
         // sets the flag unconditionally, so an undecodable suffix arrives as a
         // loaded object holding a null QImage. Only the image says so.
-        QVERIFY(!ImageFactory::createImage(fixtureDir + "/missing.jpg", false).has_value());
-        QVERIFY(!ImageFactory::createImage(fixtureDir + "/subdir", false).has_value());
-        auto junk = ImageFactory::createImage(fixtureDir + "/skip.txt", false);
+        QVERIFY(!ImageFactory::createImage(fixtureDir + "/missing.jpg", false, loadPolicy()).has_value());
+        QVERIFY(!ImageFactory::createImage(fixtureDir + "/subdir", false, loadPolicy()).has_value());
+        auto junk = ImageFactory::createImage(fixtureDir + "/skip.txt", false, loadPolicy());
         QVERIFY(junk.has_value());
         // the object exists and the load was attempted, but the pixels are
         // null — getImage() is the only public question that distinguishes
@@ -97,7 +97,7 @@ private slots:
         // attempted-flag unconditionally, so the only honest statement about a
         // file that never decoded is its null image — and a save must fail
         // rather than write a 0x0 file over something real
-        QVERIFY(!(*junk)->save(fixtureDir + "/junk-copy.png"));
+        QVERIFY(!(*junk)->save(fixtureDir + "/junk-copy.png", 95));
         QVERIFY(!QFile::exists(fixtureDir + "/junk-copy.png"));
         QVERIFY(cache.insert(*a));
         QVERIFY(cache.insert(*b));
@@ -165,14 +165,14 @@ private slots:
         webpAnimBytes.append(QByteArray(4, '\x00'));
         webpAnimBytes.append('\x02');
         write("anim.webp", webpAnimBytes);
-        DocumentInfo animatedWebp(fixtureDir + "/anim.webp");
+        DocumentInfo animatedWebp(fixtureDir + "/anim.webp", LoadPolicy::fromSettings());
         QCOMPARE(animatedWebp.type(), DocumentType::ANIMATED);
         QCOMPARE(animatedWebp.format(), QStringLiteral("webp"));
 
         QByteArray webpStaticBytes = webpAnimBytes;
         webpStaticBytes[webpStaticBytes.size() - 1] = '\x00';
         write("still.webp", webpStaticBytes);
-        DocumentInfo staticWebp(fixtureDir + "/still.webp");
+        DocumentInfo staticWebp(fixtureDir + "/still.webp", LoadPolicy::fromSettings());
         QCOMPARE(staticWebp.type(), DocumentType::STATIC);
 
         // APNG: acTL inside the first 120 bytes. Whether the "apng" format is
@@ -182,7 +182,7 @@ private slots:
         png.append(QByteArray(20, '\x00'));
         png.append("acTL");
         write("maybe-apng.png", png);
-        DocumentInfo apng(fixtureDir + "/maybe-apng.png");
+        DocumentInfo apng(fixtureDir + "/maybe-apng.png", LoadPolicy::fromSettings());
         if(QImageReader::supportedImageFormats().contains("apng")) {
             QCOMPARE(apng.type(), DocumentType::ANIMATED);
             QCOMPARE(apng.format(), QStringLiteral("apng"));
@@ -202,7 +202,7 @@ private slots:
         if(mimeDb.mimeTypeForFile(fixtureDir + "/anim.avif",
                                   QMimeDatabase::MatchContent).name()
            == QStringLiteral("image/avif")) {
-            DocumentInfo avifDoc(fixtureDir + "/anim.avif");
+            DocumentInfo avifDoc(fixtureDir + "/anim.avif", LoadPolicy::fromSettings());
             QCOMPARE(avifDoc.type(), DocumentType::ANIMATED);
         } else {
             QSKIP("this mime database does not identify ftypavis as image/avif");
@@ -211,19 +211,40 @@ private slots:
         // a .jfif file falls through content detection to the suffix, which
         // the code maps onto jpg
         write("photo.jfif", "not really a jpeg");
-        DocumentInfo jfif(fixtureDir + "/photo.jfif");
+        DocumentInfo jfif(fixtureDir + "/photo.jfif", LoadPolicy::fromSettings());
         QCOMPARE(jfif.format(), QStringLiteral("jpg"));
         QCOMPARE(jfif.type(), DocumentType::STATIC);
 
         write("frame.gif", "GIF89a-not-really");
-        DocumentInfo gif(fixtureDir + "/frame.gif");
+        DocumentInfo gif(fixtureDir + "/frame.gif", LoadPolicy::fromSettings());
         QCOMPARE(gif.type(), DocumentType::ANIMATED);
         QCOMPARE(gif.format(), QStringLiteral("gif"));
 
         write("pic.bmp", "BM-junk");
-        DocumentInfo bmp(fixtureDir + "/pic.bmp");
+        DocumentInfo bmp(fixtureDir + "/pic.bmp", LoadPolicy::fromSettings());
         QCOMPARE(bmp.type(), DocumentType::STATIC);
         QCOMPARE(bmp.format(), QStringLiteral("bmp"));
+    }
+
+    // R4's fix pattern, pinned: classification follows the CARRIED policy, not
+    // ambient state — the same file classifies differently under two policies,
+    // and no pool thread ever had to ask the settings global
+    void documentInfoClassificationFollowsTheCarriedPolicy() {
+        resetFixture();
+        makeFile("clip.mp4");
+
+        LoadPolicy videoOn;
+        videoOn.videoPlayback = true;
+        videoOn.videoFormats.insert("video/mp4", "mp4");
+        DocumentInfo videoed(fixtureDir + "/clip.mp4", videoOn);
+        QCOMPARE(videoed.type(), DocumentType::VIDEO);
+        QCOMPARE(videoed.format(), QStringLiteral("mp4"));
+
+        LoadPolicy videoOff;
+        videoOff.videoPlayback = false;
+        DocumentInfo plain(fixtureDir + "/clip.mp4", videoOff);
+        QCOMPARE(plain.type(), DocumentType::STATIC);
+        QCOMPARE(plain.format(), QStringLiteral("mp4"));
     }
 
     // The scale pipeline is: worker thread computes the image, Scaler::onTaskFinish
@@ -235,7 +256,7 @@ private slots:
         resetFixture();
         const QSize orig(64, 64);
         QVERIFY(writeBigImage(fixtureDir + "/real.png", "png", orig));
-        auto image = *ImageFactory::createImage(fixtureDir + "/real.png", false);
+        auto image = *ImageFactory::createImage(fixtureDir + "/real.png", false, loadPolicy());
         QVERIFY(image->getImage()->size() == orig);
 
         Cache cache;
@@ -265,8 +286,8 @@ private slots:
         const QSize orig(64, 64);
         QVERIFY(writeBigImage(fixtureDir + "/a.png", "png", orig));
         QVERIFY(writeBigImage(fixtureDir + "/b.png", "png", orig));
-        auto a = *ImageFactory::createImage(fixtureDir + "/a.png", false);
-        auto b = *ImageFactory::createImage(fixtureDir + "/b.png", false);
+        auto a = *ImageFactory::createImage(fixtureDir + "/a.png", false, loadPolicy());
+        auto b = *ImageFactory::createImage(fixtureDir + "/b.png", false, loadPolicy());
 
         Cache cache;
         cache.insert(a);
@@ -310,8 +331,8 @@ private slots:
         const QSize orig(64, 64);
         QVERIFY(writeBigImage(fixtureDir + "/a.png", "png", orig));
         QVERIFY(writeBigImage(fixtureDir + "/b.png", "png", orig));
-        auto a = *ImageFactory::createImage(fixtureDir + "/a.png", false);
-        auto b = *ImageFactory::createImage(fixtureDir + "/b.png", false);
+        auto a = *ImageFactory::createImage(fixtureDir + "/a.png", false, loadPolicy());
+        auto b = *ImageFactory::createImage(fixtureDir + "/b.png", false, loadPolicy());
 
         Cache cache;
         QVERIFY(cache.insert(a));

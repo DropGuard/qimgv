@@ -3,14 +3,6 @@
 
 // TODO: this class is kinda useless now. redesign?
 
-ImageAnimated::ImageAnimated(QString _path)
-    : Image(_path)
-{
-    mSize.setWidth(0);
-    mSize.setHeight(0);
-    load();
-}
-
 ImageAnimated::ImageAnimated(std::unique_ptr<DocumentInfo> _info)
     : Image(std::move(_info))
 {
@@ -43,7 +35,7 @@ int ImageAnimated::frameCount() {
 }
 
 // TODO: overwrite (self included)
-bool ImageAnimated::save(QString destPath) {
+bool ImageAnimated::save(QString destPath, int) {
     QFile file(mPath);
     if(file.exists()) {
         if(!file.copy(destPath)) {
@@ -60,11 +52,6 @@ bool ImageAnimated::save(QString destPath) {
         qDebug() << "Unable to save file. Perhaps the source file was deleted?";
         return false;
     }
-}
-
-bool ImageAnimated::save() {
-    //TODO
-    return false;
 }
 
 // in case of gif returns current frame

@@ -1,13 +1,5 @@
 #include "image.h"
 
-Image::Image(QString _path)
-    : mDocInfo(new DocumentInfo(_path)),
-      mLoadAttempted(false),
-      mEdited(false),
-      mPath(_path)
-{
-}
-
 Image::Image(std::unique_ptr<DocumentInfo> _info)
     : mDocInfo(std::move(_info)),
       mLoadAttempted(false),

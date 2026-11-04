@@ -68,24 +68,15 @@ for path, rel in sources():
 
 # Rule 4: code that runs off the UI thread never dereferences the settings
 # global. One shared QSettings instance touched from several threads is a data
-# race, and nothing else here can see it: no compiler warning, no clang-tidy
-# check, no clazy check — the read is a plain global inside a QThreadPool
-# worker. The fix is to carry the value in the request, as ScalerRequest does
-# with smoothUpscaling, which also pins it to the moment the request was made.
-#
-# OFFTHREAD membership is by call graph, not by file name: sourcecontainers/*
-# are decoded on the loader pool. DEBT lists the files that still read the
-# global; it may only shrink, and an entry that has been cleaned fails the rule
-# so the list cannot rot into a fiction.
+# race, and ambient reads cannot be pinned to the moment a request was made:
+# the value travels in the request instead — ScalerRequest::smoothUpscaling,
+# LoadPolicy for the decode/classification chain, explicit quality for saves.
+# The DEBT list that used to live here retired at zero on 2026-11-05
+# (thumbnailerrunnable, documentinfo, imagestatic, video); the rule is a pure
+# assertion now.
 OFFTHREAD = {
     'components/loader/loaderrunnable.cpp',
     'components/scaler/scalerrunnable.cpp',
-    'components/thumbnailer/thumbnailerrunnable.cpp',
-    'sourcecontainers/documentinfo.cpp',
-    'sourcecontainers/imagestatic.cpp',
-    'sourcecontainers/video.cpp',
-}
-DEBT = {
     'components/thumbnailer/thumbnailerrunnable.cpp',
     'sourcecontainers/documentinfo.cpp',
     'sourcecontainers/imagestatic.cpp',
@@ -97,11 +88,9 @@ for path, rel in sources():
     scanned['R4'] = scanned.get('R4', 0) + 1
     lines = text_of(path).splitlines()
     hits = [i + 1 for i, l in enumerate(lines) if re.search(r'\bsettings\s*->', l)]
-    if hits and rel not in DEBT:
-        failures.append(f"R4 off-thread settings deref: {rel}:{hits[0]} — carry the value "
-                        f"in the request (see ScalerRequest::smoothUpscaling) or add to DEBT after review")
-    if not hits and rel in DEBT:
-        failures.append(f"R4 stale DEBT entry: {rel} no longer reads settings — drop it from DEBT")
+    if hits:
+        failures.append(f"R4 off-thread settings deref: {rel}:{hits[0]} — carry the "
+                        f"value in the request (see ScalerRequest::smoothUpscaling / LoadPolicy)")
 
 # Rule 5: both sides of the ABI assert the same layout. qimgv_engine.h pins the
 # by-value structs with QIMGV_PIN, lib.rs mirrors the numbers with size_of/

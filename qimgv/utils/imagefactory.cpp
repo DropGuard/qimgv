@@ -1,7 +1,7 @@
 #include "imagefactory.h"
 
-std::optional<std::shared_ptr<Image>> ImageFactory::createImage(QString path, bool scaled) {
-    std::unique_ptr<DocumentInfo> docInfo(new DocumentInfo(path));
+std::optional<std::shared_ptr<Image>> ImageFactory::createImage(QString path, bool scaled, const LoadPolicy &policy) {
+    std::unique_ptr<DocumentInfo> docInfo(new DocumentInfo(path, policy));
     auto type = docInfo->type();
     if(type == NONE) {
         qDebug() << "ImageFactory: cannot load " << docInfo->filePath();
@@ -14,5 +14,5 @@ std::optional<std::shared_ptr<Image>> ImageFactory::createImage(QString path, bo
     // forward the tier request: dropping it here silently disabled the
     // whole two-tier pipeline (every load decoded full and reported
     // [full]; ImageStatic::loadGeneric never scaled anything)
-    return std::make_shared<ImageStatic>(std::move(docInfo), scaled);
+    return std::make_shared<ImageStatic>(std::move(docInfo), scaled, policy);
 }

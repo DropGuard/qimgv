@@ -1,6 +1,6 @@
 #include "documentinfo.h"
 
-DocumentInfo::DocumentInfo(QString path)
+DocumentInfo::DocumentInfo(QString path, const LoadPolicy &policy)
     : mDocumentType(DocumentType::NONE),
       mOrientation(0),
       mFormat(""),
@@ -11,7 +11,7 @@ DocumentInfo::DocumentInfo(QString path)
         qDebug() << "FileInfo: cannot open: " << path;
         return;
     }
-    detectFormat();
+    detectFormat(policy);
 }
 
 DocumentInfo::~DocumentInfo() {
@@ -71,7 +71,7 @@ int DocumentInfo::exifOrientation() const {
 // ##############################################################
 // ####################### PRIVATE METHODS ######################
 // ##############################################################
-void DocumentInfo::detectFormat() {
+void DocumentInfo::detectFormat(const LoadPolicy &policy) {
     if(mDocumentType != DocumentType::NONE)
         return;
     QMimeDatabase mimeDb;
@@ -98,7 +98,7 @@ void DocumentInfo::detectFormat() {
     } else if(mimeName == "image/jxl") {
         mFormat = "jxl";
         mDocumentType = detectAnimatedJxl() ? DocumentType::ANIMATED : DocumentType::STATIC;
-        if(mDocumentType == DocumentType::ANIMATED && !settings->jxlAnimation()) {
+        if(mDocumentType == DocumentType::ANIMATED && !policy.jxlAnimation) {
             mDocumentType = DocumentType::NONE;
             qDebug() << "animated jxl is off; skipping file";
         }
@@ -108,15 +108,15 @@ void DocumentInfo::detectFormat() {
     } else if(mimeName == "image/bmp") {
         mFormat = "bmp";
         mDocumentType = DocumentType::STATIC;
-    } else if(settings->videoPlayback() && settings->videoFormats().contains(mimeName)) {
+    } else if(policy.videoPlayback && policy.videoFormats.contains(mimeName)) {
         mDocumentType = DocumentType::VIDEO;
-        mFormat = settings->videoFormats().value(mimeName);
+        mFormat = policy.videoFormats.value(mimeName);
     } else {
         // just try to open via suffix if all of the above fails
         mFormat = suffix;
         if(mFormat.compare("jfif", Qt::CaseInsensitive) == 0)
             mFormat = "jpg";
-        if(settings->videoPlayback() && settings->videoFormats().values().contains(suffix))
+        if(policy.videoPlayback && policy.videoFormats.values().contains(suffix))
             mDocumentType = DocumentType::VIDEO;
         else
             mDocumentType = DocumentType::STATIC;

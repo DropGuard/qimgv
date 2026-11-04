@@ -11,6 +11,7 @@
 #include <cstring>
 #include "utils/stuff.h"
 #include "settings.h"
+#include "sourcecontainers/loadpolicy.h"
 
 #ifdef USE_EXIV2
 
@@ -27,7 +28,10 @@ enum DocumentType { NONE, STATIC, ANIMATED, VIDEO };
 
 class DocumentInfo {
 public:
-    DocumentInfo(QString path);
+    // classification consults the CARRIED policy (jxl animation, video
+    // playback/formats), never the settings global — this constructor runs
+    // on the loader pool
+    DocumentInfo(QString path, const LoadPolicy &policy);
     ~DocumentInfo();
     
     QString directoryPath() const;
@@ -56,7 +60,7 @@ private:
 
     // guesses file type from its contents
     // and sets extension
-    void detectFormat();
+    void detectFormat(const LoadPolicy &policy);
     void loadExifOrientation();
     bool detectAPNG();
     bool detectAnimatedWebP();

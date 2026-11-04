@@ -216,7 +216,7 @@ bool DirectoryModel::saveFile(const QString &filePath, const QString &destPath) 
     if(!containsFile(filePath) || !cache.contains(filePath))
         return false;
     auto img = cache.get(filePath);
-    if(img->save(destPath)) {
+    if(img->save(destPath, settings->JPEGSaveQuality())) {
         // listing changes (modified/new) surface through the engine's watch
         // and arrive via fileModified/fileAdded — same as any external edit
         return true;
@@ -280,7 +280,7 @@ std::shared_ptr<Image> DirectoryModel::getImage(const QString &filePath) {
     // callers of getImage() hand it straight to sinks that test for it
     // (guiSetImage, getMimeDataForImage). Everything upstream of this line
     // carries std::optional and cannot forward the question unknowingly.
-    return loader.load(filePath).value_or(nullptr);
+    return loader.load(filePath, LoadPolicy::fromSettings()).value_or(nullptr);
 }
 
 void DirectoryModel::updateImage(const QString &filePath, std::shared_ptr<Image> img) {
@@ -303,10 +303,10 @@ void DirectoryModel::load(const QString &filePath, bool asyncHint, bool scaled) 
         return;
     if(!cache.contains(filePath)) {
         if(asyncHint) {
-            loader.loadAsyncPriority(filePath);
+            loader.loadAsyncPriority(filePath, LoadPolicy::fromSettings());
         } else {
             // sync path (editing): full quality
-            auto img = loader.load(filePath);
+            auto img = loader.load(filePath, LoadPolicy::fromSettings());
             if(img) {
                 cache.insert(*img);
                 emit imageReady(*img, filePath, false);
@@ -318,7 +318,7 @@ void DirectoryModel::load(const QString &filePath, bool asyncHint, bool scaled) 
         bool cachedScaled = mScaledCache.contains(filePath);
         // instant display from cache; a tier-1 cached image upgrades to full
         if(cachedScaled && scaled)
-            loader.loadAsyncFull(filePath);
+            loader.loadAsyncFull(filePath, LoadPolicy::fromSettings());
         emit imageReady(cache.get(filePath), filePath, cachedScaled);
     }
 }
@@ -332,11 +332,11 @@ void DirectoryModel::reload(const QString &filePath) {
 
 void DirectoryModel::preload(const QString &filePath) {
     if(containsFile(filePath) && !cache.contains(filePath))
-        loader.loadAsync(filePath); // tier-1 scaled
+        loader.loadAsync(filePath, LoadPolicy::fromSettings()); // tier-1 scaled
 }
 
 // tier-2: full-res re-decode of a tier-1 cached image
 void DirectoryModel::upgradeToFull(const QString &filePath) {
     if(containsFile(filePath) && !loader.isLoading(filePath) && mScaledCache.contains(filePath))
-        loader.loadAsyncFull(filePath);
+        loader.loadAsyncFull(filePath, LoadPolicy::fromSettings());
 }

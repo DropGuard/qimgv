@@ -68,7 +68,6 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
 ## 已知债务(有基线,只许缩)
 
 - `scripts/lint-baseline.txt`:静态分析计数,`--gate` 强制只缩不涨。
-- settings 的 R4 DEBT 名单(architecture_rules.py 内):off-thread 解引用。
 - suggest-override / old-style-cast / shadow:已清零;unused-parameter 已升格
   `-Werror`(CMakeLists)。风格族不再主动扫荡:只缩不涨 + 新族即失败自动守门。
 
@@ -88,3 +87,7 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
   规则文件的 green 从"验证过"降级成"抽样过",其余六条的承诺因此被稀释。
   根治路径是 with_state 闭包(guard 不可逃逸,"持锁睡觉"必须显式写进闭包
   体),待测试面下次变动时评估;在那之前靠纪律 7 的散文与 wait_for 参照。
+- 所有权战役于 2026-11-05 关闭:**可变者唯一所有,共享者只读,依赖者具名,
+  跨界者带数据**。最后一块(R4 DEBT:thumbnailerrunnable/documentinfo/
+  imagestatic/video 的 off-thread settings 读取)已搬进 LoadPolicy 与请求
+  参数,DEBT 清零,R4 成为纯断言。重启条件:新事故。

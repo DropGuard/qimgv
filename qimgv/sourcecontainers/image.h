@@ -10,7 +10,6 @@
 
 class Image {
 public:
-    Image(QString);
     Image(std::unique_ptr<DocumentInfo>);
     virtual ~Image() = 0;
     virtual std::unique_ptr<QPixmap> getPixmap() = 0;
@@ -23,8 +22,7 @@ public:
     virtual int height() = 0;
     virtual int width() = 0;
     virtual QSize size() = 0;
-    virtual bool save() = 0;
-    virtual bool save(QString destPath) = 0;
+    virtual bool save(QString destPath, int jpegQuality) = 0;
     QString fileName() const;
     QString baseName() const;
     bool isEdited() const;

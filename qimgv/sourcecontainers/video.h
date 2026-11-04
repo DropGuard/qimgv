@@ -8,7 +8,6 @@
 
 class Video : public Image {
 public:
-    Video(QString _path);
     Video(std::unique_ptr<DocumentInfo> _info);
 
     std::unique_ptr<QPixmap> getPixmap() override;
@@ -18,8 +17,7 @@ public:
     QSize size() override;
 
 public slots:
-    bool save() override;
-    bool save(QString destPath) override;
+    bool save(QString destPath, int jpegQuality) override;
 
 
 private:

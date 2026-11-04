@@ -16,10 +16,12 @@
 class ThumbnailerRunnable : public QObject, public QRunnable {
     Q_OBJECT
 public:
-    ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, int _size, bool _crop, bool _force);
+    ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, int _size, bool _crop, bool _force,
+                        const LoadPolicy &_policy);
     ~ThumbnailerRunnable() override;
     void run() override;
-    static std::shared_ptr<Thumbnail> generate(ThumbnailCache *cache, QString path, int size, bool crop, bool force);
+    static std::shared_ptr<Thumbnail> generate(ThumbnailCache *cache, QString path, int size, bool crop, bool force,
+                                               const LoadPolicy &policy);
     // The frame a video decode writes out lands in a shared directory, so its
     // name must be unique per SOURCE PATH, not per basename. Public static so a
     // test can pin the seam, the way EngineBridge::extensionListFor does.
@@ -27,10 +29,14 @@ public:
 private:
     static QString generateIdString(QString path, int size, bool crop);
     static std::pair<std::unique_ptr<QImage>, QSize> createThumbnail(QString path, const char* format, int size, bool crop);
-    static std::pair<std::unique_ptr<QImage>, QSize> createVideoThumbnail(QString path, int size, bool crop);
+    static std::pair<std::unique_ptr<QImage>, QSize> createVideoThumbnail(QString path, int size, bool crop,
+                                                                          const QString &tmpDir, const QString &mpvBinary);
     QString path;
     int size;
     bool crop, force;
+    // the environment, carried from the dispatch site: the pool thread never
+    // reads the settings global
+    LoadPolicy policy;
     ThumbnailCache* cache = nullptr;
 
 signals:

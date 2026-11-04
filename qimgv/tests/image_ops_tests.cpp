@@ -94,8 +94,8 @@ private slots:
             t.write(targetBefore);
         }
 
-        auto image = *ImageFactory::createImage(fixtureDir + "/orig.png", false);
-        QVERIFY(!image->save(fixtureDir + "/target.xyz"));      // "xyz" is not encodable
+        auto image = *ImageFactory::createImage(fixtureDir + "/orig.png", false, loadPolicy());
+        QVERIFY(!image->save(fixtureDir + "/target.xyz", 95));  // "xyz" is not encodable
 
         QFile after(fixtureDir + "/orig.png");
         QVERIFY(after.open(QIODevice::ReadOnly));
@@ -114,11 +114,11 @@ private slots:
         resetFixture();
         QVERIFY(writeBigImage(fixtureDir + "/orig.png", "png", QSize(24, 24)));
         auto image = std::dynamic_pointer_cast<ImageStatic>(
-            *ImageFactory::createImage(fixtureDir + "/orig.png", false));
+            *ImageFactory::createImage(fixtureDir + "/orig.png", false, loadPolicy()));
         QVERIFY(image != nullptr);
         image->setEditedImage(std::make_unique<const QImage>(image->getImage()->copy(QRect(0, 0, 8, 8))));
         QVERIFY(image->isEdited());
-        QVERIFY(!image->save(fixtureDir + "/orig.xyz"));
+        QVERIFY(!image->save(fixtureDir + "/orig.xyz", 95));
         QVERIFY2(image->isEdited(), "a failed save threw away the unsaved edit");
         QCOMPARE(image->getImage()->size(), QSize(8, 8));
     }
@@ -138,28 +138,26 @@ private slots:
         QString srcPath = saveDir + "/noise-src.png";
         QVERIFY(img.save(srcPath, "PNG"));
 
-        auto loaded = ImageFactory::createImage(srcPath, false);
+        auto loaded = ImageFactory::createImage(srcPath, false, loadPolicy());
         QVERIFY(loaded.has_value());
         auto imgStatic = *loaded;
         QVERIFY(imgStatic->getImage() != nullptr);
 
-        QVERIFY(imgStatic->save(saveDir + "/round.png"));
+        QVERIFY(imgStatic->save(saveDir + "/round.png", 95));
         QVERIFY(QFile::exists(saveDir + "/round.png"));
-        auto savedAgain = ImageFactory::createImage(saveDir + "/round.png", false);
+        auto savedAgain = ImageFactory::createImage(saveDir + "/round.png", false, loadPolicy());
         QVERIFY(savedAgain.has_value());
         auto reloaded = *savedAgain;
         QCOMPARE(reloaded->getImage()->size(), img.size());
         QCOMPARE(*reloaded->getImage(), img);
         QCOMPARE(static_cast<int>(QDir(saveDir).entryList(QDir::Files).size()), 2);
 
-        settings->setJPEGSaveQuality(10);
-        QVERIFY(imgStatic->save(saveDir + "/q10.jpg"));
+        QVERIFY(imgStatic->save(saveDir + "/q10.jpg", 10));
         qlonglong small = QFileInfo(saveDir + "/q10.jpg").size();
-        settings->setJPEGSaveQuality(95);
-        QVERIFY(imgStatic->save(saveDir + "/q95.jpg"));
+        QVERIFY(imgStatic->save(saveDir + "/q95.jpg", 95));
         qlonglong big = QFileInfo(saveDir + "/q95.jpg").size();
         QVERIFY2(small < big, "q10 jpeg should be smaller than q95 for noise");
-        QVERIFY(imgStatic->save(saveDir + "/q10.jpg"));
+        QVERIFY(imgStatic->save(saveDir + "/q10.jpg", 10));
         QCOMPARE(static_cast<int>(QDir(saveDir).entryList(QDir::Files).size()), 4);
     }
 

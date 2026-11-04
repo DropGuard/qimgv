@@ -11,8 +11,7 @@
 
 class ImageStatic : public Image {
 public:
-    ImageStatic(QString _path);
-    ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled = false);
+    ImageStatic(std::unique_ptr<DocumentInfo> _info, bool scaled, const LoadPolicy &policy);
     bool isScaledRequest() const { return mScaledRequest; }
     bool isScaledResult() const override { return mScaledApplied; }
     ~ImageStatic() override;
@@ -30,12 +29,12 @@ public:
 
 public slots:
     void crop(QRect newRect);
-    bool save() override;
-    bool save(QString destPath) override;
+    bool save(QString destPath, int jpegQuality) override;
 
 private:
     bool mScaledRequest = false;
     bool mScaledApplied = false;
+    int mAllocationLimitMb;
     void load() override;
     std::shared_ptr<const QImage> image, imageEdited;
     void loadGeneric();
