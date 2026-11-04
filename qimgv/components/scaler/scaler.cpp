@@ -35,18 +35,18 @@ void Scaler::requestScaled(const ScalerRequest &req) {
             bufferedRequest = req;
             buffered = true;
           //qDebug() << "1 requestScaled() - locking..  " <<  req.image->name();
-            cache->reserve(req.image->fileName());
+            cache->reserve(req.image->filePath());
           //qDebug() << "1 requestScaled() - LOCKED!  " <<  req.image->name();
             startRequest(req);
         } else if(bufferedRequest.image != req.image) {
           //qDebug() << "2 requestScaled() - locking...  " <<  req.image->name();
-            cache->reserve(req.image->fileName());
+            cache->reserve(req.image->filePath());
           //qDebug() << "2 requestScaled() - LOCKED!  " <<  req.image->name();
             auto tmp = bufferedRequest;
             bufferedRequest = req;
             buffered = true;
             if(startedRequest.image != tmp.image) {
-                cache->release(tmp.image->fileName());
+                cache->release(tmp.image->filePath());
               //qDebug() << "2 requestScaled() - RELEASED!  " <<  tmp.image->name();
             }
         } else {
@@ -57,7 +57,7 @@ void Scaler::requestScaled(const ScalerRequest &req) {
     } else {
         if(!buffered) {
             if(req.image != startedRequest.image)
-                cache->reserve(req.image->fileName());
+                cache->reserve(req.image->filePath());
             bufferedRequest = req;
             buffered = true;
         } else {
@@ -67,10 +67,10 @@ void Scaler::requestScaled(const ScalerRequest &req) {
             } else {
                 if(bufferedRequest.image != startedRequest.image) {
                     //qDebug() << "4 RELEASING " << bufferedRequest.image->name();
-                    cache->release(bufferedRequest.image->fileName());
+                    cache->release(bufferedRequest.image->filePath());
                 }
                 if(req.image != startedRequest.image)
-                    cache->reserve(req.image->fileName());
+                    cache->reserve(req.image->filePath());
                 bufferedRequest = req;
                 buffered = true;
             }
@@ -84,7 +84,7 @@ void Scaler::onTaskFinish(std::shared_ptr<const QImage> scaled, const ScalerRequ
     if(buffered && bufferedRequest.image == req.image) {
     } else {
       //qDebug() << "onTaskFinish() - 2 releasing..  " <<  req.image->name();
-        cache->release(req.image->fileName());
+        cache->release(req.image->filePath());
       //qDebug() << "onTaskFinish() - 2 RELEASED!  " <<  name;
     }
     if(buffered) {

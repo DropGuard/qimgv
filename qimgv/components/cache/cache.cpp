@@ -17,19 +17,27 @@ bool Cache::insert(std::shared_ptr<Image> img) {
 }
 
 void Cache::remove(const QString &path) {
-    if(items.contains(path)) {
-        items[path]->lock();
+    if(items.contains(path) && items[path]->lockStatus() != 0) {
         auto *item = items.take(path);
         delete item;
     }
 }
 
 void Cache::clear() {
-    for(auto it = items.begin(); it != items.end(); ++it) {
-        it.value()->lock();
+    // A pinned item is skipped, not waited for. lock() would block this thread
+    // on a permit that the scaler only releases from a slot queued on the SAME
+    // thread — and since the scaler's work now arrives through a queued
+    // connection, that is a deadlock rather than a wait. Skipping defers the
+    // eviction by one pass: the item stays alive, unlocks later, and the next
+    // clear or trim takes it.
+    for(auto it = items.begin(); it != items.end();) {
+        if(it.value()->lockStatus() == 0) {
+            ++it;
+            continue;
+        }
         delete it.value();
+        it = items.erase(it);
     }
-    items.clear();
 }
 
 std::shared_ptr<Image> Cache::get(const QString &path) {
@@ -49,7 +57,11 @@ bool Cache::reserve(const QString &path) {
 }
 
 bool Cache::release(const QString &path) {
-    if(items.contains(path)) {
+    // only unlock what is actually locked: a caller holding a stale key (an
+    // item evicted and re-inserted under the same path, for instance) would
+    // otherwise hand out an extra permit, and the item would then need two
+    // acquires to be evicted — permanently pinned by arithmetic
+    if(items.contains(path) && items[path]->lockStatus() == 0) {
         items[path]->unlock();
         return true;
     }
@@ -59,8 +71,8 @@ bool Cache::release(const QString &path) {
 // removes all items except the ones in list
 void Cache::trimTo(const QStringList &pathList) {
     for(auto it = items.begin(); it != items.end();) {
-        if(!pathList.contains(it.key())) {
-            it.value()->lock();
+        // keep what the caller listed, keep what is in use, evict the rest now
+        if(!pathList.contains(it.key()) && it.value()->lockStatus() != 0) {
             delete it.value();
             it = items.erase(it);
         } else {

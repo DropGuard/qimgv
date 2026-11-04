@@ -298,6 +298,43 @@ private slots:
         QCOMPARE(delivered, 1);
     }
 
+    void aPinnedImageIsSkippedByEvictionAndReleasedLater() {
+        // The scaler pins the image it is scaling so eviction cannot take it away
+        // mid-flight. The pin was keyed on the basename while the map is keyed on
+        // the absolute path, so it never pinned anything (and every miss returned
+        // false into a discarded return value). Eviction also used to WAIT on the
+        // pin — with the scaler's result now delivered through a queued
+        // connection, waiting on a permit only this thread can release is a
+        // deadlock, so eviction skips instead of blocking.
+        resetFixture();
+        const QSize orig(64, 64);
+        QVERIFY(writeBigImage(fixtureDir + "/a.png", "png", orig));
+        QVERIFY(writeBigImage(fixtureDir + "/b.png", "png", orig));
+        auto a = *ImageFactory::createImage(fixtureDir + "/a.png", false);
+        auto b = *ImageFactory::createImage(fixtureDir + "/b.png", false);
+
+        Cache cache;
+        QVERIFY(cache.insert(a));
+        QVERIFY(cache.insert(b));
+        Scaler scaler(&cache);
+        int delivered = 0;
+        QObject::connect(&scaler, &Scaler::scalingFinished, [&](QPixmap, ScalerRequest) {
+            ++delivered;
+        });
+
+        scaler.requestScaled(ScalerRequest(a, QSize(32, 32), fixtureDir + "/a.png",
+                                           QI_FILTER_BILINEAR, true));
+
+        cache.trimTo(QStringList{});
+        QVERIFY2(cache.contains(a->filePath()),
+                 "the image being scaled was evicted under the scaler — the pin missed its key");
+        QVERIFY(!cache.contains(b->filePath())); // not pinned, not listed: gone
+
+        QTRY_COMPARE_WITH_TIMEOUT(delivered, 1, 10000);
+        cache.trimTo(QStringList{});
+        QVERIFY(!cache.contains(a->filePath())); // unlocked by now, so this pass takes it
+    }
+
     void videoFrameTempFilesDoNotCollideAcrossDirectories() {
         // Two clips that share a basename in different folders used to be handed
         // the same temp file in the shared tmpDir: one worker read and removed the
