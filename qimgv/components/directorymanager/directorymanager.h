@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QObject>
-#include <QCollator>
 #include <QElapsedTimer>
 #include <QString>
 #include <QSize>
@@ -51,12 +50,6 @@ public:
     explicit DirectoryManager(EngineBridge &bridge);
     // ignored if the same dir is already opened
     bool setDirectory(const QString &);
-    // Blocking SUBDIRECTORIES-only scan into this instance, for callers that read
-    // the sibling order on the very next line (Core's folder-boundary navigation).
-    // setDirectory() cannot serve them: its listing is asynchronous, so the read
-    // would see an empty mirror. Files stay empty on purpose — this runs on the UI
-    // thread and only needs the folder order.
-    bool setSubdirsSync(const QString &dirPath);
     // The folder a folder-boundary transition should enter: this folder's place in
     // its parent's order, resolved synchronously because a folder-boundary keypress
     // needs the answer right there. Empty result means there is nowhere to go and
@@ -100,9 +93,6 @@ public:
     QString fileNameAt(int index) const;
     QString prevOfFile(const QString &filePath) const;
     QString nextOfFile(const QString &filePath) const;
-    QString prevOfDir(const QString &filePath) const;
-    QString nextOfDir(const QString &filePath) const;
-    void sortEntryLists();
     QDateTime lastModified(const QString &filePath) const;
 
     QString firstFile() const;
@@ -133,7 +123,6 @@ public:
 private:
     EngineBridge &mBridge;
     QRegularExpression regex;
-    QCollator collator;
     std::vector<FSEntry> fileEntryVec, dirEntryVec;
     const FSEntry defaultEntry;
     QString mDirectoryPath;
@@ -179,15 +168,11 @@ private:
     void readSettings();
     SortingMode mSortingMode;
 
-    bool path_entry_compare(const FSEntry &e1, const FSEntry &e2) const;
-    bool path_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const;
     // Directories only ever order by name: the engine's comparator lands on
     // its name tiebreak because scan.rs gives every directory the same
     // size/mtime defaults. The bypass's local sort and the engine's own order
     // both ask for this one rule.
-    CompareFunction dirComparator() const;
 
-    void addSubdirsFromDirectory(const QString &directoryPath);
     bool checkFileRange(int index) const;
     bool checkDirRange(int index) const;
 

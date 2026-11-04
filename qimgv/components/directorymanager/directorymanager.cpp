@@ -1,5 +1,7 @@
 #include "directorymanager.h"
 
+#include <QCollator>
+
 #include "enginebridge.h"
 #include "qimgv_engine.h"
 
@@ -17,8 +19,6 @@ DirectoryManager::DirectoryManager(EngineBridge &bridge) :
     mSortingMode(SORT_NAME)
 {
     regex.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
-    collator.setNumericMode(true);
-
     readSettings();
     setSortingMode(settings->sortingMode());
     connect(settings, &Settings::settingsChanged, this, &DirectoryManager::readSettings);
@@ -31,21 +31,6 @@ DirectoryManager::DirectoryManager(EngineBridge &bridge) :
             this, &DirectoryManager::onEngineMutated);
     mAppliedSort = mSortingMode;
 }
-
-bool DirectoryManager::path_entry_compare(const FSEntry &e1, const FSEntry &e2) const {
-    return collator.compare(e1.path, e2.path) < 0;
-};
-
-bool DirectoryManager::path_entry_compare_reverse(const FSEntry &e1, const FSEntry &e2) const {
-    return collator.compare(e1.path, e2.path) > 0;
-};
-
-CompareFunction DirectoryManager::dirComparator() const {
-    return (mSortingMode == SortingMode::SORT_NAME_DESC)
-        ? &DirectoryManager::path_entry_compare_reverse
-        : &DirectoryManager::path_entry_compare;
-}
-
 
 // ##############################################################
 // ####################### PUBLIC METHODS #######################
@@ -85,57 +70,46 @@ bool DirectoryManager::setDirectory(const QString &dirPath) {
     return true;
 }
 
-// See the header: a dirs-only scan into this instance's own vectors, for callers
-// that read the sibling order on the next line. Deliberately leaves the shared
-// engine alone — an openDir() here would repoint the process-wide inotify watch
-// away from the directory the user is actually in.
-//
-// Directories only, and that is the whole point: this runs on the UI thread, and
-// walking the 100k-entry bench fixture costs 35 ms, while also regex-matching and
-// collator-sorting every file in it costs 956 ms (measured). A folder-boundary
-// keypress must not freeze for a second.
-bool DirectoryManager::setSubdirsSync(const QString &dirPath) {
-    if(dirPath.isEmpty() || !directoryUsable(dirPath))
-        return false;
-    mDirectoryPath = dirPath;
-    dirEntryVec.clear();
-    fileEntryVec.clear();
-    addSubdirsFromDirectory(dirPath);
-    // same comparator the listing uses, so the sibling order matches the folder
-    // view; sorting an empty file list costs nothing
-    sortEntryLists();
-    return true;
-}
-
-void DirectoryManager::addSubdirsFromDirectory(const QString &directoryPath) {
-    for(const auto &entry : fs::directory_iterator(toStdString(directoryPath))) {
-        QString name = QString::fromStdString(entry.path().filename().generic_string());
-        if(!settings->showHiddenFiles() && name.startsWith(QLatin1Char('.')))
-            continue;
-        if(!entry.is_directory())
-            continue;
-        FSEntry newEntry;
-        newEntry.name = name;
-        newEntry.path = QString::fromStdString(entry.path().generic_string());
-        newEntry.isDirectory = true;
-        dirEntryVec.push_back(std::move(newEntry));
-    }
-}
-
+// A folder's sibling order is a scan, not an object with state: this used to
+// construct a throwaway DirectoryManager wired to the live bridge per
+// folder-boundary keypress. The scan stays on the UI thread (walking the
+// 100k-entry bench fixture costs 35 ms, regex-matching and collator-sorting
+// every file in it costs 956 ms — measured), the collator decides the order,
+// and the engine is never touched.
 QString DirectoryManager::adjacentDirectory(const QString &dirPath, bool forward, SortingMode mode) {
     if(dirPath.isEmpty())
         return QString();
-    // the parent's folder order, read synchronously: this answers a keypress.
-    // The bridge reference here is nominal: setSubdirsSync never touches the
-    // engine (see the header), so this instance holds an engine it will not use.
-    // The honest version of this call does not construct a DirectoryManager at
-    // all — it is a scan of a folder's subdirectories, and lifting it out of the
-    // class is recorded as a follow-up rather than smuggled into this change.
-    DirectoryManager lookup{EngineBridge::instance()};
-    lookup.setSortingMode(mode);
-    if(!lookup.setSubdirsSync(QFileInfo(dirPath).absolutePath()))
+    const QString parent = QFileInfo(dirPath).absolutePath();
+    if(!directoryUsable(parent))
         return QString();
-    return forward ? lookup.nextOfDir(dirPath) : lookup.prevOfDir(dirPath);
+
+    QStringList paths;
+    for(const auto &entry : fs::directory_iterator(toStdString(parent))) {
+        if(!entry.is_directory())
+            continue;
+        QString name = QString::fromStdString(entry.path().filename().generic_string());
+        if(!settings->showHiddenFiles() && name.startsWith(QLatin1Char('.')))
+            continue;
+        paths.append(QString::fromStdString(entry.path().generic_string()));
+    }
+
+    // dirs order by name in every mode: the engine's comparator lands on its
+    // name tiebreak because scan.rs gives every directory the same
+    // size/mtime defaults — only NAME_DESC reverses
+    QCollator collator;
+    collator.setNumericMode(true);
+    std::sort(paths.begin(), paths.end(), [&collator](const QString &a, const QString &b) {
+        return collator.compare(a, b) < 0;
+    });
+    if(mode == SortingMode::SORT_NAME_DESC)
+        std::reverse(paths.begin(), paths.end());
+
+    const int index = paths.indexOf(dirPath);
+    if(index < 0)
+        return QString();
+    if(forward)
+        return index + 1 < paths.size() ? paths.at(index + 1) : QString();
+    return index > 0 ? paths.at(index - 1) : QString();
 }
 
 bool DirectoryManager::directoryUsable(const QString &dirPath) {
@@ -223,22 +197,6 @@ QString DirectoryManager::nextOfFile(const QString &filePath) const {
     return nextFilePath;
 }
 
-QString DirectoryManager::prevOfDir(const QString &dirPath) const {
-    QString prevDirectoryPath = "";
-    int currentIndex = indexOfDir(dirPath);
-    if(currentIndex > 0)
-        prevDirectoryPath = dirEntryVec.at(currentIndex - 1).path;
-    return prevDirectoryPath;
-}
-
-QString DirectoryManager::nextOfDir(const QString &dirPath) const {
-    QString nextDirectoryPath = "";
-    int currentIndex = indexOfDir(dirPath);
-    if(currentIndex >= 0 && currentIndex < static_cast<int>(dirEntryVec.size()) - 1)
-        nextDirectoryPath = dirEntryVec.at(currentIndex + 1).path;
-    return nextDirectoryPath;
-}
-
 bool DirectoryManager::checkFileRange(int index) const {
     return index >= 0 && index < static_cast<int>(fileEntryVec.size());
 }
@@ -310,24 +268,6 @@ bool DirectoryManager::containsDir(const QString &dirPath) const {
 // ##############################################################
 // ###################### PRIVATE METHODS #######################
 // ##############################################################
-// the setSubdirsSync bypass is the one local producer of order left: it fills
-// directories only (files stay empty by contract), and the mirror's own file
-// vectors are the engine's order, spliced from the wire — nothing here sorts
-// them
-void DirectoryManager::sortEntryLists() {
-    // Directories always order by name. Two producers have to agree on that, and
-    // only one of them is configurable by the sort mode:
-    //   - scan.rs gives every directory size 0 and mtime UNIX_EPOCH, so the
-    //     engine's comparator lands on its name tiebreak for TIME and SIZE modes;
-    //   - the mirror keeps the arena's order instead of re-sorting, so the folder
-    //     view *is* the engine's order.
-    // Sorting dirs here on those equal fields would hand an all-equivalent range
-    // to std::sort (not stable) and let "go to next folder" walk siblings in an
-    // order the view does not show. Only NAME_DESC reverses dirs, because that is
-    // the one mode whose engine comparator reverses them.
-    std::sort(dirEntryVec.begin(), dirEntryVec.end(), std::bind(dirComparator(), this, std::placeholders::_1, std::placeholders::_2));
-}
-
 void DirectoryManager::setSortingMode(SortingMode mode) {
     if(mode != mSortingMode) {
         mSortingMode = mode;
@@ -337,10 +277,8 @@ void DirectoryManager::setSortingMode(SortingMode mode) {
             return;
         }
         mAppliedSort = mode;
-        if(fileEntryVec.size() > 1 || dirEntryVec.size() > 1) {
-            sortEntryLists();
-            emit sortingChanged();
-        }
+        // without an open directory the vectors are empty — they only fill
+        // through the engine now that the subdirs bypass is gone
     }
 }
 
