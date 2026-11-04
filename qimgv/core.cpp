@@ -1296,6 +1296,13 @@ QString Core::currentFilePath() const {
     return state.currentFilePath;
 }
 
+bool Core::isSettled() const {
+    return !state.delayLoadArmed
+        && model
+        && model->listingSettled()
+        && !model->loaderBusy();
+}
+
 bool Core::loadFileIndex(int index, bool async, bool preload) {
     if(!model)
         return false;
@@ -1490,6 +1497,7 @@ void Core::onModelItemReady(std::shared_ptr<Image> img, const QString &path, boo
         if(state.delayModel) {
             this->showGui();
             state.delayModel = false;
+            state.delayLoadArmed = true;
             QTimer::singleShot(40, this, SLOT(modelDelayLoad()));
         }
         model->unloadExcept(state.currentFilePath, settings->usePreloader());
@@ -1501,6 +1509,7 @@ void Core::onModelItemReady(std::shared_ptr<Image> img, const QString &path, boo
 }
 
 void Core::modelDelayLoad() {
+    state.delayLoadArmed = false;
     model->setDirectory(state.directoryPath);
     mw->setDirectoryPath(state.directoryPath);
     model->updateImage(state.currentFilePath, state.currentImg);

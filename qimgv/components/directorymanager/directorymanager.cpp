@@ -341,6 +341,14 @@ SortingMode DirectoryManager::sortingMode() const {
     return mSortingMode;
 }
 
+bool DirectoryManager::isSettled() const {
+    return mMirroredDir == mEngineDir
+        && mAppliedSort == mSortingMode
+        && !mResyncing
+        && !mWantRescan
+        && !(rescanTimer && rescanTimer->isActive());
+}
+
 // Entry management
 
 // skips filename regex check
@@ -540,6 +548,17 @@ void DirectoryManager::applyEngineModification(const QString &path, bool isDir, 
 void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index) {
     if(mResyncing)
         return;
+    // A mutation edits the listing the vectors currently hold, so its path has
+    // to live in the directory those vectors describe. The wire carries no
+    // directory for a mutation, and the engine's order index is computed
+    // against its own listing — splicing a foreign path in would put a row from
+    // another folder at a position that means nothing here. Nothing has been
+    // mirrored yet, so there is nothing to contradict.
+    if(!mMirroredDir.isEmpty() && !path.startsWith(mMirroredDir + QLatin1Char('/'))) {
+        qWarning() << "[DirectoryManager] mutation outside the mirrored directory:" << path
+                   << "mirrored:" << mMirroredDir;
+        return;
+    }
     switch(kind) {
         case QIMGV_MUT_ADDED: {
             if(containsFile(path) || containsDir(path))

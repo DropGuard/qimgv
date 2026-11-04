@@ -125,7 +125,7 @@ private slots:
         // neighbor b must not decode — and the cache trim drops it
         QVERIFY(core.loadPath(files.at(3)));
         QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(3), 10000);
-        QTest::qWait(400);
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
         QVERIFY(!core.model->isLoaded(files.at(1)));
 
         // one backward move: the preload must follow the travel direction and
@@ -167,7 +167,9 @@ private slots:
 
         const int before = listed.count();
         emit actionManager->nextImage();
-        QTest::qWait(500); // a folder change would have queued a listing
+        // settled = nothing outstanding *and* no deferred hop armed; the old
+        // 500ms sleep could only hope the 40ms one was slow enough to be seen
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
         QCOMPARE(listed.count(), before);
         QVERIFY(!sawDir(listed, beta, before));
         QCOMPARE(core.currentFilePath(), QDir(alpha).filePath("a.png"));

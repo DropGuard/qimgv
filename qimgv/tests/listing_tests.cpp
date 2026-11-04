@@ -164,7 +164,7 @@ private slots:
 
         dm.setSortingMode(SORT_NAME_DESC);
         QTRY_COMPARE_WITH_TIMEOUT(dm.sortingMode() == SORT_NAME_DESC, true, 10000);
-        QTest::qWait(400); // allow any (wrongly) converging mirror to land
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000); // allow any (wrongly) converging mirror to land
         QCOMPARE(dm.fileCount(), 4UL);
         QCOMPARE(dm.containsFile(fixtureDir + "/mime-ok.xyz"), true);
     }
@@ -212,7 +212,9 @@ private slots:
         // the listing lands (the counts arrive), the cancelled action stays
         // silent, and a double cancel is a no-op rather than an error
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3, 10000);
-        QTest::qWait(300);
+        // the pending actions run inside the same listing event, so a settled
+        // mirror is the bound; the sleep only hoped the event had been processed
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
         QVERIFY(!fired);
         QVERIFY(!dm.cancelListed(token));
     }
@@ -290,13 +292,13 @@ private slots:
             QVERIFY(f.write("appended") == 8);
         }
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 5UL, 10000); // 3 - 1 + 3 new
-        QTest::qWait(200); // straggling events drain before the pull
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000); // stragglers drained before the pull
         assertMirrorMatchesEngineExport(dm);
 
         // under SIZE sort a metadata change re-seats the entry on the engine
         // side; the mirror must follow the wire index, not its own comparator
         dm.setSortingMode(SORT_SIZE);
-        QTest::qWait(400); // the resort's rebuilt mirror settles
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000); // the resort's mirror settles
         assertMirrorMatchesEngineExport(dm);
 
         {
@@ -306,8 +308,44 @@ private slots:
         }
         QTRY_VERIFY_WITH_TIMEOUT(dm.indexOfFile(fixtureDir + "/10.jpg")
                                      > dm.indexOfFile(fixtureDir + "/img2.jpg"), 10000);
-        QTest::qWait(200);
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
         assertMirrorMatchesEngineExport(dm);
+    }
+
+    void mutationsOutsideTheMirroredDirectoryAreDropped() {
+        // The mirror's vectors are one directory's listing, so a mutation whose
+        // path belongs to another folder cannot be an edit of them: the engine's
+        // order index means nothing here, and the row would be a file the user
+        // never has on screen. The wire carries no directory for a mutation, so
+        // the mirror has to make that check itself.
+        resetFixture();
+        DirectoryManager dm;
+        auto &bridge = EngineBridge::instance();
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
+        const unsigned long before = dm.fileCount();
+        QVERIFY(before > 0);
+
+        QSignalSpy added(&dm, &DirectoryManager::fileAdded);
+        emit bridge.dirMutated(QIMGV_MUT_ADDED, QStringLiteral("/some/other/place/x.jpg"),
+                               false, 1, 0, 0);
+        QCOMPARE(added.count(), 0);
+        QCOMPARE(dm.fileCount(), before);
+        QVERIFY(!dm.containsFile(QStringLiteral("/some/other/place/x.jpg")));
+
+        // and the shape the engine bug actually produced: the *same name* from
+        // another folder. The mirror keys on the full path, so it would not
+        // collide — it would simply gain a row for a file that is not here, at
+        // an index computed against the other folder's order.
+        const QString twin = QFileInfo(dm.filePathAt(0)).fileName();
+        emit bridge.dirMutated(QIMGV_MUT_ADDED, QStringLiteral("/some/other/place/") + twin,
+                               false, 1, 0, 1);
+        QCOMPARE(added.count(), 0);
+        QCOMPARE(dm.fileCount(), before);
+
+        // the guard must not swallow the real case
+        makeFile("legit.jpg");
+        QTRY_VERIFY_WITH_TIMEOUT(dm.containsFile(fixtureDir + "/legit.jpg"), 10000);
     }
 };
 

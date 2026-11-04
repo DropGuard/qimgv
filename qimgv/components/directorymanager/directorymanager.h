@@ -73,6 +73,14 @@ public:
     unsigned long dirCount() const;
     inline bool isSupportedFile(const QString &filePath) const;
     bool isEmpty() const;
+    // True when nothing this instance asked the engine for is still in flight:
+    // the vectors reflect the directory that was opened, the requested sort is
+    // the applied sort, and no resync or bounded rescan is armed. Deliberately
+    // answers only "is anything pending", never "what is in the listing" — so a
+    // caller can wait on it instead of sleeping, but it can never stand in for
+    // an assertion about content (sortingMode() could: it reports the requested
+    // mode, which setSortingMode writes before it returns).
+    bool isSettled() const;
     bool containsFile(const QString &filePath) const;
     QString fileNameAt(int index) const;
     QString prevOfFile(const QString &filePath) const;

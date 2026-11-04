@@ -105,6 +105,15 @@ public:
         QCOMPARE(bridge.listedDirectory(), dir);
     }
 
+    // "and nothing else arrives" needs a bound, not a sleep: the loader keeps a
+    // path in its task table until the reply has been delivered on this thread,
+    // so an idle loader means no queued loadFinished is still on its way. The
+    // sleeps this replaces (600ms "a second tier would have arrived by now")
+    // passed by luck whenever the machine was fast and failed by luck otherwise.
+    void waitLoaderIdle(DirectoryModel &model) {
+        QTRY_VERIFY_WITH_TIMEOUT(!model.loaderBusy(), 10000);
+    }
+
     void init() {
         QVERIFY(home.path() != nullptr);
         // IsolatedHome already redirected HOME and the config identity

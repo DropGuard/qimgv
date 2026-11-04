@@ -48,6 +48,9 @@ public:
     void unload(int index);
 
     bool loaderBusy() const;
+    // the manager's "no listing work in flight", forwarded the way loader state
+    // already is: a caller waiting on the engine should not need the manager
+    bool listingSettled() const;
 
     std::shared_ptr<Image> getImageAt(int index);
     std::shared_ptr<Image> getImage(const QString &filePath);

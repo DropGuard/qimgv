@@ -55,7 +55,7 @@ private slots:
 
         model.load(fixtureDir + "/big.png", true);
         QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 1, 10000);
-        QTest::qWait(600); // a second tier would have arrived by now
+        waitLoaderIdle(model); // a second tier would have arrived by now
         QCOMPARE(ready.count(), 1);
         QCOMPARE(ready.at(0).at(2).toBool(), false);
         QCOMPARE(spyImage(ready, 0)->size(), orig);
@@ -101,7 +101,7 @@ private slots:
         model.load(fixtureDir + "/big.jpg", true);
         QCOMPARE(ready.count(), 1);
         QCOMPARE(ready.at(0).at(2).toBool(), false);
-        QTest::qWait(300);
+        waitLoaderIdle(model);
         QCOMPARE(ready.count(), 1);
     }
 
@@ -121,12 +121,12 @@ private slots:
         // a full-res image has left mScaledCache: the upgrade is a no-op,
         // not a third decode of the same file
         model.upgradeToFull(fixtureDir + "/big.png");
-        QTest::qWait(400);
+        waitLoaderIdle(model);
         QCOMPARE(ready.count(), 0);
 
         // and a path outside the listing goes nowhere
         model.upgradeToFull(fixtureDir + "/missing.jpg");
-        QTest::qWait(200);
+        waitLoaderIdle(model);
         QCOMPARE(ready.count(), 0);
     }
 };

@@ -141,9 +141,10 @@ private slots:
                                      SORT_SIZE, SORT_SIZE_DESC};
         for(SortingMode mode : modes) {
             dm.setSortingMode(mode);
-            QTRY_VERIFY_WITH_TIMEOUT(dm.sortingMode() == mode, 10000);
-            QTest::qWait(400); // let the resort's listing rebuild land
-
+            QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
+            // the rows are the check, not the mode: sortingMode() reports the
+            // mode this instance *asked* for, which is written before the
+            // engine is told and so was true the moment the call returned
             QStringList view;
             for(unsigned long i = 0; i < dm.dirCount(); ++i)
                 view << dm.dirPathAt(int(i));
@@ -177,13 +178,12 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(dm.dirCount(), 3UL, 10000); // alpha, subdir, zulu
 
         dm.setSortingMode(SORT_TIME);
-        QTRY_VERIFY_WITH_TIMEOUT(dm.sortingMode() == SORT_TIME, 10000);
-        QTest::qWait(400); // let the resort's rebuild land
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
 
         // a name that belongs in the middle, never at the end
         QVERIFY(QDir(fixtureDir).mkdir("mike"));
         QTRY_COMPARE_WITH_TIMEOUT(dm.dirCount(), 4UL, 10000);
-        QTest::qWait(400);
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
 
         QStringList rows;
         for(unsigned long i = 0; i < dm.dirCount(); ++i)
@@ -194,6 +194,28 @@ private slots:
         // navigation walks the same order
         QCOMPARE(DirectoryManager::adjacentDirectory(fixtureDir + "/mike", true, SORT_TIME),
                  fixtureDir + "/subdir");
+    }
+
+    void settlePredicateTracksTheReplyInsteadOfTheRequest() {
+        // isSettled() is only worth waiting on if it is false while the engine
+        // still owes a reply; otherwise every QTRY_VERIFY(isSettled()) in this
+        // file is a sleep with a better name. The reverse order is used because
+        // it always changes the listing, whatever the persisted mode was.
+        resetFixture();
+
+        DirectoryManager dm;
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
+        QVERIFY2(dm.fileCount() > 1, "a one-row resort proves nothing");
+
+        const SortingMode flip = (dm.sortingMode() == SORT_NAME) ? SORT_NAME_DESC : SORT_NAME;
+        dm.setSortingMode(flip);
+        // synchronous window: the requested mode is already stored (this is what
+        // the old wait tested) while the reply can only arrive via the event loop
+        QVERIFY(dm.sortingMode() == flip);
+        QVERIFY(!dm.isSettled());
+
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
     }
 };
 
