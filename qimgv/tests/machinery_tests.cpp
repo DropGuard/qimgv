@@ -317,17 +317,17 @@ private slots:
 
     void shortcutBuilderMapsMouseButtonsWithTheirQuirks() {
         inputMap = InputMap::getInstance();
-        QMouseEvent lmb(QEvent::MouseButtonPress, QPointF(1, 1), Qt::LeftButton,
+        QMouseEvent lmb(QEvent::MouseButtonPress, QPointF(1, 1), QPointF(1, 1), Qt::LeftButton,
                         Qt::LeftButton, Qt::NoModifier);
         QCOMPARE(ShortcutBuilder::fromEvent(&lmb), QStringLiteral("LMB"));
-        QMouseEvent rmbRelease(QEvent::MouseButtonRelease, QPointF(1, 1), Qt::RightButton,
+        QMouseEvent rmbRelease(QEvent::MouseButtonRelease, QPointF(1, 1), QPointF(1, 1), Qt::RightButton,
                                Qt::RightButton, Qt::NoModifier);
         QCOMPARE(ShortcutBuilder::fromEvent(&rmbRelease), QStringLiteral("RMB"));
         // RMB is recognized on release only — a press is deliberately ignored
-        QMouseEvent rmbPress(QEvent::MouseButtonPress, QPointF(1, 1), Qt::RightButton,
+        QMouseEvent rmbPress(QEvent::MouseButtonPress, QPointF(1, 1), QPointF(1, 1), Qt::RightButton,
                              Qt::RightButton, Qt::NoModifier);
         QCOMPARE(ShortcutBuilder::fromEvent(&rmbPress), QString());
-        QMouseEvent dbl(QEvent::MouseButtonDblClick, QPointF(1, 1), Qt::LeftButton,
+        QMouseEvent dbl(QEvent::MouseButtonDblClick, QPointF(1, 1), QPointF(1, 1), Qt::LeftButton,
                         Qt::LeftButton, Qt::NoModifier);
         QCOMPARE(ShortcutBuilder::fromEvent(&dbl), QStringLiteral("LMB_DoubleClick"));
     }
