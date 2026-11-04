@@ -28,7 +28,8 @@ int main(int argc, char **argv) {
     const QString mine = base + "/pid" + QString::number(QCoreApplication::applicationPid());
     QDir(mine).removeRecursively();
     QDir(base).mkpath(QFileInfo(mine).fileName());
-    for(const QString &stale : QDir(base).entryList(QStringList() << QStringLiteral("pid*"), QDir::Dirs))
+    const QStringList orphans = QDir(base).entryList(QStringList() << QStringLiteral("pid*"), QDir::Dirs);
+    for(const QString &stale : orphans)
         if(!QFile::exists(QStringLiteral("/proc/%1").arg(stale.mid(3))))
             QDir(base + "/" + stale).removeRecursively();
     int failures = 0;

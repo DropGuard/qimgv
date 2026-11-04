@@ -125,6 +125,10 @@ private:
     // which is how the engine-behind rescan never used to happen.
     bool mWantRescan = false;
     int mRejectedListings = 0;
+    // a mirror-driven rescan request must be bounded: if the engine and the
+    // mirror disagree permanently, an unbounded 150ms re-open is a livelock
+    // (it took one test slot 152 seconds the day the dead call was revived)
+    int mBehindRescans = 0;
     struct PendingListed {
         qint64 token;
         QString dir;
@@ -143,6 +147,7 @@ private:
     // never re-derives either
     void applyEngineModification(const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
     void scheduleRescan();
+    void requestRescanIfBehind(bool behind);
     // false when the arena was rejected: the mirror keeps what it had, because a
     // truncation applied is a directory that never existed anywhere.
     bool mirrorEngineListing(const QString &dirPath);

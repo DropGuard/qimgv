@@ -46,7 +46,7 @@ public:
     // return the PREVIOUS directory — legitimately, and the reason a caller that
     // waits on a count alone can read someone else's listing. Comes from the
     // engine's own event, not from what was requested.
-    QString listedDirectory() const;
+    const QString &listedDirectory() const;
 
     // synchronous reads of the engine's current listing (for mirroring)
     int fileCount() const;

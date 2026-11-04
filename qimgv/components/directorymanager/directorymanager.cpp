@@ -418,6 +418,24 @@ std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
 
 // in-app file operations and an engine snapshot that looks stale both land
 // here; the debounced re-open lets the engine catch up with local truth.
+// The mirror keeps entries the engine's listing does not have (local truth the
+// engine has not caught up with). Rescanning is the right response, but only a
+// bounded number of times: a permanent disagreement is a bug to report, not a
+// timer to run forever.
+void DirectoryManager::requestRescanIfBehind(bool behind) {
+    if(!behind) {
+        mBehindRescans = 0;
+        return;
+    }
+    if(mBehindRescans >= 3) {
+        qWarning() << "[DirectoryManager] engine listing disagrees with the mirror for"
+                   << mDirectoryPath << "after" << mBehindRescans << "rescans; stopping resync loop";
+        return;
+    }
+    ++mBehindRescans;
+    mWantRescan = true;
+}
+
 void DirectoryManager::scheduleRescan() {
     if(mResyncing)
         return;
@@ -675,8 +693,7 @@ bool DirectoryManager::mirrorEngineListing(const QString &dirPath) {
         emit loaded(mDirectoryPath);
         qDebug() << "[DirectoryManager] listing rebuild (incl. view repopulation)"
                  << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
-        if(engineBehind)
-            mWantRescan = true;   // consumed by onEngineDirListed, past mResyncing
+        requestRescanIfBehind(engineBehind);
         return true;
     }
 
@@ -761,7 +778,8 @@ bool DirectoryManager::mirrorEngineListing(const QString &dirPath) {
 
     mPrevFileMeta = std::move(newMeta);
     qDebug() << "[DirectoryManager] listing resync" << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
-    if(staleSnapshot || engineBehind)
-        mWantRescan = true;      // same reason as above: not while mResyncing is set
+    if(staleSnapshot)
+        mWantRescan = true;      // not while mResyncing is set, so deferred
+    requestRescanIfBehind(engineBehind);
     return true;
 }

@@ -93,7 +93,7 @@ void EngineBridge::setShowHidden(bool show) {
         qimgv_engine_set_show_hidden(engine, show ? 1 : 0);
 }
 
-QString EngineBridge::listedDirectory() const {
+const QString &EngineBridge::listedDirectory() const {
     return mListedDir;
 }
 
