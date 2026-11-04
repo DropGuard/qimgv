@@ -31,6 +31,9 @@ python3 scripts/lint.py build --gate
 # clazy 独立构建树(build-clazy 已配置,clazy 1.17 + level0/level1/detaching)
 CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
 
+# 行覆盖率(逻辑层/GUI 层分开报;只为排序测试优先级,不是门禁)
+python3 scripts/coverage.py
+
 # 消毒树(独立目录,默认构建不变):ASan+UBSan 抓堆错误/泄漏/UB。
 # 注意:断言全过时套件仍可能因 LSan 退出泄漏而红——证据在
 # Testing/Temporary/LastTest.log,不在 ctest 输出里
