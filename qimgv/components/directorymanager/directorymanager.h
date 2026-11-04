@@ -88,6 +88,15 @@ public:
     // an assertion about content (sortingMode() could: it reports the requested
     // mode, which setSortingMode writes before it returns).
     bool isSettled() const;
+    // The half of mirroring that applies a listing, split out so a test can hand
+    // the mirror one the engine does not currently hold. Nothing in production
+    // calls it directly: mirrorEngineListing pulls the arena and forwards. This
+    // is the only way to reach the states a real filesystem will not produce on
+    // demand — an engine snapshot that lags a file which still exists, for
+    // instance, which is what MirrorState::Diverged is about.
+    bool applyArena(const QString &dirPath, const QByteArray &listing,
+                    quint32 newFileCount, quint32 newDirCount);
+
     bool containsFile(const QString &filePath) const;
     QString fileNameAt(int index) const;
     QString prevOfFile(const QString &filePath) const;

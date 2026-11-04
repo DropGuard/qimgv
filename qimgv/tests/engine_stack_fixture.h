@@ -13,6 +13,7 @@
 #pragma once
 
 #include <QTest>
+#include <QtEndian>
 #include <QGuiApplication>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -112,6 +113,40 @@ public:
     // passed by luck whenever the machine was fast and failed by luck otherwise.
     void waitLoaderIdle(DirectoryModel &model) {
         QTRY_VERIFY_WITH_TIMEOUT(!model.loaderBusy(), 10000);
+    }
+
+    // Serialize a listing exactly the way model.rs::write_listing does: u32 file
+    // count, u32 dir count, then records (files first) of u64 handle, u64 size,
+    // i64 mtime_ms, u32 name_len, u32 path_len, name bytes, path bytes, all
+    // little-endian. A test needs a producer to go with EngineBridge::parseListing
+    // because the states worth pinning are ones a real filesystem does not hand
+    // over on demand — a snapshot that lags a file which is still on disk, for
+    // instance. The handle is a placeholder: the parser skips it.
+    static QByteArray arenaFor(const QStringList &files, const QStringList &dirs) {
+        QByteArray arena;
+        auto append = [&arena](const void *data, int n) {
+            arena.append(static_cast<const char *>(data), n);
+        };
+        auto put32 = [&append](quint32 v) { v = qToLittleEndian(v); append(&v, 4); };
+        auto put64 = [&append](quint64 v) { v = qToLittleEndian(v); append(&v, 8); };
+        auto putI64 = [&append](qint64 v) { v = qToLittleEndian(v); append(&v, 8); };
+
+        put32(quint32(files.size()));
+        put32(quint32(dirs.size()));
+        quint64 handle = 1;
+        for(const QStringList *list : {&files, &dirs})
+            for(const QString &path : *list) {
+                const QByteArray name = QFileInfo(path).fileName().toUtf8();
+                const QByteArray full = path.toUtf8();
+                put64(handle++);
+                put64(1);
+                putI64(0);
+                put32(quint32(name.size()));
+                put32(quint32(full.size()));
+                append(name.constData(), int(name.size()));
+                append(full.constData(), int(full.size()));
+            }
+        return arena;
     }
 
     void init() {

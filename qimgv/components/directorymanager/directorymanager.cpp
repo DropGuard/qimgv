@@ -441,8 +441,14 @@ std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
 // timer to run forever.
 void DirectoryManager::requestRescanIfBehind(bool behind) {
     if(!behind) {
+        // A listing that agrees leaves no repair outstanding. Without this the
+        // same call path that flagged the staleness (an entry kept because it
+        // still exists on disk) would keep asking for a rescan it just proved it
+        // does not need, and isSettled() would stay false for a reason the mirror
+        // has already resolved.
         mBehindRescans = 0;
-        mMirror = MirrorState::Synced;  // the disagreement is repaired, not abandoned
+        mWantRescan = false;
+        mMirror = MirrorState::Synced;
         return;
     }
     if(mBehindRescans >= 3) {
@@ -451,6 +457,10 @@ void DirectoryManager::requestRescanIfBehind(bool behind) {
                        << mDirectoryPath << "after" << mBehindRescans << "rescans; giving up and"
                        << "reporting the folder as unsettled from now on";
         mMirror = MirrorState::Diverged;
+        // We are not going to rescan, so do not leave that claimed: with the flag
+        // still set, isSettled() would be false for "a repair is pending" and the
+        // divergence itself would stay invisible behind it.
+        mWantRescan = false;
         return;
     }
     ++mBehindRescans;
@@ -630,15 +640,18 @@ void DirectoryManager::onEngineOpenFailed(const QString &dirPath, int code) {
 }
 
 bool DirectoryManager::mirrorEngineListing(const QString &dirPath) {
-    QElapsedTimer rebuildTimer;
-    rebuildTimer.start();
-    auto &bridge = mBridge;
-
     // bulk pull: the whole listing crosses in one engine lock pass
     QByteArray listing;
     quint32 newFileCount = 0, newDirCount = 0;
-    if(!bridge.exportListing(listing, newFileCount, newDirCount))
+    if(!mBridge.exportListing(listing, newFileCount, newDirCount))
         return false;
+    return applyArena(dirPath, listing, newFileCount, newDirCount);
+}
+
+bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &listing,
+                                  quint32 newFileCount, quint32 newDirCount) {
+    QElapsedTimer rebuildTimer;
+    rebuildTimer.start();
 
     // parse the arena into mirror entries
     QElapsedTimer parseTimer;
