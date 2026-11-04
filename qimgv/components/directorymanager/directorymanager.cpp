@@ -701,20 +701,13 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
         newDirPaths.insert(d.path);
     qDebug() << "[dbg] parse" << parseTimer.elapsed() << "ms; hash containers" << hashTimer.elapsed() << "ms";
 
-    // The engine snapshot may predate local mutations (operation-applied
-    // creates/renames). Never regress to a stale listing: same-directory
-    // entries that still exist on disk are kept and a rescan converges the
-    // engine afterwards.
-    std::vector<FSEntry> keepFiles, keepDirs;
-    for(const auto &e : fileEntryVec)
-        if(!newPaths.contains(e.path) && QFileInfo(e.path).absolutePath() == dirPath
-           && QFileInfo(e.path).isFile())
-            keepFiles.push_back(e);
-    for(const auto &e : dirEntryVec)
-        if(!newDirPaths.contains(e.path) && QFileInfo(e.path).absolutePath() == dirPath
-           && QFileInfo(e.path).isDir())
-            keepDirs.push_back(e);
-    const bool engineBehind = !keepFiles.empty() || !keepDirs.empty();
+    // The mirror is a pure projection of the export: an entry the export lacks
+    // is gone, with no stat of the filesystem to second-guess the engine. The
+    // stat-based keep that used to live here repaired missed events silently
+    // and made divergence unmeasurable; missed events now surface through the
+    // convergence contract instead. Local mutations no longer run ahead of the
+    // engine — forceInsert's includePath lands in the same export that would
+    // otherwise be compared against it.
 
     const bool isNewDir = (mMirroredDir != dirPath);
     QElapsedTimer rebuildTimer2;
@@ -739,10 +732,6 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
             entry.isDirectory = true;
             dirEntryVec.push_back(std::move(entry));
         }
-        for(auto &e : keepFiles)
-            fileEntryVec.push_back(std::move(e));
-        for(auto &e : keepDirs)
-            dirEntryVec.push_back(std::move(e));
         mPrevFileMeta = std::move(newMeta);
         mMirroredDir = dirPath;
         qDebug() << "[DirectoryManager] listing vectors rebuilt" << rebuildTimer2.elapsed() << "ms";
@@ -752,7 +741,8 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
         emit loaded(mDirectoryPath);
         qDebug() << "[DirectoryManager] listing rebuild (incl. view repopulation)"
                  << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
-        requestRescanIfBehind(engineBehind);
+        // a fresh listing is the definition of agreement
+        requestRescanIfBehind(false);
         return true;
     }
 
@@ -764,16 +754,12 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
     for(const auto &d : dirEntryVec)
         oldDirPaths.insert(d.path);
 
-    // 1. removals (descending index keeps earlier indexes valid); a missing
-    //    entry that still exists on disk means a stale engine snapshot
-    bool staleSnapshot = false;
+    // 1. removals (descending index keeps earlier indexes valid); an entry the
+    //    export lacks is removed unconditionally — the mirror never consults
+    //    the filesystem against the engine
     for(int i = static_cast<int>(fileEntryVec.size()) - 1; i >= 0; --i) {
         const QString &p = fileEntryVec[static_cast<size_t>(i)].path;
         if(!newPaths.contains(p)) {
-            if(QFileInfo(p).isFile()) {
-                staleSnapshot = true;
-                continue;
-            }
             emit fileRemoved(p, i);
             fileEntryVec.erase(fileEntryVec.begin() + i);
         }
@@ -781,10 +767,6 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
     for(int i = static_cast<int>(dirEntryVec.size()) - 1; i >= 0; --i) {
         const QString &p = dirEntryVec[static_cast<size_t>(i)].path;
         if(!newDirPaths.contains(p)) {
-            if(QFileInfo(p).isDir()) {
-                staleSnapshot = true;
-                continue;
-            }
             emit dirRemoved(p, i);
             dirEntryVec.erase(dirEntryVec.begin() + i);
         }
@@ -837,8 +819,6 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
 
     mPrevFileMeta = std::move(newMeta);
     qDebug() << "[DirectoryManager] listing resync" << newFileCount << "files took" << rebuildTimer.elapsed() << "ms";
-    if(staleSnapshot)
-        mWantRescan = true;      // not while mResyncing is set, so deferred
-    requestRescanIfBehind(engineBehind);
+    requestRescanIfBehind(false);
     return true;
 }
