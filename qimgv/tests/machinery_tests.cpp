@@ -1,4 +1,7 @@
 #include "engine_stack_fixture.h"
+#include "components/scriptmanager/scriptmanager.h"
+#include "utils/inputmap.h"
+#include "shortcutbuilder.h"
 #include "components/thumbnailer/thumbnailerrunnable.h"
 
 // the machinery that degrades quietly instead of crashing: randomizer, cache,
@@ -245,6 +248,113 @@ private slots:
         DocumentInfo plain(fixtureDir + "/clip.mp4", videoOff);
         QCOMPARE(plain.type(), DocumentType::STATIC);
         QCOMPARE(plain.format(), QStringLiteral("mp4"));
+    }
+
+    // ScriptManager's blocking path used to swallow a failed start behind a
+    // misspelled qDebug ("Unable not run") while the caller waited on a process
+    // that would never run — the detached path announced failures, this one
+    // did not.
+    void scriptBlockingFailureIsAnnounced() {
+        auto sm = ScriptManager::getInstance();
+        QSignalSpy errored(sm, &ScriptManager::error);
+        QVERIFY(errored.isValid());
+        sm->addScript("no-such-tool", Script("qimgv-no-such-binary-42 --flag", true));
+        sm->runScript("no-such-tool", nullptr);
+        QTRY_COMPARE_WITH_TIMEOUT(errored.count(), 1, 5000);
+        QVERIFY(errored.at(0).at(0).toString().contains("qimgv-no-such-binary-42"));
+        sm->removeScript("no-such-tool");
+    }
+
+    void scriptBlockingRunCompletesWithoutError() {
+        auto sm = ScriptManager::getInstance();
+        QSignalSpy errored(sm, &ScriptManager::error);
+        QVERIFY(errored.isValid());
+        sm->addScript("true-bin", Script("/bin/true", true));
+        sm->runScript("true-bin", nullptr);
+        QTest::qWait(300); // runScript blocks inside; this only catches late errors
+        QCOMPARE(errored.count(), 0);
+        sm->removeScript("true-bin");
+    }
+
+    void splitCommandLineKeepsQuotedArguments() {
+        auto parts = ScriptManager::splitCommandLine(QString::fromUtf8(R"(cmd "two words" tail)"));
+        QCOMPARE(parts.size(), 3);
+        QCOMPARE(parts.at(1), QStringLiteral("two words"));
+        QCOMPARE(parts.at(2), QStringLiteral("tail"));
+    }
+
+    void processArgumentsSubstitutesTheFileTag() {
+        resetFixture();
+        QVERIFY(writeBigImage(fixtureDir + "/tagged.png", "png", QSize(8, 8)));
+        auto img = *ImageFactory::createImage(fixtureDir + "/tagged.png", false, loadPolicy());
+        QStringList cmd = { "tool", "%file%" };
+        ScriptManager::processArguments(cmd, img);
+        QCOMPARE(cmd.at(1), fixtureDir + "/tagged.png");
+    }
+
+    // ShortcutBuilder had no coverage at all; these pin the event-to-sequence
+    // mapping against the hardcoded default input map (Ctrl, WheelUp/Down,
+    // the button names, and the double-click / RMB-release quirks).
+    void shortcutBuilderMapsLettersAndModifiers() {
+        inputMap = InputMap::getInstance();
+        QKeyEvent xKey(QEvent::KeyPress, Qt::Key_X, Qt::NoModifier, QString("x"));
+        QCOMPARE(ShortcutBuilder::fromEvent(&xKey), QStringLiteral("X"));
+        QKeyEvent ctrlX(QEvent::KeyPress, Qt::Key_X, Qt::ControlModifier, QString("x"));
+        QCOMPARE(ShortcutBuilder::fromEvent(&ctrlX), QStringLiteral("Ctrl+X"));
+        // a modifier alone is not a shortcut
+        QKeyEvent ctrlOnly(QEvent::KeyPress, Qt::Key_Control, Qt::ControlModifier);
+        QCOMPARE(ShortcutBuilder::fromEvent(&ctrlOnly), QString());
+    }
+
+    void shortcutBuilderMapsWheelDirection() {
+        inputMap = InputMap::getInstance();
+        QWheelEvent down(QPointF(8, 8), QPointF(8, 8), QPoint(), QPoint(0, -120),
+                         Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCOMPARE(ShortcutBuilder::fromEvent(&down), QStringLiteral("WheelDown"));
+        QWheelEvent up(QPointF(8, 8), QPointF(8, 8), QPoint(), QPoint(0, 120),
+                       Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCOMPARE(ShortcutBuilder::fromEvent(&up), QStringLiteral("WheelUp"));
+    }
+
+    void shortcutBuilderMapsMouseButtonsWithTheirQuirks() {
+        inputMap = InputMap::getInstance();
+        QMouseEvent lmb(QEvent::MouseButtonPress, QPointF(1, 1), Qt::LeftButton,
+                        Qt::LeftButton, Qt::NoModifier);
+        QCOMPARE(ShortcutBuilder::fromEvent(&lmb), QStringLiteral("LMB"));
+        QMouseEvent rmbRelease(QEvent::MouseButtonRelease, QPointF(1, 1), Qt::RightButton,
+                               Qt::RightButton, Qt::NoModifier);
+        QCOMPARE(ShortcutBuilder::fromEvent(&rmbRelease), QStringLiteral("RMB"));
+        // RMB is recognized on release only — a press is deliberately ignored
+        QMouseEvent rmbPress(QEvent::MouseButtonPress, QPointF(1, 1), Qt::RightButton,
+                             Qt::RightButton, Qt::NoModifier);
+        QCOMPARE(ShortcutBuilder::fromEvent(&rmbPress), QString());
+        QMouseEvent dbl(QEvent::MouseButtonDblClick, QPointF(1, 1), Qt::LeftButton,
+                        Qt::LeftButton, Qt::NoModifier);
+        QCOMPARE(ShortcutBuilder::fromEvent(&dbl), QStringLiteral("LMB_DoubleClick"));
+    }
+
+    // ImageAnimated had no coverage at all: the QMovie-based loader and the
+    // direct frame decode behind getImage() now run against a real two-frame
+    // GIF.
+    void imageAnimatedLoadsFramesFromAGif() {
+        resetFixture();
+        // minimal two-frame GIF89a (PIL-generated at authoring time)
+        const QByteArray gif = QByteArray::fromBase64(
+            "R0lGODlhAgACAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACw"
+            "AAAAAAgACAAAIBgABCAQQEAAh+QQBCgABACwAAAAAAgACAIEAAP8AAAAAAAAAAAAIBgABCAQ"
+            "QEAA7");
+        QFile f(fixtureDir + "/anim.gif");
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(gif);
+        f.close();
+
+        auto image = *ImageFactory::createImage(fixtureDir + "/anim.gif", false, loadPolicy());
+        QCOMPARE(image->type(), DocumentType::ANIMATED);
+        auto animated = std::dynamic_pointer_cast<ImageAnimated>(image);
+        QVERIFY(animated != nullptr);
+        QVERIFY(animated->frameCount() >= 1);
+        QVERIFY(animated->getImage() != nullptr);
+        QVERIFY(!animated->getImage()->isNull());
     }
 
     // The scale pipeline is: worker thread computes the image, Scaler::onTaskFinish

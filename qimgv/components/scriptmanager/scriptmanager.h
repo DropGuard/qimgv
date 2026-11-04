@@ -18,6 +18,9 @@ public:
     static ScriptManager* getInstance();
     ~ScriptManager() override;
     void runScript(const QString &scriptName, std::shared_ptr<Image> img);
+    // pure tag substitution over the command line: public static so a test can
+    // pin the seam, the way ThumbnailerRunnable::videoFrameTempPath does
+    static void processArguments(QStringList &cmd, const std::shared_ptr<Image>& img);
     static QString runCommand(const QString& cmd);
     static void runCommandDetached(const QString& cmd);
     bool scriptExists(const QString& scriptName);
@@ -36,7 +39,6 @@ signals:
 private:
     explicit ScriptManager(QObject *parent = nullptr);
     QMap<QString, Script> scripts; // <name, script>
-    void processArguments(QStringList &cmd, const std::shared_ptr<Image>& img);
 
 };
 

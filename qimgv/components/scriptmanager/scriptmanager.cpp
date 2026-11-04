@@ -37,7 +37,13 @@ void ScriptManager::runScript(const QString &scriptName, std::shared_ptr<Image> 
         if(script.blocking) {
             exec.start(program, arguments);
             if(!exec.waitForStarted()) {
-                qDebug() << "Unable not run application/script." << program << " Make sure it is an executable.";
+                // the failed start used to hide behind a misspelled qDebug
+                // while the caller waited on a process that would never run
+                QString errorString = "Error: unable to run application/script: " + program +
+                                      ". Make sure it is an executable.";
+                emit error(errorString);
+                qWarning() << errorString;
+                return;
             }
             exec.waitForFinished(10000);
         } else {
@@ -45,9 +51,10 @@ void ScriptManager::runScript(const QString &scriptName, std::shared_ptr<Image> 
                 QFileInfo fi(program);
                 QString errorString;
                 if(fi.isFile() && !fi.isExecutable())
-                     errorString = "Error:  " + program + "  is not an executable.";
+                     errorString = "Error: " + program + " is not an executable.";
                 else
-                    errorString = "Error: unable run application/script. See README for working examples.";
+                    errorString = "Error: unable to run application/script: " + program +
+                                  ". See README for working examples.";
                 emit error(errorString);
                 qWarning() << errorString;
             }
