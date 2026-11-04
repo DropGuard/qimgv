@@ -4,6 +4,17 @@ qimgv | Current version: 1.0.2
 =====
 Image viewer. Fast, easy to use. Optional video support.
 
+> **This fork targets Linux (KDE/Qt6), and it is the only platform it can be
+> built on today.** The installation sections for Windows and BSD below come
+> from upstream qimgv, whose platform differences were absorbed by Qt. Here the
+> directory listing belongs to the Rust engine, whose watcher is an inotify one:
+> on other platforms the event channel is `never()`, the old
+> `QFileSystemWatcher` fallback is gone, and `inotify`/`libc` are unconditional
+> dependencies. So live folder updates, and the build itself, are not expected
+> to work elsewhere. If another platform is ever picked up, the first step is
+> `cargo check --target x86_64-pc-windows-gnu` — it does not link, so it runs
+> fine here and will say how much is missing before anything is written.
+
 ## Screenshots
 
 Main window & panel        |  Folder view   |  Settings window  
@@ -136,6 +147,8 @@ qimgv can open some extra formats via third-party image plugins. All of them are
 
 ## Windows
   
+  *(Upstream text. This fork does not build on Windows — see the note at the top.)*
+
   Windows builds are portable (everything is contained within the install folder). The installer also sets up file associations.
   
   _NOTE: `-video` variants include mpv for video support_
@@ -201,6 +214,8 @@ apk add qimgv
 ```
 
 ## BSD
+
+*(Upstream text. This fork does not build on BSD either — see the note at the top.)*
 
 ### FreeBSD
 

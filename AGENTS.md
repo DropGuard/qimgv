@@ -46,6 +46,15 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
    `git show` 完整 diff 逐行自查函数体引用;shadow 清零不等于行为不变——家族
    之间会互相制造(修 shadow 造出 unused-parameter)。凡行为可能变的修复,按
    纪律 3 钉住。
+6. **只修能编译的路径;事实平台只有 Linux。** 引擎 watcher 是 inotify(整条
+   `cfg(target_os = "linux")`),非 Linux 时事件通道是 `never()`,C++ 的后备
+   `QFileSystemWatcher` 已随迁移删除(全仓零命中),`inotify`/`libc` 还是无条件
+   依赖——别的平台过不了构建。README 的 `## Windows`/`## BSD`、19 个带 `Q_OS_WIN`/`_WIN32`
+   的文件和 `supportsWatching()`(定义有、调用者无)都是上游继承的痕迹,不是本
+   分支的承诺;曾有 agent 给一条 `cfg(windows)` 分支"顺手补了缺失的 import"并
+   写进提交信息,而那段代码在 crate 层面就够不着。要动别的平台先拿事实:
+   `rustup target add x86_64-pc-windows-gnu` + `cargo check --target ...`
+   (check 不链接,编译验证在这里做得到,做不到的只有运行时)。
 
 ## 已知债务(有基线,只许缩)
 
