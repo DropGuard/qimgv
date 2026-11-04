@@ -174,8 +174,15 @@ bool EngineBridge::exportListing(QByteArray &out, quint32 &fileCount, quint32 &d
         const int rc = qimgv_engine_export_listing(engine,
                                                    reinterpret_cast<unsigned char *>(out.data()),
                                                    size_t(out.size()), &needed, &fc, &dc);
-        if (rc == QIMGV_OK)
+        if (rc == QIMGV_OK) {
+            // A successful write fills `needed` bytes and no more, and `needed`
+            // may be SMALLER than the buffer this loop grew to on a previous
+            // round if the listing shrank in between. Parsing the longer buffer
+            // would leave trailing zeros past the last record and the exactness
+            // check would report a corrupt arena, so hand back what was written.
+            out.resize(int(needed));
             break;
+        }
         if (rc != QIMGV_ERR_TRUNCATED || needed <= size_t(out.size()) || attempt >= 16) {
             qWarning() << "[EngineBridge] export listing failed:" << qimgv_last_error();
             return false;
