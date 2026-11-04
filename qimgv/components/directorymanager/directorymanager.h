@@ -26,6 +26,7 @@
 #include "sourcecontainers/fsentry.h"
 
 class QTimer;
+class EngineBridge;
 
 #ifdef Q_OS_WIN32
 #include "windows.h"
@@ -41,7 +42,13 @@ typedef bool (DirectoryManager::*CompareFunction)(const FSEntry &e1, const FSEnt
 class DirectoryManager : public QObject {
     Q_OBJECT
 public:
-    DirectoryManager();
+    // Which engine this instance mirrors. Required, not defaulted: a manager
+    // that quietly picks the process-wide bridge cannot be pointed at another
+    // one, and the ambiguity is not hypothetical — a test that spies on one
+    // bridge while its manager talks to a different one sees no events at all and
+    // reports that as the design's fault. Production passes
+    // EngineBridge::instance() at the construction site, where it is visible.
+    explicit DirectoryManager(EngineBridge &bridge);
     // ignored if the same dir is already opened
     bool setDirectory(const QString &);
     // Blocking SUBDIRECTORIES-only scan into this instance, for callers that read
@@ -116,6 +123,7 @@ public:
     static int engineSortMode(SortingMode mode);
 
 private:
+    EngineBridge &mBridge;
     QRegularExpression regex;
     QCollator collator;
     std::vector<FSEntry> fileEntryVec, dirEntryVec;

@@ -12,7 +12,8 @@ Q_LOGGING_CATEGORY(lcWatchPerf, "qimgv.perf.watch", QtInfoMsg)
 
 namespace fs = std::filesystem;
 
-DirectoryManager::DirectoryManager() :
+DirectoryManager::DirectoryManager(EngineBridge &bridge) :
+    mBridge(bridge),
     mSortingMode(SORT_NAME)
 {
     regex.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
@@ -22,11 +23,11 @@ DirectoryManager::DirectoryManager() :
     setSortingMode(settings->sortingMode());
     connect(settings, &Settings::settingsChanged, this, &DirectoryManager::readSettings);
 
-    connect(&EngineBridge::instance(), &EngineBridge::dirListed,
+    connect(&mBridge, &EngineBridge::dirListed,
             this, &DirectoryManager::onEngineDirListed);
-    connect(&EngineBridge::instance(), &EngineBridge::openFailed,
+    connect(&mBridge, &EngineBridge::openFailed,
             this, &DirectoryManager::onEngineOpenFailed);
-    connect(&EngineBridge::instance(), &EngineBridge::dirMutated,
+    connect(&mBridge, &EngineBridge::dirMutated,
             this, &DirectoryManager::onEngineMutated);
     mAppliedSort = mSortingMode;
 }
@@ -59,7 +60,7 @@ bool DirectoryManager::setDirectory(const QString &dirPath) {
         mEngineDir.clear();
         if(rescanTimer)
             rescanTimer->stop();
-        EngineBridge::instance().stopWatch();
+        mBridge.stopWatch();
         return false;
     }
     if(!directoryUsable(dirPath))
@@ -69,7 +70,7 @@ bool DirectoryManager::setDirectory(const QString &dirPath) {
     // vectors keep serving the previous directory until then. A *refused* request
     // is not asynchronous though: nothing will ever arrive, so it has to fail
     // here rather than leave the caller staring at a silently empty folder.
-    if(!EngineBridge::instance().openDir(dirPath, engineSortMode(mSortingMode),
+    if(!mBridge.openDir(dirPath, engineSortMode(mSortingMode),
                                          settings->showHiddenFiles())) {
         qWarning() << "[DirectoryManager] engine refused" << dirPath
                    << (qimgv_last_error() ? qimgv_last_error() : "");
@@ -125,8 +126,13 @@ void DirectoryManager::addSubdirsFromDirectory(const QString &directoryPath) {
 QString DirectoryManager::adjacentDirectory(const QString &dirPath, bool forward, SortingMode mode) {
     if(dirPath.isEmpty())
         return QString();
-    // the parent's folder order, read synchronously: this answers a keypress
-    DirectoryManager lookup;
+    // the parent's folder order, read synchronously: this answers a keypress.
+    // The bridge reference here is nominal: setSubdirsSync never touches the
+    // engine (see the header), so this instance holds an engine it will not use.
+    // The honest version of this call does not construct a DirectoryManager at
+    // all — it is a scan of a folder's subdirectories, and lifting it out of the
+    // class is recorded as a follow-up rather than smuggled into this change.
+    DirectoryManager lookup{EngineBridge::instance()};
     lookup.setSortingMode(mode);
     if(!lookup.setSubdirsSync(QFileInfo(dirPath).absolutePath()))
         return QString();
@@ -328,7 +334,7 @@ void DirectoryManager::setSortingMode(SortingMode mode) {
         mSortingMode = mode;
         if(!mEngineDir.isEmpty()) {
             // engine resorts and reports back via onEngineDirListed()
-            EngineBridge::instance().setSort(engineSortMode(mode));
+            mBridge.setSort(engineSortMode(mode));
             return;
         }
         mAppliedSort = mode;
@@ -371,7 +377,7 @@ bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
         qCDebug(lcWatchPerf) << "fileIns" << filePath << directoryPath();
         emit fileAdded(filePath);
         // keep the engine listing in sync (the filter doesn't match this file)
-        EngineBridge::instance().includePath(filePath);
+        mBridge.includePath(filePath);
     }
     return true;
 }
@@ -463,7 +469,7 @@ void DirectoryManager::scheduleRescan() {
         rescanTimer->setInterval(150);
         connect(rescanTimer, &QTimer::timeout, this, [this]() {
             if(!mResyncing && !mDirectoryPath.isEmpty())
-                EngineBridge::instance().openDir(mDirectoryPath, engineSortMode(mSortingMode),
+                mBridge.openDir(mDirectoryPath, engineSortMode(mSortingMode),
                                                  settings->showHiddenFiles());
         });
     }
@@ -626,7 +632,7 @@ void DirectoryManager::onEngineOpenFailed(const QString &dirPath, int code) {
 bool DirectoryManager::mirrorEngineListing(const QString &dirPath) {
     QElapsedTimer rebuildTimer;
     rebuildTimer.start();
-    auto &bridge = EngineBridge::instance();
+    auto &bridge = mBridge;
 
     // bulk pull: the whole listing crosses in one engine lock pass
     QByteArray listing;

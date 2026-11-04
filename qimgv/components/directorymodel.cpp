@@ -1,7 +1,10 @@
 #include "directorymodel.h"
 
+#include "components/directorymanager/enginebridge.h"
+
 DirectoryModel::DirectoryModel(QObject *parent) :
-    QObject(parent)
+    QObject(parent),
+    dirManager(EngineBridge::instance())
 {
     scaler = new Scaler(&cache);
 

@@ -32,7 +32,7 @@ private slots:
 
     void directoryManagerOpenIsAsynchronous() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QSignalSpy loaded(&dm, &DirectoryManager::loaded);
         QSignalSpy failed(&dm, &DirectoryManager::loadingFailed);
 
@@ -51,13 +51,13 @@ private slots:
 
     void missingDirectoryFailsFast() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(!dm.setDirectory("/nonexistent/qimgv-test-42"));
     }
 
     void sortingResortsAsynchronously() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
 
@@ -70,7 +70,7 @@ private slots:
 
     void liveFileCreationArrivesViaWatcher() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QSignalSpy added(&dm, &DirectoryManager::fileAdded);
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
@@ -88,7 +88,7 @@ private slots:
 
     void liveFileDeletionEmitsRemoved() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
@@ -107,7 +107,7 @@ private slots:
         // entry with an empty one, the fileModified signal still fired,
         // nothing crashed — the file just silently vanished from the mirror.
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QSignalSpy modified(&dm, &DirectoryManager::fileModified);
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
@@ -136,7 +136,7 @@ private slots:
         // the engine does not pair inotify rename cookies (v1): a rename
         // surfaces as Removed(old) + Added(new) — ordered and lossless
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
         QSignalSpy added(&dm, &DirectoryManager::fileAdded);
         QVERIFY(dm.setDirectory(fixtureDir));
@@ -152,7 +152,7 @@ private slots:
 
     void forceInsertSurvivesResortViaInclude() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
 
@@ -175,7 +175,7 @@ private slots:
 
     void whenListedFiresWhenTheListingLands() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         bool fired = false;
         dm.whenListed(fixtureDir, [&fired] { fired = true; });
@@ -189,7 +189,7 @@ private slots:
         QFile f(fixtureDir + "/second/z.jpg");
         QVERIFY(f.open(QIODevice::WriteOnly));
 
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         bool staleFired = false;
         dm.whenListed(fixtureDir, [&staleFired] { staleFired = true; });
@@ -204,7 +204,7 @@ private slots:
 
     void whenListedCanBeCancelled() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         bool fired = false;
         qint64 token = dm.whenListed(fixtureDir, [&fired] { fired = true; });
@@ -289,7 +289,7 @@ private slots:
     // order put it.)
     void mirrorStaysAFaithfulProjectionOfTheEngineListing() {
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
 
@@ -332,7 +332,7 @@ private slots:
         // never has on screen. The wire carries no directory for a mutation, so
         // the mirror has to make that check itself.
         resetFixture();
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         auto &bridge = EngineBridge::instance();
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);

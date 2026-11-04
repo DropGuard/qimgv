@@ -97,7 +97,7 @@ private slots:
         // updates die for the rest of the session with nothing on screen to show
         resetFixture();
 
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
 
@@ -133,7 +133,7 @@ private slots:
         for (int i = names.size() - 1; i >= 0; --i)
             reversed << names.at(i);
 
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.dirCount(), 4UL, 10000);
 
@@ -173,7 +173,7 @@ private slots:
         QVERIFY(QDir(fixtureDir).mkdir("alpha"));
         QVERIFY(QDir(fixtureDir).mkdir("zulu"));
 
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.dirCount(), 3UL, 10000); // alpha, subdir, zulu
 
@@ -203,7 +203,7 @@ private slots:
         // it always changes the listing, whatever the persisted mode was.
         resetFixture();
 
-        DirectoryManager dm;
+        DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
         QVERIFY2(dm.fileCount() > 1, "a one-row resort proves nothing");
