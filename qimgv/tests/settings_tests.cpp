@@ -105,6 +105,45 @@ private slots:
         settings->setFolderEndAction(FOLDER_END_NO_ACTION);
     }
 
+    // the state-side lists: bookmarks and saved paths round-trip through the
+    // state config (IsolatedHome keeps this off the developer's real state)
+    void bookmarksAndSavedPathsRoundTrip() {
+        FreshSettings fresh;
+        QStringList paths = { "/tmp/a", "/tmp/b with space" };
+        settings->setBookmarks(paths);
+        settings->setSavedPaths({ "/home/user/pictures" });
+        QCOMPARE(settings->bookmarks(), paths);
+        QCOMPARE(settings->savedPaths(), QStringList { "/home/user/pictures" });
+        settings->setBookmarks({});
+        QVERIFY(settings->bookmarks().isEmpty());
+    }
+
+    // the open-dialog filter policy: Qt's decodable mime types plus the
+    // hardcoded video formats, gated by videoPlayback
+    void supportedMimeTypesFollowVideoPlaybackPolicy() {
+        FreshSettings fresh;
+        settings->setVideoPlayback(true);
+        QVERIFY(settings->supportedMimeTypes().contains("video/mp4"));
+        QVERIFY(settings->supportedMimeTypes().contains("image/jpeg"));
+        settings->setVideoPlayback(false);
+        QVERIFY(!settings->supportedMimeTypes().contains("video/mp4"));
+        QVERIFY(settings->supportedMimeTypes().contains("image/png"));
+    }
+
+    // the shortcut map's round trip through the ini, including the "eq" escape
+    // for names that would collide with the k=v encoding
+    void shortcutRoundTripEscapesTrailingEquals() {
+        FreshSettings fresh;
+        QMap<QString, QString> shortcuts;
+        shortcuts.insert("ctrl+x", "25");
+        shortcuts.insert("ctrl+=", "26"); // the "=" key needs the escape
+        settings->saveShortcuts(shortcuts);
+        QMap<QString, QString> back;
+        settings->readShortcuts(back);
+        QCOMPARE(back.value("ctrl+x"), QStringLiteral("25"));
+        QCOMPARE(back.value("ctrl+="), QStringLiteral("26"));
+    }
+
     void freshSettingsGuardIsolatesConfigState() {
         // without the guard, every test had to reset the keys it depends on
         // and the suite was silently order-sensitive
