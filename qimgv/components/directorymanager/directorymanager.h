@@ -126,6 +126,14 @@ private:
     QString mEngineDir;      // dir we asked the engine to open
     QString mMirroredDir;    // dir the vectors currently reflect
     SortingMode mAppliedSort;
+    // Where the mirror stands relative to the engine. Giving up has to be a state
+    // rather than silence: the resync bound below stops asking after a few rounds,
+    // and before this existed the give-up path left mWantRescan false, so
+    // isSettled() answered "settled" to a folder this instance knows it disagrees
+    // with. Diverged is not repaired by waiting — it clears when a listing arrives
+    // that agrees, or when a new directory is opened (a fresh claim, not a retry).
+    enum class MirrorState { Synced, Behind, Diverged };
+    MirrorState mMirror = MirrorState::Synced;
     QTimer *rescanTimer = nullptr;
     bool mResyncing = false;
     // requested from inside the mirror and consumed after mResyncing clears: a
@@ -135,7 +143,9 @@ private:
     int mRejectedListings = 0;
     // a mirror-driven rescan request must be bounded: if the engine and the
     // mirror disagree permanently, an unbounded 150ms re-open is a livelock
-    // (it took one test slot 152 seconds the day the dead call was revived)
+    // (it took one test slot 152 seconds the day the dead call was revived).
+    // The bound is the point of Diverged: stopping is legitimate, pretending to
+    // have converged is not.
     int mBehindRescans = 0;
     struct PendingListed {
         qint64 token;

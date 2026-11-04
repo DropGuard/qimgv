@@ -78,6 +78,8 @@ bool DirectoryManager::setDirectory(const QString &dirPath) {
     mDirectoryPath = dirPath;
     mEngineDir = dirPath;
     mAppliedSort = mSortingMode;
+    mMirror = MirrorState::Synced;
+    mBehindRescans = 0;
     // a newer open supersedes everything armed for the previous session
     pendingOnListed.clear();
     return true;
@@ -346,6 +348,7 @@ bool DirectoryManager::isSettled() const {
         && mAppliedSort == mSortingMode
         && !mResyncing
         && !mWantRescan
+        && mMirror != MirrorState::Diverged
         && !(rescanTimer && rescanTimer->isActive());
 }
 
@@ -433,14 +436,19 @@ std::filesystem::file_time_type DirectoryManager::fileTimeFromMs(qint64 ms) {
 void DirectoryManager::requestRescanIfBehind(bool behind) {
     if(!behind) {
         mBehindRescans = 0;
+        mMirror = MirrorState::Synced;  // the disagreement is repaired, not abandoned
         return;
     }
     if(mBehindRescans >= 3) {
-        qWarning() << "[DirectoryManager] engine listing disagrees with the mirror for"
-                   << mDirectoryPath << "after" << mBehindRescans << "rescans; stopping resync loop";
+        if(mMirror != MirrorState::Diverged)
+            qWarning() << "[DirectoryManager] engine listing disagrees with the mirror for"
+                       << mDirectoryPath << "after" << mBehindRescans << "rescans; giving up and"
+                       << "reporting the folder as unsettled from now on";
+        mMirror = MirrorState::Diverged;
         return;
     }
     ++mBehindRescans;
+    mMirror = MirrorState::Behind;
     mWantRescan = true;
 }
 
