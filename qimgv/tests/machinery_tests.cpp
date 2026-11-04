@@ -356,6 +356,52 @@ private slots:
         QVERIFY(!animated->getImage()->isNull());
     }
 
+    // ThemeStore resolves every scheme with a valid tid and derived contrast
+    // variants; the base colors are the table defaults verbatim.
+    void themeStoreSchemesResolveTheirBaseColors() {
+        auto black = ThemeStore::colorScheme(COLORS_BLACK);
+        QCOMPARE(black.tid, static_cast<int>(COLORS_BLACK));
+        QCOMPARE(black.background, QColor(QString::fromUtf8("#000000")));
+        QCOMPARE(black.text, QColor(QString::fromUtf8("#b0b0b0")));
+        QVERIFY(black.text_hc.isValid() && black.text_hc != black.text);
+        QVERIFY(black.button.isValid());
+
+        auto light = ThemeStore::colorScheme(COLORS_LIGHT);
+        QCOMPARE(light.tid, static_cast<int>(COLORS_LIGHT));
+        QCOMPARE(light.folderview_topbar, QColor(QString::fromUtf8("#ffffff")));
+        QVERIFY(light.text_hc.isValid() && light.text_hc != light.text);
+
+        auto darkblue = ThemeStore::colorScheme(COLORS_DARKBLUE);
+        QCOMPARE(darkblue.background, QColor(QString::fromUtf8("#18191a")));
+        QCOMPARE(darkblue.accent, QColor(QString::fromUtf8("#336ca5")));
+
+        // the system scheme rides the platform palette, but the tid is its own
+        auto system = ThemeStore::colorScheme(COLORS_SYSTEM);
+        QCOMPARE(system.tid, static_cast<int>(COLORS_SYSTEM));
+        QVERIFY(system.widget.isValid());
+    }
+
+    // DocumentInfo's exif path: a written-EXIF fixture flows through exiv2 into
+    // the orientation accessor and the tag map
+    void documentInfoReadsExifOrientationAndTags() {
+        resetFixture();
+        // orientation 6 = rotate 90 CW; Make/Model/DateTime feed loadExifTags
+        // (PIL-written at authoring time; one long literal, correctness over beauty)
+        const QByteArray exifBytes = QByteArray::fromBase64(
+            "/9j/4AAQSkZJRgABAQAAAQABAAD/4QBuRXhpZgAATU0AKgAAAAgABAEPAAIAAAAJAAAAPgEQAAIAAAAKAAAASAESAAMAAAABAAYAAAEyAAIAAAAUAAAAUgAAAABUZXN0TWFrZQAAVGVzdE1vZGVsADIwMjQ6MDE6MDIgMDM6MDQ6MDUA/9sAQwAIBgYHBgUIBwcHCQkICgwUDQwLCwwZEhMPFB0aHx4dGhwcICQuJyAiLCMcHCg3KSwwMTQ0NB8nOT04MjwuMzQy/9sAQwEJCQkMCwwYDQ0YMiEcITIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy/8AAEQgACAAIAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8Ahooor4c/OD//2Q==");
+        QFile out(fixtureDir + "/exif.jpg");
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write(exifBytes);
+        out.close();
+
+        DocumentInfo doc(fixtureDir + "/exif.jpg", LoadPolicy::fromSettings());
+        // exifOrientation() returns QImageReader::transformation()'s flag
+        // value, not the raw tag: orientation 6 lands as TransformationRotate90
+        QCOMPARE(doc.exifOrientation(), 4); // QImageIOHandler::TransformationRotate90
+        doc.loadExifTags(); // the tag map is lazy
+        QVERIFY(!doc.getExifTags().isEmpty());
+    }
+
     // The scale pipeline is: worker thread computes the image, Scaler::onTaskFinish
     // runs on that thread (direct connection) and re-emits across a QUEUED hop to the
     // thread Scaler lives on. If the payload has no metatype, Qt drops the call with a

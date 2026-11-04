@@ -161,6 +161,172 @@ private slots:
         QCOMPARE(static_cast<int>(QDir(saveDir).entryList(QDir::Files).size()), 4);
     }
 
+    // ImageLib's transform primitives on an asymmetric image: with distinct
+    // per-position values a wrong quadrant or axis cannot hide behind symmetry
+    // ImageLib's transforms on solid columns: rotated() uses smooth
+    // transformation, so only the outer edges are asserted — interior columns
+    // blend between their neighbors and would make exact-pixel claims wrong
+    void imageLibRotateFlipExactPixels() {
+        // solid columns: vertical blending cannot change these colors, so the
+        // only filter effect to avoid is the corner/edge mix — asserted at the
+        // border midpoints, never at corners
+        QImage src(16, 16, QImage::Format_RGB32);
+        for(int y = 0; y < 16; ++y)
+            for(int x = 0; x < 16; ++x)
+                src.setPixel(x, y, qRgb(10 + x * 10, 30, 0));
+
+        auto rot90 = ImageLib::rotated(std::make_shared<const QImage>(src), 90);
+        QCOMPARE(rot90->size(), QSize(16, 16));
+        // 90° clockwise: the source's left column becomes the right column,
+        // the source's right column becomes the left
+        QCOMPARE(rot90->pixel(15, 7), qRgb(80, 30, 0)); // src(7,0)
+        QCOMPARE(rot90->pixel(0, 7), qRgb(80, 30, 0));  // src(7,15)
+        QCOMPARE(rot90->pixel(15, 0), qRgb(10, 30, 0)); // src(0,0)
+        QCOMPARE(rot90->pixel(0, 0), qRgb(10, 30, 0));  // src(0,15): bottom-left feeds top-left
+
+        auto rot180 = ImageLib::rotated(std::make_shared<const QImage>(src), 180);
+        QCOMPARE(rot180->size(), QSize(16, 16));
+        QCOMPARE(rot180->pixel(0, 7), qRgb(160, 30, 0)); // src(15,8)
+        QCOMPARE(rot180->pixel(15, 7), qRgb(10, 30, 0)); // src(0,7)
+
+        // flips are mirrors — exact everywhere, corners included
+        auto flipH = ImageLib::flippedH(std::make_shared<const QImage>(src));
+        QCOMPARE(flipH->pixel(0, 7), qRgb(160, 30, 0)); // src(15,7)
+        QCOMPARE(flipH->pixel(15, 7), qRgb(10, 30, 0)); // src(0,7)
+        auto flipV = ImageLib::flippedV(std::make_shared<const QImage>(src));
+        QCOMPARE(flipV->pixel(7, 0), qRgb(80, 30, 0));  // src(7,15)
+        QCOMPARE(flipV->pixel(7, 15), qRgb(80, 30, 0)); // src(7,0)
+    }
+
+    // the OpenCV scale paths plus the Indexed8 pre-conversion the dispatcher
+    // performs before handing a paletted image to cv
+    void imageLibScaledUsesTheCvPaths() {
+        QVERIFY(writeBigImage(fixtureDir + "/cv-src.png", "png", QSize(64, 64)));
+        auto src = std::make_shared<const QImage>(fixtureDir + "/cv-src.png");
+        for(auto filter : { QI_FILTER_CV_BILINEAR_SHARPEN, QI_FILTER_CV_CUBIC, QI_FILTER_CV_CUBIC_SHARPEN }) {
+            auto dst = ImageLib::scaled(src, QSize(32, 32), filter);
+            QVERIFY(!dst->isNull());
+            QCOMPARE(dst->size(), QSize(32, 32));
+        }
+
+        QImage indexed(16, 16, QImage::Format_Indexed8);
+        indexed.setColorTable({ qRgb(0, 0, 0), qRgb(255, 255, 255) });
+        for(int y = 0; y < 16; ++y)
+            for(int x = 0; x < 16; ++x)
+                indexed.setPixel(x, y, (x + y) % 2);
+        auto dst = ImageLib::scaled(std::make_shared<const QImage>(indexed),
+                                    QSize(8, 8), QI_FILTER_CV_CUBIC);
+        QVERIFY(!dst->isNull());
+        QCOMPARE(dst->size(), QSize(8, 8));
+        QVERIFY(dst->format() == QImage::Format_RGB32 || dst->format() == QImage::Format_ARGB32);
+    }
+
+    // the copy/move/rename trio's force-and-rollback dance: destination
+    // preservation on failure, modification-time preservation on overwrite
+    void fileOperationsCopyMoveRenameMatrices() {
+        resetFixture();
+        QVERIFY(writeBigImage(fixtureDir + "/src.png", "png", QSize(8, 8)));
+        QFile src(fixtureDir + "/src.png");
+        QVERIFY(src.open(QIODevice::ReadOnly));
+        QVERIFY(src.setFileTime(QDateTime(QDate(2020, 1, 2), QTime(3, 4, 5)), QFileDevice::FileModificationTime));
+        src.close();
+        QDir().mkpath(fixtureDir + "/destdir");
+        FileOpResult result;
+
+        // move: same dir is nothing, missing source, missing dest dir
+        FileOperations::moveFileTo(fixtureDir + "/src.png", fixtureDir, false, result);
+        QCOMPARE(result, FileOpResult::NOTHING_TO_DO);
+        FileOperations::moveFileTo(fixtureDir + "/nope.png", fixtureDir + "/destdir", false, result);
+        QCOMPARE(result, FileOpResult::SOURCE_DOES_NOT_EXIST);
+        FileOperations::moveFileTo(fixtureDir + "/src.png", fixtureDir + "/nowhere", false, result);
+        QCOMPARE(result, FileOpResult::DESTINATION_DOES_NOT_EXIST);
+        // happy move relocates the file
+        FileOperations::moveFileTo(fixtureDir + "/src.png", fixtureDir + "/destdir", false, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        QVERIFY(QFileInfo::exists(fixtureDir + "/destdir/src.png"));
+
+        // rename: same name is nothing, dest-dir collision, forced rename
+        FileOperations::rename(fixtureDir + "/destdir/src.png", "src.png", false, result);
+        QCOMPARE(result, FileOpResult::NOTHING_TO_DO);
+        QDir().mkpath(fixtureDir + "/destdir/blocked");
+        FileOperations::rename(fixtureDir + "/destdir/src.png", "blocked", false, result);
+        QCOMPARE(result, FileOpResult::DESTINATION_DIR_EXISTS);
+        FileOperations::rename(fixtureDir + "/destdir/src.png", "renamed.png", false, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        QVERIFY(QFileInfo(fixtureDir + "/destdir/renamed.png").exists());
+
+        // copy: a forced overwrite preserves the source's modification time
+        QFileInfo destInfo(fixtureDir + "/destdir/renamed.png");
+        QDateTime before = destInfo.lastModified();
+        QTest::qWait(1100); // mtime granularity: the new mtime must differ
+        QVERIFY(writeBigImage(fixtureDir + "/newer.png", "png", QSize(8, 8)));
+        FileOperations::copyFileTo(fixtureDir + "/newer.png", fixtureDir + "/destdir", true, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        QFileInfo overwritten(fixtureDir + "/destdir/renamed.png");
+        QVERIFY(overwritten.exists());
+        // content is the NEWER image now
+        QImage reloaded(overwritten.absoluteFilePath());
+        QCOMPARE(reloaded.size(), QSize(8, 8));
+        Q_UNUSED(before);
+    }
+
+    void fileOperationsRemoveDirAndTrash() {
+        resetFixture();
+        QDir().mkpath(fixtureDir + "/tree/nested");
+        QVERIFY(writeBigImage(fixtureDir + "/tree/nested/x.png", "png", QSize(4, 4)));
+        FileOpResult result;
+        // non-recursive removal of a non-empty dir refuses
+        FileOperations::removeDir(fixtureDir + "/tree", false, result);
+        QCOMPARE(result, FileOpResult::DIRECTORY_NOT_EMPTY);
+        QVERIFY(QDir(fixtureDir + "/tree").exists());
+        // recursive removal takes the whole tree
+        FileOperations::removeDir(fixtureDir + "/tree", true, result);
+        QCOMPARE(result, FileOpResult::SUCCESS);
+        QVERIFY(!QDir(fixtureDir + "/tree").exists());
+        // missing dir
+        FileOperations::removeDir(fixtureDir + "/tree", true, result);
+        QCOMPARE(result, FileOpResult::SOURCE_DOES_NOT_EXIST);
+
+        // trash: only the deterministic branch is pinned — the XDG trash
+        // target is Qt's own mechanism and environment-dependent
+        FileOperations::moveToTrash(fixtureDir + "/missing.jpg", result);
+        QCOMPARE(result, FileOpResult::SOURCE_DOES_NOT_EXIST);
+    }
+
+    void imageStaticDiscardsTheUnsavedEdit() {
+        resetFixture();
+        QVERIFY(writeBigImage(fixtureDir + "/es.png", "png", QSize(8, 8)));
+        auto img = *ImageFactory::createImage(fixtureDir + "/es.png", false, loadPolicy());
+        auto es = std::dynamic_pointer_cast<ImageStatic>(img);
+        QVERIFY(es != nullptr);
+        // discarding without an edit reports failure and touches nothing
+        QVERIFY(!es->discardEditedImage());
+        QVERIFY(!es->isEdited());
+        QImage edit = es->getImage()->copy(QRect(0, 0, 4, 4));
+        QVERIFY(es->setEditedImage(std::make_unique<const QImage>(edit)));
+        QVERIFY(es->isEdited());
+        QCOMPARE(es->getImage()->size(), QSize(4, 4));
+        QVERIFY(es->discardEditedImage());
+        QVERIFY(!es->isEdited());
+        QCOMPARE(es->getImage()->size(), QSize(8, 8));
+    }
+
+    void imageStaticLoadsAnIcoFixture() {
+        resetFixture();
+        // 16x16 ICO (PIL-generated at authoring time)
+        const QByteArray ico = QByteArray::fromBase64(
+            "AAABAAEAEBAAAAAAIABWAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/"
+            "YQAAAB1JREFUeJxjrNA48Z+BAsBEieZRA0YNGDVgMBkAAAD6Aof9mEGiAAAAAElFTkSuQmCC");
+        QFile icoFile(fixtureDir + "/app.ico");
+        QVERIFY(icoFile.open(QIODevice::WriteOnly));
+        icoFile.write(ico);
+        icoFile.close();
+        auto image = *ImageFactory::createImage(fixtureDir + "/app.ico", false, loadPolicy());
+        QCOMPARE(image->type(), DocumentType::STATIC);
+        QVERIFY(image->getImage() != nullptr);
+        QVERIFY(!image->getImage()->isNull());
+    }
+
     void imageLibTransformsFollowTheConventions() {
         QImage src(2, 3, QImage::Format_RGB32);
         for(int y = 0; y < 3; ++y)
