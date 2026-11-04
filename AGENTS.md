@@ -59,6 +59,11 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
    里抱着读锁 sleep,std 的 RwLock 无写者优先,引擎写者被饿死整个 deadline
    (b583e1aa 的验收测试就是这么红的,trace 加了时间戳才照出来)。R7 是这条
    的机器形态;同文件里 wait_for 的写法是正确参照。
+8. **统计式测量("跑 N 遍数失败")只是诊断桥,不是交付物。** 它回答"多频
+   繁",不回答"为什么";必须尽快收尾成确定性产物:proptest 收缩出的种子、
+   注入式复现(applyArena/arenaFor 这道缝就是为此拆的——喂 mirror 一份引擎
+   不持有的 listing,不赌文件系统时机),或 R7 式结构规则。失败必须留名:
+   1/200 那次连失败者是谁都没留下,留不下名字的测量等于没测。
 
 ## 已知债务(有基线,只许缩)
 
