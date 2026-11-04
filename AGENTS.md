@@ -13,8 +13,8 @@ watcher 已 stat 的数据,C++ 只做机械拼接与替换(收敛契约 =
 均有注释说明理由:forceInsert 的同步 push_back(Core 打开路径需要 index
 立即可用),与 setSubdirsSync 的旁路扫描。架构规则由
 `qimgv/tests/architecture_rules.py` 执行(R1 gui 隔离、R2 FFI 说话者白名单、
-R3 rust 封印、R4 settings 解引用、R5 ABI 钉、R6 信号重声明、R7 锁不跨等待)
-——**结构规则不靠记忆,靠这 5 个测试套件**。
+R3 rust 封印、R4 settings 解引用、R5 ABI 钉、R6 信号重声明)——**结构规则
+不靠记忆,靠这 5 个测试套件**。
 
 ## 常用命令
 
@@ -57,8 +57,8 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
    (check 不链接,编译验证在这里做得到,做不到的只有运行时)。
 7. **state 的锁不得跨等待持有。** guard 活到所在块结束,不是分号;轮询循环
    里抱着读锁 sleep,std 的 RwLock 无写者优先,引擎写者被饿死整个 deadline
-   (b583e1aa 的验收测试就是这么红的,trace 加了时间戳才照出来)。R7 是这条
-   的机器形态;同文件里 wait_for 的写法是正确参照。
+   (b583e1aa 的验收测试就是这么红的,trace 加了时间戳才照出来)。正确参照:
+   同文件里 wait_for 的写法。
 8. **统计式测量("跑 N 遍数失败")只是诊断桥,不是交付物。** 它回答"多频
    繁",不回答"为什么";必须尽快收尾成确定性产物:proptest 收缩出的种子、
    注入式复现(applyArena/arenaFor 这道缝就是为此拆的——喂 mirror 一份引擎
@@ -84,3 +84,7 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
   扫描(lint.py 的 FROZEN 与 REPORT 裁剪),理由留在 lint-baseline.txt 头部。
   重启条件:无——新族即失败与只缩不涨已经自动守门,重启只在有人拿实测证据
   证明某个冻结族值得修时发生。
+- state 锁的机器化守卫(行级启发式 R7)于 2026-11-05 否决:启发式扫描把
+  规则文件的 green 从"验证过"降级成"抽样过",其余六条的承诺因此被稀释。
+  根治路径是 with_state 闭包(guard 不可逃逸,"持锁睡觉"必须显式写进闭包
+  体),待测试面下次变动时评估;在那之前靠纪律 7 的散文与 wait_for 参照。
