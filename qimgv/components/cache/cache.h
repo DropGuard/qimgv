@@ -11,6 +11,7 @@
 class Cache {
 public:
     explicit Cache();
+    ~Cache();
     bool contains(const QString &path) const;
     void remove(const QString &path);
     void clear();

@@ -30,6 +30,12 @@ python3 scripts/lint.py build --gate
 
 # clazy 独立构建树(build-clazy 已配置,clazy 1.17 + level0/level1/detaching)
 CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
+
+# 消毒树(独立目录,默认构建不变):ASan+UBSan 抓堆错误/泄漏/UB。
+# 注意:断言全过时套件仍可能因 LSan 退出泄漏而红——证据在
+# Testing/Temporary/LastTest.log,不在 ctest 输出里
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined
+cmake --build build-asan -j4 && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
 ```
 
 ## 纪律(每条对应一次事故)
@@ -91,3 +97,9 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
   跨界者带数据**。最后一块(R4 DEBT:thumbnailerrunnable/documentinfo/
   imagestatic/video 的 off-thread settings 读取)已搬进 LoadPolicy 与请求
   参数,DEBT 清零,R4 成为纯断言。重启条件:新事故。
+- 消毒树首轮(2026-11-05)收获已修:CentralWidget::mode 与
+  OverlayWidget::position 未初始化枚举读、qApp 错误下转型(测试跑的是
+  QGuiApplication)、Cache 无析构泄漏全部条目。挂账:测试退出仍有 ~58KB
+  对象图泄漏(9 Scaler + 6 DirectoryModel + 连接分配,fixture 环/所有权
+  嫌疑);TSan 树未建(Rust 需 -Zsanitizer 才有完整覆盖,且不能与 ASan
+  同树)。

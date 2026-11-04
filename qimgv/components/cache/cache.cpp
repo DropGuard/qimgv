@@ -3,6 +3,12 @@
 Cache::Cache() {
 }
 
+// the map owns its items raw: without this, every entry alive at destruction
+// leaks (caught by LSan on the first sanitizer run)
+Cache::~Cache() {
+    qDeleteAll(items);
+}
+
 bool Cache::contains(const QString &path) const {
     return items.contains(path);
 }

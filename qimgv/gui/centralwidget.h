@@ -23,5 +23,8 @@ public slots:
 private:
     std::shared_ptr<DocumentWidget> documentView;
     std::shared_ptr<FolderViewProxy> folderView;
-    ViewMode mode;
+    // MODE_FOLDER, not MODE_DOCUMENT: the ctor calls showDocumentView(),
+    // which early-returns on MODE_DOCUMENT (the other value is MODE_FOLDERVIEW) — an uninitialized or
+    // document-initialized mode would skip the first full setup (UBSan catch)
+    ViewMode mode = MODE_FOLDERVIEW;
 };

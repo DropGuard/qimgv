@@ -116,7 +116,7 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
     }
     auto && tmpPixmap = new QPixmap(image->size());
     *tmpPixmap = QPixmap::fromImage(*image);
-    tmpPixmap->setDevicePixelRatio(qApp->devicePixelRatio());
+    tmpPixmap->setDevicePixelRatio(qGuiApp->devicePixelRatio());
 
     QString label;
     if(tmpPixmap->width() == 0) {

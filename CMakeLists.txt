@@ -98,6 +98,23 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     add_compile_options(-Wuse-after-free -Werror=use-after-free)
 endif()
 
+# Sanitizers: opt-in diagnostics trees, never the default build (2x+ runtime,
+# and LSan sees Qt's exit-time allocations). Use a separate build directory:
+#   cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+#         -DQIMGV_SANITIZERS=address,undefined
+# ASan+UBSan are the workhorses: heap misuse, leaks and UB are the failure
+# classes a Rust-core/C++-shell app actually carries — the Rust side is
+# memory-safe by construction, so what the sanitizers watch is exactly the
+# C++ shell and the FFI boundary. Green here is a decidable property of the
+# exercised paths, not a heuristic. TSan is its own tree (-DQIMGV_SANITIZERS=
+# thread): it cannot combine with ASan, and uninstrumented Qt/Rust code makes
+# its silence only partial evidence — judge findings, not the absence of them.
+set(QIMGV_SANITIZERS "" CACHE STRING "sanitizers for a diagnostics tree: address,undefined | thread")
+if(QIMGV_SANITIZERS)
+    add_compile_options(-fno-omit-frame-pointer -fsanitize=${QIMGV_SANITIZERS})
+    add_link_options(-fsanitize=${QIMGV_SANITIZERS})
+endif()
+
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/engine/qimgv-engine-ffi/Cargo.toml)
 
 

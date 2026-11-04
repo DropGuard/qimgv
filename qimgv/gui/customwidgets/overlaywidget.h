@@ -54,5 +54,7 @@ private slots:
 
 protected:
     void recalculateGeometry() override;
-    FloatingWidgetPosition position;
+    // a valid value from birth: recalculateGeometry() switches on this
+    // before any subclass readSettings() has had its say (UBSan catch)
+    FloatingWidgetPosition position = FloatingWidgetPosition::BOTTOM;
 };
