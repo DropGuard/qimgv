@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# The fast gate on every commit: incremental build + the five suites.
+# lint --gate (2m20s, measured) stays a push-time ritual — too slow to sit
+# between a human and a commit. Escape hatch: git commit --no-verify, but a
+# red gate in history is how f8e8b216's six regressions landed unseen.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+cmake --build build -j"$(nproc)" > /tmp/qimgv-hook-build.log 2>&1 || {
+    echo "pre-commit: build failed:" >&2
+    grep -E "error|FAILED" /tmp/qimgv-hook-build.log | head -10 >&2
+    exit 1
+}
+if ! (cd build && ctest -Q); then
+    echo "pre-commit: ctest red — evidence in build/Testing/Temporary/LastTest.log" >&2
+    echo "(fix it, or git commit --no-verify if you truly mean it)" >&2
+    exit 1
+fi

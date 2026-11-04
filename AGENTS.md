@@ -35,8 +35,13 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
 # 注意:断言全过时套件仍可能因 LSan 退出泄漏而红——证据在
 # Testing/Temporary/LastTest.log,不在 ctest 输出里
 cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined
-cmake --build build-asan -j4 && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
+cmake --build build-asan -j$(nproc) && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
 ```
+
+pre-commit hook 自动跑增量构建 + 5 套件(实测 ~10-30s;`core.hooksPath` 指向
+`scripts/hooks`,新克隆执行一次 `git config core.hooksPath scripts/hooks` 即可)。
+lint --gate 实测 2m20s,留在 push 前手动跑。`--no-verify` 逃生门存在,但红门禁
+进历史就是 f8e8b216 六处回归无人看见的成因。
 
 ## 纪律(每条对应一次事故)
 
