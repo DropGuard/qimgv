@@ -12,7 +12,7 @@
 .dir*
 *.orig
 build
-qrc_resources.cpp
+/build*/qrc_resources.cpp
 debug/
 release/
 *.debug

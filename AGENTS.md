@@ -114,6 +114,10 @@ lint --gate 实测 2m20s,留在 push 前手动跑。`--no-verify` 逃生门存�
   200 轮全套件 1 次未归因失败,随后一次目击的 signature = engine 持有已删除
   文件 + mirror 缺失新建文件(两侧各丢不同事件)。QIMGV_ENGINE_TRACE=1 +
   时间戳已武装,目击即取 /tmp 时间线归因。挂起直到零目击窗口足够长。
+- 2026-11-05 push 事故:`git add -A` 把未入疫苗的新构建目录(build-asan/
+  build-cov,各含 70-151MB 插桩二进制)扫进了历史,远端 pre-receive 拒收。
+  filter-branch 重写 12 个提交 + .gitignore 补 `/build*/` 后修复。教训:
+  `git add -A` 之前先 `git status` 看新增目录;新构建树的目录名当天入疫苗。
 - 消毒树首轮(2026-11-05)收获已修:CentralWidget::mode 与
   OverlayWidget::position 未初始化枚举读、qApp 错误下转型(测试跑的是
   QGuiApplication)、Cache 无析构泄漏全部条目。挂账:测试退出仍有 ~58KB
