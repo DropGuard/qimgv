@@ -380,11 +380,11 @@ impl Engine {
                                     watcher::WatchAction::Reconcile { dir } => {
                                         // queue overflow: the kernel dropped events,
                                         // converge with a full rescan
-                                        let e = epoch.fetch_add(1, Ordering::Relaxed) + 1;
+                                        let e = epoch_at();
                                         let _ = job_tx.send(ScanJob { epoch: e, path: dir });
                                     }
                                     watcher::WatchAction::DirGone { dir } => {
-                                        let e = epoch.fetch_add(1, Ordering::Relaxed) + 1;
+                                        let e = epoch_at();
                                         let _ = job_tx.send(ScanJob { epoch: e, path: dir });
                                     }
                                     watcher::WatchAction::Ignored => {}
@@ -432,6 +432,12 @@ impl Engine {
     }
 
     /// Allocates the session epoch for an OpenDir the caller is about to send.
+    /// Allocates the id of a NEW request. It is the only place a session id is
+    /// born: the loop's own rescan (queue overflow, the watched folder deleted)
+    /// re-answers the session that is already current and must not allocate here,
+    /// because the stale-scan guard below asks "am I the newest" — so an internal
+    /// bump silently cancelled every open that was in flight, without emitting a
+    /// thing for the caller to notice.
     pub fn next_epoch(&self) -> u64 {
         self.epoch.fetch_add(1, Ordering::Relaxed) + 1
     }

@@ -10,7 +10,7 @@ use std::time::Duration;
 use qimgv_engine::watcher::{
     apply_event, classify, event_is_live, is_dir_mask, RawWatchEvent, RawWatchKind, WatchAction,
 };
-use qimgv_engine::{Command, Engine, EngineConfig, NameFilter, SortMode};
+use qimgv_engine::{Command, Engine, EngineConfig, Event, NameFilter, SortMode};
 
 // --- mask classification ------------------------------------------------------
 
@@ -247,6 +247,53 @@ fn wait_for(engine: &Engine, pred: impl Fn(&qimgv_engine::DirectoryState) -> boo
         assert!(std::time::Instant::now() < deadline, "timed out waiting on engine state");
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+/// Drains until an event carrying a session id shows up, and returns that id.
+fn next_session_event(engine: &qimgv_engine::Engine) -> u64 {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match engine.try_event() {
+            Some(Event::DirListed { epoch, .. }) | Some(Event::OpenFailed { epoch, .. }) => return epoch,
+            Some(_) => {}
+            None => assert!(std::time::Instant::now() < deadline, "no listing event arrived"),
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn an_engine_initiated_rescan_answers_the_session_it_belongs_to() {
+    // The stale-scan guard asks "is this job the newest session", so the only
+    // thing allowed to start a session is a request. Deleting the watched folder
+    // makes the engine re-scan it on its own initiative — and that rescan used to
+    // ALLOCATE a session id. The instant it did, an open the caller had just
+    // allocated looked older than the engine's own bookkeeping, so the loop threw
+    // its result away and emitted nothing about the decision: the caller waits
+    // forever for a listing nobody cancelled out loud.
+    let (tx, _rx) = mpsc::channel::<()>();
+    let engine = Engine::spawn(config(), Arc::new(move || {
+        let _ = tx.send(());
+    }));
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.jpg"), b"x").unwrap();
+    let opened = engine.next_epoch();
+    engine.send(Command::OpenDir {
+        path: dir.path().to_owned(),
+        sort: None,
+        epoch: opened,
+    })
+    .unwrap();
+    assert_eq!(next_session_event(&engine), opened);
+
+    // the engine's own reason to re-scan: the watched folder is gone
+    std::fs::remove_dir_all(dir.path()).unwrap();
+    assert_eq!(
+        next_session_event(&engine),
+        opened,
+        "an internal rescan started a new session and can cancel an open in flight"
+    );
 }
 
 #[test]
