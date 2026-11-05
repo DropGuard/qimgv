@@ -28,7 +28,7 @@ ControlsOverlay::ControlsOverlay(FloatingWidgetContainer *parent) :
 
     fadeEffect = new QGraphicsOpacityEffect(this);
     this->setGraphicsEffect(fadeEffect);
-    fadeAnimation = new QPropertyAnimation(fadeEffect, "opacity");
+    fadeAnimation = new QPropertyAnimation(fadeEffect, "opacity", this);
     fadeAnimation->setDuration(230);
     fadeAnimation->setStartValue(1.0f);
     fadeAnimation->setEndValue(0);

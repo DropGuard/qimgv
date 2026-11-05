@@ -47,6 +47,9 @@ ViewerWidget::ViewerWidget(QWidget *parent)
     layout.addWidget(videoPlayer.get());
     videoPlayer->hide();
     videoControls = new VideoControlsProxyWrapper(this);
+    // ZoomIndicatorOverlayProxy and VideoControlsProxyWrapper are unparented
+    // QObject wrappers (their ctors keep `container` as a plain member) — they
+    // are this widget's C++ ownership, discharged here
 
     // tmp no wrapper
     zoomIndicator = new ZoomIndicatorOverlayProxy(this);
@@ -66,6 +69,13 @@ ViewerWidget::ViewerWidget(QWidget *parent)
     connect(settings, &Settings::settingsChanged, this, &ViewerWidget::readSettings);
     readSettings();
 }
+ViewerWidget::~ViewerWidget() {
+    // unparented QObject wrappers are this widget's C++ ownership; their inner
+    // overlays are Qt-parented here and go with the tree sweep that follows
+    delete videoControls;
+    delete zoomIndicator;
+}
+
 
 QRect ViewerWidget::imageRect() {
     if(imageViewer && currentWidget == IMAGEVIEWER)

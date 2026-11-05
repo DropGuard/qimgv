@@ -57,6 +57,16 @@ MW::MW(QWidget *parent)
  *  (not counting floating widgets)
  *  ViewerWidget exists for input handling reasons (correct overlay hover handling)
  */
+MW::~MW() {
+    // the three non-QObject proxies are ordinary C++ members: nothing else
+    // deletes them, and their deleteLater dtors only matter while an event
+    // loop is alive — the inner overlays themselves are Qt-parented and go
+    // with the tree sweep right after this
+    delete infoBarFullscreen;
+    delete imageInfoOverlay;
+    delete floatingMessage;
+}
+
 void MW::setupUi() {
     viewerWidget = new ViewerWidget(this);
     infoBarWindowed = new InfoBarProxy(this);

@@ -20,6 +20,7 @@ class ViewerWidget : public FloatingWidgetContainer
     Q_OBJECT
 public:
     explicit ViewerWidget(QWidget *parent = nullptr);
+    ~ViewerWidget() override;
     QRect imageRect();
     float currentScale();
     QSize sourceSize();

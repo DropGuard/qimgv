@@ -62,6 +62,7 @@ class MW : public FloatingWidgetContainer
     Q_OBJECT
 public:
     explicit MW(QWidget *parent = nullptr);
+    ~MW() override;
     bool isCropPanelActive();
     void onScalingFinished(std::unique_ptr<QPixmap>scaled);
     void showImage(std::unique_ptr<QPixmap> pixmap);
