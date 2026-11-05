@@ -25,27 +25,25 @@ void ClickZoneOverlay::readSettings() {
     update();
 }
 
-QPixmap* ClickZoneOverlay::loadPixmap(QString path) {
-    QPixmap *pixmap;
+QPixmap ClickZoneOverlay::loadPixmap(QString path) {
+    QPixmap pixmap;
     if(dpr >= (1.0 + 0.001)) {
         path.replace(".", "@2x.");
         hiResPixmaps = true;
-        pixmap = new QPixmap(path);
+        pixmap = QPixmap(path);
         if(dpr >= (2.0 - 0.001))
             pixmapDrawScale = dpr;
         else
             pixmapDrawScale = 2.0;
-        pixmap->setDevicePixelRatio(pixmapDrawScale);
+        pixmap.setDevicePixelRatio(pixmapDrawScale);
     } else {
         hiResPixmaps = false;
-        pixmap = new QPixmap(path);
+        pixmap = QPixmap(path);
         pixmapDrawScale = dpr;
     }
-    ImageLib::recolor(*pixmap, QColor(255,255,255));
-    if(pixmap->isNull()) {
-        delete pixmap;
-        pixmap = new QPixmap();
-    }
+    ImageLib::recolor(pixmap, QColor(255,255,255));
+    if(pixmap.isNull())
+        return QPixmap();
     return pixmap;
 }
 
@@ -120,7 +118,7 @@ void ClickZoneOverlay::paintEvent(QPaintEvent *event) {
 }
 
 // draws pixmap centered inside rect
-void ClickZoneOverlay::drawPixmap(QPainter &p, QPixmap *pixmap, QRect rect) {
+void ClickZoneOverlay::drawPixmap(QPainter &p, const QPixmap &pixmap, QRect rect) {
     if(isPressed)
         p.setOpacity(0.37f);
     else
@@ -128,11 +126,11 @@ void ClickZoneOverlay::drawPixmap(QPainter &p, QPixmap *pixmap, QRect rect) {
     p.setRenderHint(QPainter::SmoothPixmapTransform);
     QPointF pos;
     if(hiResPixmaps) {
-        pos = QPointF(rect.left() + rect.width()  / 2 - pixmap->width()  / (2 * pixmapDrawScale),
-                      rect.top() + rect.height() / 2 - pixmap->height() / (2 * pixmapDrawScale));
+        pos = QPointF(rect.left() + rect.width()  / 2 - pixmap.width()  / (2 * pixmapDrawScale),
+                      rect.top() + rect.height() / 2 - pixmap.height() / (2 * pixmapDrawScale));
     } else {
-        pos = QPointF(rect.left() + rect.width()  / 2 - pixmap->width()  / 2,
-                      rect.top() + rect.height() / 2 - pixmap->height() / 2);
+        pos = QPointF(rect.left() + rect.width()  / 2 - pixmap.width()  / 2,
+                      rect.top() + rect.height() / 2 - pixmap.height() / 2);
     }
-    p.drawPixmap(pos, *pixmap);
+    p.drawPixmap(pos, pixmap);
 }

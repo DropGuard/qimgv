@@ -14,7 +14,6 @@ class MenuItem : public QWidget {
     Q_OBJECT
 public:
     MenuItem(QWidget *parent = nullptr);
-    ~MenuItem() override;
     void setText(const QString& mTextLabel);
     QString text();
     void setShortcutText(const QString& mTextLabel);
@@ -25,7 +24,6 @@ public:
 protected:
     IconButton mIconWidget;
     QLabel mTextLabel, mShortcutLabel;
-    QSpacerItem *spacer;
     QHBoxLayout mLayout;
     bool passthroughClicks = true;
     void paintEvent(QPaintEvent *event) override;

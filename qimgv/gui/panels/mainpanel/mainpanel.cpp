@@ -21,16 +21,19 @@ MainPanel::MainPanel(FloatingWidgetContainer *parent) : SlidePanel(parent) {
     pinButton->setCheckable(true);
     connect(pinButton, &ActionButton::toggled, this, &MainPanel::onPinClicked);
 
-    buttonsLayout.setDirection(QBoxLayout::BottomToTop);
-    buttonsLayout.setSpacing(0);
-    buttonsLayout.addWidget(settingsButton);
-    buttonsLayout.addWidget(openButton);
-    buttonsLayout.addStretch(0);
-    buttonsLayout.addWidget(pinButton);
-    buttonsLayout.addWidget(folderViewButton);
-    buttonsLayout.addWidget(exitButton);
-
-    buttonsWidget.setLayout(&buttonsLayout);
+    // owned by the widget it lays out: installed as a member subobject on another
+    // member, buttonsWidget's ~QObject deleted it before MainPanel's own member
+    // destruction got there (members die in reverse declaration order) — a free of
+    // an address that was never allocated. The pointer here only observes.
+    buttonsLayout = new QVBoxLayout(&buttonsWidget);
+    buttonsLayout->setDirection(QBoxLayout::BottomToTop);
+    buttonsLayout->setSpacing(0);
+    buttonsLayout->addWidget(settingsButton);
+    buttonsLayout->addWidget(openButton);
+    buttonsLayout->addStretch(0);
+    buttonsLayout->addWidget(pinButton);
+    buttonsLayout->addWidget(folderViewButton);
+    buttonsLayout->addWidget(exitButton);
 
     layout()->addWidget(&buttonsWidget);
 
@@ -39,13 +42,6 @@ MainPanel::MainPanel(FloatingWidgetContainer *parent) : SlidePanel(parent) {
 
     readSettings();
     //connect(settings, SIGNAL(settingsChanged()), this, SLOT(readSettings()));
-}
-
-MainPanel::~MainPanel() {
-    delete openButton;
-    delete settingsButton;
-    delete exitButton;
-    delete folderViewButton;
 }
 
 void MainPanel::onPinClicked() {
@@ -59,24 +55,24 @@ void MainPanel::setPosition(PanelPosition p) {
     SlidePanel::setPosition(p);
     switch(p) {
         case PANEL_TOP:
-            buttonsLayout.setDirection(QBoxLayout::BottomToTop);
+            buttonsLayout->setDirection(QBoxLayout::BottomToTop);
             layout()->setContentsMargins(0,0,0,1);
-            buttonsLayout.setContentsMargins(4,0,0,0);
+            buttonsLayout->setContentsMargins(4,0,0,0);
         break;
         case PANEL_BOTTOM:
-            buttonsLayout.setDirection(QBoxLayout::BottomToTop);
+            buttonsLayout->setDirection(QBoxLayout::BottomToTop);
             layout()->setContentsMargins(0,3,0,0);
-            buttonsLayout.setContentsMargins(4,0,0,0);
+            buttonsLayout->setContentsMargins(4,0,0,0);
         break;
         case PANEL_LEFT:
-            buttonsLayout.setDirection(QBoxLayout::LeftToRight);
+            buttonsLayout->setDirection(QBoxLayout::LeftToRight);
             layout()->setContentsMargins(0,0,1,0);
-            buttonsLayout.setContentsMargins(0,0,0,4);
+            buttonsLayout->setContentsMargins(0,0,0,4);
         break;
         case PANEL_RIGHT:
-            buttonsLayout.setDirection(QBoxLayout::LeftToRight);
+            buttonsLayout->setDirection(QBoxLayout::LeftToRight);
             layout()->setContentsMargins(1,0,0,0);
-            buttonsLayout.setContentsMargins(0,0,0,4);
+            buttonsLayout->setContentsMargins(0,0,0,4);
         break;
     }
     recalculateGeometry();

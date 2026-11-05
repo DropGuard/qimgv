@@ -9,7 +9,6 @@ class MainPanel : public SlidePanel {
     Q_OBJECT
 public:
     MainPanel(FloatingWidgetContainer *parent);
-    ~MainPanel() override;
     void setPosition(PanelPosition);
     void setExitButtonEnabled(bool mode);
     std::shared_ptr<ThumbnailStripProxy> getThumbnailStrip();
@@ -26,7 +25,7 @@ private slots:
     void onPinClicked();
 
 private:
-    QVBoxLayout buttonsLayout;
+    QVBoxLayout *buttonsLayout = nullptr;
     QWidget buttonsWidget;
     std::shared_ptr<ThumbnailStripProxy> thumbnailStrip;
     ActionButton *openButton, *settingsButton, *exitButton, *folderViewButton, *pinButton;

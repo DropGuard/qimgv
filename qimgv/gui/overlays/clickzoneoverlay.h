@@ -31,8 +31,8 @@ public slots:
     void readSettings();
 
 private:
-    QPixmap* loadPixmap(QString path);
-    QPixmap *pixmapLeft = nullptr, *pixmapRight = nullptr;
+    QPixmap loadPixmap(QString path);
+    QPixmap pixmapLeft, pixmapRight;
     QRect mLeftZone, mRightZone;
     qreal dpr, pixmapDrawScale;
     bool hiResPixmaps = false;
@@ -41,7 +41,7 @@ private:
     bool leftHovered = false, rightHovered = false;
     bool drawZones = true;
     ActiveHighlightZone activeZone = HIGHLIGHT_NONE;
-    void drawPixmap(QPainter &p, QPixmap *pixmap, QRect rect);
+    void drawPixmap(QPainter &p, const QPixmap &pixmap, QRect rect);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;

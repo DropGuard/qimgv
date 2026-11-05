@@ -14,7 +14,9 @@ MenuItem::MenuItem(QWidget *parent)
 
     mIconWidget.installEventFilter(this);
 
-    spacer = new QSpacerItem(3, 1, QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+    // the spacer's ownership goes to mLayout the moment it is added, so it is a
+    // local: a member here is a future delete-double-free waiting to be written
+    auto spacer = new QSpacerItem(3, 1, QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
     mIconWidget.setAttribute(Qt::WA_TransparentForMouseEvents, true);
     mIconWidget.setAccessibleName("MenuItemIcon");
     mTextLabel.setAccessibleName("MenuItemText");
@@ -26,10 +28,6 @@ MenuItem::MenuItem(QWidget *parent)
     mLayout.setStretch(1,1);
 
     setLayout(&mLayout);
-}
-
-MenuItem::~MenuItem() {
-    delete spacer;
 }
 
 void MenuItem::setText(const QString& text) {

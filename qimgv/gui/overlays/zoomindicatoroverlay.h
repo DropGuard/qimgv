@@ -2,6 +2,7 @@
 
 #include "gui/customwidgets/overlaywidget.h"
 #include <QApplication>
+#include <QFontMetrics>
 #include <QLabel>
 #include <QTimer>
 #include <QHBoxLayout>
@@ -18,7 +19,7 @@ protected:
     void recalculateGeometry() override;
 
 private:
-    QFontMetrics *fm;
+    QFontMetrics fm;
     QHBoxLayout layout;
     QLabel label;
     QTimer visibilityTimer;

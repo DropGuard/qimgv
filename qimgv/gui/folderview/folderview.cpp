@@ -14,7 +14,7 @@ FolderView::FolderView(QWidget *parent) :
     style = style.arg(QApplication::font().pointSize());
     ui->dirTreeView->setStyleSheet(style);
 
-    optionsPopup = new FVOptionsPopup();
+    optionsPopup = new FVOptionsPopup(this);
     popupTimerClutch.start();
 
     dirModel = new FileSystemModelCustom(this);

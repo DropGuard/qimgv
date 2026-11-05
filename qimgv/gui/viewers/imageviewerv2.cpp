@@ -24,7 +24,8 @@ ImageViewerV2::ImageViewerV2(QWidget *parent) : QGraphicsView(parent),
     imageFitMode(FIT_WINDOW),
     mScalingFilter(QI_FILTER_BILINEAR),
     imageFitModeDefault(FIT_WINDOW),
-    scene(nullptr)
+    scene(nullptr),
+    checkboard(":res/icons/common/other/checkerboard.png")
 {
     setViewportUpdateMode(QGraphicsView::MinimalViewportUpdate);
     this->viewport()->setAttribute(Qt::WA_OpaquePaintEvent, true);
@@ -39,11 +40,11 @@ ImageViewerV2::ImageViewerV2(QWidget *parent) : QGraphicsView(parent),
     hs = horizontalScrollBar();
     vs = verticalScrollBar();
 
-    scrollTimeLineY = new QTimeLine();
+    scrollTimeLineY = new QTimeLine(1000, this);
     scrollTimeLineY->setEasingCurve(QEasingCurve::OutSine);
     scrollTimeLineY->setDuration(ANIMATION_SPEED);
     scrollTimeLineY->setUpdateInterval(SCROLL_UPDATE_RATE);
-    scrollTimeLineX = new QTimeLine();
+    scrollTimeLineX = new QTimeLine(1000, this);
     scrollTimeLineX->setEasingCurve(QEasingCurve::OutSine);
     scrollTimeLineX->setDuration(ANIMATION_SPEED);
     scrollTimeLineX->setUpdateInterval(SCROLL_UPDATE_RATE);
@@ -56,8 +57,6 @@ ImageViewerV2::ImageViewerV2(QWidget *parent) : QGraphicsView(parent),
     scaleTimer = new QTimer(this);
     scaleTimer->setSingleShot(true);
     scaleTimer->setInterval(80);
-
-    checkboard = new QPixmap(":res/icons/common/other/checkerboard.png");
 
     lastTouchpadScroll.start();
 
@@ -74,7 +73,7 @@ ImageViewerV2::ImageViewerV2(QWidget *parent) : QGraphicsView(parent),
     this->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     this->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    scene = new QGraphicsScene();
+    scene = new QGraphicsScene(this);
     scene->setSceneRect(0,0,200000,200000);
     scene->setBackgroundBrush(QColor(60,60,103));
     scene->addItem(&pixmapItem);
@@ -700,7 +699,7 @@ void ImageViewerV2::drawBackground(QPainter *painter, const QRectF &rect) {
     QGraphicsView::drawBackground(painter, rect);
     if(!isDisplaying() || !transparencyGrid || !pixmap->hasAlphaChannel())
         return;
-    painter->drawTiledPixmap(pixmapItem.sceneBoundingRect(), *checkboard);
+    painter->drawTiledPixmap(pixmapItem.sceneBoundingRect(), checkboard);
 }
 
 // simple pan behavior (cursor stops at the screen edges)

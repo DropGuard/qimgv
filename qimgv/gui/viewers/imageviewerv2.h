@@ -169,7 +169,7 @@ private:
     QGraphicsScene *scene;
     ImageFocusPoint focusIn1to1;
 
-    QPixmap *checkboard;
+    QPixmap checkboard;
 
     void zoomAnchored(float newScale);
     void fitNormal();

@@ -32,6 +32,13 @@
 #include "gui/dialogs/resizedialog.h"
 #include "gui/overlays/videocontrols.h"
 #include "gui/overlays/cropoverlay.h"
+#include "gui/overlays/clickzoneoverlay.h"
+#include "gui/overlays/zoomindicatoroverlay.h"
+#include "gui/panels/mainpanel/mainpanel.h"
+#include "gui/viewers/imageviewerv2.h"
+#include "gui/folderview/folderview.h"
+#include "gui/folderview/fvoptionspopup.h"
+#include "gui/customwidgets/iconwidget.h"
 #include <QCheckBox>
 #include <QSettings>
 
@@ -330,6 +337,74 @@ private slots:
         overlay.setImageScale(2.5f);
         QCOMPARE(overlay.imageScale(), 2.5f);
     }
+
+    // What a widget destructor forgets cannot be seen by the app: the tree is
+    // never torn down, so a leaked child stays reachable from Qt's own widget
+    // registry and there is nothing for LSan to call unreachable. Destroying each
+    // suspect here is the measurement — the widget class names come from
+    // allWidgets(), and the same scopes are what the sanitizer tree uses to size
+    // the non-widget heap (a scene, a timeline, a pixmap: not widgets, so not
+    // visible to the assertion below and only visible to LSan once unreachable).
+    void destroyingAWidgetFreesEveryWidgetItCreated() {
+        const QMap<QString, int> before = widgetClasses();
+        const int beforeTotal = QApplication::allWidgets().size();
+        {
+            ImageViewerV2 viewer;
+            FolderView folderView;
+            FloatingWidgetContainer container;
+            ClickZoneOverlay zones(&container);
+            ZoomIndicatorOverlay zoom(&container);
+            MainPanel panel(&container);
+            IconWidget icon;
+            // the probe only means something if these really are live widgets
+            QVERIFY(QApplication::allWidgets().size() > beforeTotal);
+        }
+        const QMap<QString, int> after = widgetClasses();
+        QStringList surplus;
+        for (auto it = after.constBegin(); it != after.constEnd(); ++it) {
+            const int left = it.value() - before.value(it.key(), 0);
+            if (left > 0)
+                surplus << QStringLiteral("%1 x%2").arg(it.key()).arg(left);
+        }
+        QVERIFY2(surplus.isEmpty(),
+                 qPrintable(QStringLiteral("widgets outliving their parent: ") + surplus.join(", ")));
+    }
+
+    // The popup is now owned by the view that shows it, which is what frees it when
+    // the view dies. That is only a win if it still behaves like a popup: a free-
+    // standing window landing where the button told it, not an embedded child.
+    void parentedOptionsPopupStillFloatsWhereItIsTold() {
+        QWidget owner;
+        owner.resize(200, 100);
+        owner.show();
+        FVOptionsPopup popup(&owner);
+        const QPoint where(120, 90);
+        popup.showAt(where);
+        QVERIFY2(popup.isWindow(), "parenting turned the popup into an embedded child widget");
+        QVERIFY2(popup.windowFlags().testFlag(Qt::Popup), "the popup lost its Popup window flag");
+        QVERIFY(popup.isVisible());
+        QCOMPARE(popup.pos(), where);
+        popup.hide();
+        owner.hide();
+    }
+
+private:
+    static QMap<QString, int> widgetClasses() {
+        QMap<QString, int> counts;
+        const QList<QWidget *> widgets = QApplication::allWidgets();
+        for (QWidget *w : widgets)
+            counts[QString::fromUtf8(w->metaObject()->className())]++;
+        return counts;
+    }
+
+    // The broad form of this instrument — build a Core, delete its window, and let
+    // the same before/after assert run over the whole tree — is written and does not
+    // pass: it crashes. The reason is the finding, not the test. MW,
+    // CentralWidget, DocumentWidget, ViewerWidget and MainPanel each hold a
+    // std::shared_ptr to widgets that are simultaneously QObject children of that
+    // same tree, so two ownership systems claim every one of those objects and the
+    // one that loses last double-frees. The window has to pick a single owner before
+    // this probe can exist; until then the scope above is the measurable part.
 };
 
 int main(int argc, char **argv) {
