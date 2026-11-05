@@ -28,7 +28,7 @@ if(WIN32)
         Qt6::Core Qt6::Widgets Mpv)
 else()
     target_link_libraries(player_mpv PRIVATE
-        Qt6::Core Qt6::Widgets PkgConfig::Mpv)
+        Qt6::Core Qt6::Widgets PkgConfig::Mpv qimgv_sanitizers)
 endif()
 
 target_link_libraries(player_mpv PRIVATE Qt6::OpenGLWidgets)

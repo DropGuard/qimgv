@@ -65,7 +65,8 @@ target_link_libraries(qimgv_nongui PUBLIC
     Qt6::Widgets
     Qt6::Svg
     Qt6::PrintSupport
-    qimgv_engine_ffi)
+    qimgv_engine_ffi
+    qimgv_sanitizers)
 
 # OPTION DEFINITIONS, LINKING (mirrored from the executable below: these are the
 # same translation units that used to be compiled as part of the qimgv target)
@@ -93,7 +94,7 @@ target_sources(qimgv_gui PRIVATE
     proxystyle.cpp
     resources.qrc
 )
-target_link_libraries(qimgv_gui PUBLIC qimgv_nongui Qt6::OpenGLWidgets)
+target_link_libraries(qimgv_gui PUBLIC qimgv_nongui qimgv_sanitizers Qt6::OpenGLWidgets)
 if(EXIV2)
     target_compile_definitions(qimgv_gui PRIVATE USE_EXIV2)
 endif()
@@ -119,7 +120,7 @@ endif()
 # C++ STANDARD
 
 # LINK STUFF
-target_link_libraries(qimgv PRIVATE qimgv_gui qimgv_nongui)
+target_link_libraries(qimgv PRIVATE qimgv_gui qimgv_nongui qimgv_sanitizers)
 target_link_libraries(qimgv PRIVATE Qt6::Core Qt6::Widgets Qt6::Svg Qt6::PrintSupport)
 # Rust engine (corrosion-imported; target name normalized to underscores)
 target_link_libraries(qimgv PRIVATE qimgv_engine_ffi)

@@ -14,7 +14,7 @@ endif()
 
 # Rust engine contract smoke test (pure C ABI, no Qt needed)
 add_executable(engine_contract_tests test_engine_contract.cpp)
-target_link_libraries(engine_contract_tests PRIVATE qimgv_engine_ffi)
+target_link_libraries(engine_contract_tests PRIVATE qimgv_engine_ffi qimgv_sanitizers)
 target_include_directories(engine_contract_tests PRIVATE ${CMAKE_SOURCE_DIR}/engine/qimgv-engine-ffi/include)
 add_test(NAME ENGINE_CONTRACT COMMAND engine_contract_tests)
 set_tests_properties(ENGINE_CONTRACT PROPERTIES ENVIRONMENT "${TSAN_ENV}")

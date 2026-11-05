@@ -198,10 +198,31 @@ endif()
 # can link a shared tsan, or pointing the C++ link at rustc's runtime archive);
 # everything else is measured dead ends. A green run in either instrument is
 # partial evidence — judge findings, not the absence of them.
-set(QIMGV_SANITIZERS "" CACHE STRING "sanitizers for a diagnostics tree: address,undefined | thread")
+set(QIMGV_SANITIZERS "" CACHE STRING "sanitizer set for a diagnostics tree: address,undefined | thread (empty = the default build)")
 if(QIMGV_SANITIZERS)
-    add_compile_options(-fno-omit-frame-pointer -fsanitize=${QIMGV_SANITIZERS})
-    add_link_options(-fsanitize=${QIMGV_SANITIZERS})
+    # the two diagnostics trees are mutually exclusive: TSan cannot combine with
+    # ASan, and a configure asking for both would produce a binary that is neither
+    if(QIMGV_SANITIZERS MATCHES "address" AND QIMGV_SANITIZERS MATCHES "thread")
+        message(FATAL_ERROR "QIMGV_SANITIZERS='${QIMGV_SANITIZERS}': 'thread' cannot combine with 'address' — use two build directories")
+    endif()
+    # the diagnostics trees want RelWithDebInfo, not Debug: the sanitizer passes
+    # rewrite every access, so -O0 doubles what -O1/-O2 fold away through
+    # inlining, while -g is what keeps the report stacks readable. Debug is
+    # correct and useless here — the suites go from seconds to minutes for no
+    # extra detection.
+    if(NOT CMAKE_BUILD_TYPE MATCHES "RelWithDebInfo|Release")
+        message(WARNING "QIMGV_SANITIZERS with CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}': RelWithDebInfo is the supported shape (-O1/-O2 for size and speed, -g for stacks)")
+    endif()
+endif()
+# The flags ride an INTERFACE target instead of global add_compile_options: the
+# injection becomes a visible dependency of exactly the targets that are
+# instrumented, and nothing else in the directory inherits it by accident.
+# PUBLIC on the two object libraries propagates the link options up to the
+# executable and the test binaries that link them.
+add_library(qimgv_sanitizers INTERFACE)
+if(QIMGV_SANITIZERS)
+    target_compile_options(qimgv_sanitizers INTERFACE -fno-omit-frame-pointer -fsanitize=${QIMGV_SANITIZERS})
+    target_link_options(qimgv_sanitizers INTERFACE -fsanitize=${QIMGV_SANITIZERS})
 endif()
 
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/engine/qimgv-engine-ffi/Cargo.toml)
