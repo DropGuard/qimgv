@@ -44,6 +44,7 @@ add_executable(engine_stack_tests
     filelog_tests.cpp
     machinery_tests.cpp
     workerpool_tests.cpp
+    fileops_tests.cpp
     image_ops_tests.cpp
     infra_tests.cpp)
 target_link_libraries(engine_stack_tests PRIVATE Qt6::Test qimgv_nongui)

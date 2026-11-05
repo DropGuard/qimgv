@@ -18,6 +18,7 @@ int runSettingsTableTests(int argc, char **argv);
 int runFileLogTests(int argc, char **argv);
 int runMachineryTests(int argc, char **argv);
 int runWorkerPoolTests(int argc, char **argv);
+int runFileOpsTests(int argc, char **argv);
 int runImageOpsTests(int argc, char **argv);
 int runInfraTests(int argc, char **argv);
 
@@ -47,6 +48,7 @@ int main(int argc, char **argv) {
         runFileLogTests,
         runMachineryTests,
         runWorkerPoolTests,
+        runFileOpsTests,
         runImageOpsTests,
         runInfraTests,
     };
