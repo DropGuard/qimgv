@@ -851,7 +851,13 @@ void Core::doInteractiveCopy(const QString &path, const QString &destDirectory, 
             qDebug() << FileOperations::decodeResult(result);
             return;
         }
-    } else if(!dstDir.mkpath(".")) {
+    }
+    // reached from both branches: a fresh destination needs creating, and a
+    // destination that was just a removed FILE needs creating too — the
+    // else-if here used to skip it, so "yes" on a dir-over-file collision
+    // deleted the file and then copied nothing into a directory that never
+    // existed
+    if(!dstDir.mkpath(".")) {
         mw->showError(tr("Could not create directory ") + dstDir.absolutePath());
         qDebug() << "Could not create directory " << dstDir.absolutePath();
         return;
@@ -919,7 +925,13 @@ void Core::doInteractiveMove(const QString &path, const QString &destDirectory, 
             qDebug() << FileOperations::decodeResult(result);
             return;
         }
-    } else if(!dstDir.mkpath(".")) {
+    }
+    // reached from both branches: a fresh destination needs creating, and a
+    // destination that was just a removed FILE needs creating too — the
+    // else-if here used to skip it, so "yes" on a dir-over-file collision
+    // deleted the file and then copied nothing into a directory that never
+    // existed
+    if(!dstDir.mkpath(".")) {
         mw->showError(tr("Could not create directory ") + dstDir.absolutePath());
         qDebug() << "Could not create directory " << dstDir.absolutePath();
         return;

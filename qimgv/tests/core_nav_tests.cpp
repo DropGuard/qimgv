@@ -54,6 +54,31 @@ public:
     void pokeContainerSize(QSize size) { setContainerSize(size); }
 };
 
+// The scripted IUserInteractions: answers queued as DialogResults (consumed in
+// order), call counts and last arguments as the assertions' teeth. An empty
+// queue answers default-constructed DialogResult (no, no all, no cancel) —
+// a deliberate trap: an unexpected question surfaces as a failed expectation,
+// not as a silently-tolerated dialog.
+class FakeInteractions : public IUserInteractions {
+public:
+    QQueue<DialogResult> replaceAnswers;
+    QList<QPair<QString, QString>> replaceArgs;
+    int replaceCalls = 0;
+    int confirmCalls = 0;
+    bool confirmAnswer = true;
+
+    bool showConfirmation(const QString &, const QString &) override {
+        ++confirmCalls;
+        return confirmAnswer;
+    }
+    DialogResult fileReplaceDialog(const QString &src, const QString &dst,
+                                   FileReplaceMode, bool) override {
+        ++replaceCalls;
+        replaceArgs.append({src, dst});
+        return replaceAnswers.isEmpty() ? DialogResult{} : replaceAnswers.dequeue();
+    }
+};
+
 class TestCoreNav : public QObject {
     Q_OBJECT
     IsolatedHome home;
@@ -417,7 +442,277 @@ private slots:
                  qPrintable(QStringLiteral("widgets outliving the destroyed core: ") + surplus.join(", ")));
     }
 
+    // ---- the interactive command machines, driven through the scripted
+    // IUserInteractions fake (core.ui_). The DialogResult semantics they
+    // consume ARE the contract under test: yes is force, all is sticky for
+    // the batch (for yes and for no alike), cancel unwinds, plain yes
+    // re-asks per file.
+
+    void interactiveCopyPlacesFileWithoutDialogs() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString src = makeTxt(base, "f1.txt", "one");
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+
+        core.interactiveCopy({src}, destDir);
+
+        QCOMPARE(fake.replaceCalls, 0); // no collision, nothing to ask
+        QCOMPARE(contentOf(QDir(destDir).filePath("f1.txt")), QByteArray("one"));
+        QVERIFY(QFileInfo::exists(src)); // a copy leaves the source alone
+    }
+
+    void interactiveCopyOverwritesWhenScriptedYes() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString src = makeTxt(base, "f1.txt", "new");
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        makeTxt(destDir, "f1.txt", "old");
+        fake.replaceAnswers << DialogResult{true, false, false};
+
+        core.interactiveCopy({src}, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1);
+        QCOMPARE(fake.replaceArgs.at(0).first, src); // asked about THIS file
+        QCOMPARE(contentOf(QDir(destDir).filePath("f1.txt")), QByteArray("new"));
+    }
+
+    void interactiveCopyYesToAllSticksAcrossTheBatch() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        QList<QString> sources;
+        for(const char *n : {"f1", "f2", "f3"}) {
+            sources << makeTxt(base, QString(n) + ".txt", n);
+            makeTxt(destDir, QString(n) + ".txt", "old");
+        }
+        fake.replaceAnswers << DialogResult{true, true, false}; // one answer, whole batch
+
+        core.interactiveCopy(sources, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1); // the sticky answer suppresses the rest
+        for(const char *n : {"f1", "f2", "f3"})
+            QCOMPARE(contentOf(QDir(destDir).filePath(QString(n) + ".txt")), QByteArray(n));
+    }
+
+    void interactiveCopyNoToAllSkipsTheRestWithoutAsking() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        QList<QString> sources;
+        for(const char *n : {"f1", "f2", "f3"}) {
+            sources << makeTxt(base, QString(n) + ".txt", "new");
+            makeTxt(destDir, QString(n) + ".txt", "old");
+        }
+        fake.replaceAnswers << DialogResult{false, true, false}; // no + apply to all
+
+        core.interactiveCopy(sources, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1); // asked once for the first collision only
+        for(const char *n : {"f1", "f2", "f3"})
+            QCOMPARE(contentOf(QDir(destDir).filePath(QString(n) + ".txt")), QByteArray("old"));
+    }
+
+    void interactiveCopyPlainYesAsksAgainForEachCollision() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        QList<QString> sources;
+        for(const char *n : {"f1", "f2", "f3"}) {
+            sources << makeTxt(base, QString(n) + ".txt", n);
+            makeTxt(destDir, QString(n) + ".txt", "old");
+        }
+        for(int i = 0; i < 3; ++i)
+            fake.replaceAnswers << DialogResult{true, false, false}; // plain yes, no all
+
+        core.interactiveCopy(sources, destDir);
+
+        QCOMPARE(fake.replaceCalls, 3); // the yes resets: one question per file
+        for(const char *n : {"f1", "f2", "f3"})
+            QCOMPARE(contentOf(QDir(destDir).filePath(QString(n) + ".txt")), QByteArray(n));
+    }
+
+    void interactiveCopyCancelStopsTheBatch() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        QList<QString> sources;
+        for(const char *n : {"f1", "f2", "f3"}) {
+            sources << makeTxt(base, QString(n) + ".txt", n);
+            makeTxt(destDir, QString(n) + ".txt", "old");
+        }
+        fake.replaceAnswers << DialogResult{false, false, true}; // cancel
+
+        core.interactiveCopy(sources, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1); // the batch unwound at the first collision
+        for(const char *n : {"f1", "f2", "f3"})
+            QCOMPARE(contentOf(QDir(destDir).filePath(QString(n) + ".txt")), QByteArray("old"));
+    }
+
+    void interactiveCopyOverwritesADirectoryCollisionWhenScriptedYes() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString srcDir = QDir(base).filePath("sdir");
+        QVERIFY(QDir().mkpath(srcDir));
+        makeTxt(srcDir, "inner.txt", "inner");
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        makeTxt(destDir, "sdir", "old file"); // a FILE where the directory lands
+        fake.replaceAnswers << DialogResult{true, false, false}; // DIR_TO_FILE: yes
+
+        core.interactiveCopy({srcDir}, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1);
+        QCOMPARE(contentOf(QDir(destDir).filePath("sdir/inner.txt")), QByteArray("inner"));
+    }
+
+    void interactiveCopyDeclinedDirectoryOverwriteKeepsTheFile() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString srcDir = QDir(base).filePath("sdir");
+        QVERIFY(QDir().mkpath(srcDir));
+        makeTxt(srcDir, "inner.txt", "inner");
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        makeTxt(destDir, "sdir", "old file");
+        fake.replaceAnswers << DialogResult{false, false, false}; // no
+
+        core.interactiveCopy({srcDir}, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1);
+        QCOMPARE(contentOf(QDir(destDir).filePath("sdir")), QByteArray("old file")); // intact
+        QVERIFY(!QFileInfo::exists(QDir(destDir).filePath("sdir/inner.txt")));
+    }
+
+    void interactiveMoveOverwritesADirectoryCollisionWhenScriptedYes() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString srcDir = QDir(base).filePath("sdir");
+        QVERIFY(QDir().mkpath(srcDir));
+        makeTxt(srcDir, "inner.txt", "inner");
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        makeTxt(destDir, "sdir", "old file");
+        fake.replaceAnswers << DialogResult{true, false, false}; // DIR_TO_FILE: yes
+
+        core.movePathsTo({srcDir}, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1);
+        QCOMPARE(contentOf(QDir(destDir).filePath("sdir/inner.txt")), QByteArray("inner"));
+        QVERIFY2(!QFileInfo::exists(QDir(base).filePath("sdir/inner.txt")),
+                 "a move that overwrote a file with a directory left the source behind");
+    }
+
+    void interactiveMoveYesToAllSticksAcrossTheBatch() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString destDir = QDir(base).filePath("dst");
+        QVERIFY(QDir().mkpath(destDir));
+        QList<QString> sources;
+        for(const char *n : {"m1", "m2", "m3"}) {
+            sources << makeTxt(base, QString(n) + ".txt", n);
+            makeTxt(destDir, QString(n) + ".txt", "old");
+        }
+        fake.replaceAnswers << DialogResult{true, true, false};
+
+        core.movePathsTo(sources, destDir);
+
+        QCOMPARE(fake.replaceCalls, 1);
+        for(const char *n : {"m1", "m2", "m3"}) {
+            QCOMPARE(contentOf(QDir(destDir).filePath(QString(n) + ".txt")), QByteArray(n));
+            QVERIFY2(!QFileInfo::exists(QDir(base).filePath(QString(n) + ".txt")),
+                     qPrintable(QString(n) + " survived a move")); // a move removes the source
+        }
+    }
+
+    void removePermanentDeletesAfterScriptedConfirmation() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        const int before = core.model->fileCount();
+
+        core.removePermanent();
+
+        QTRY_COMPARE_WITH_TIMEOUT(core.model->fileCount(), before - 1, 10000);
+        QVERIFY2(!QFileInfo::exists(QDir(alpha).filePath("a.png")),
+                 "the confirmed removal never reached the disk");
+        QCOMPARE(fake.confirmCalls, 1);
+    }
+
+    void moveToTrashKeepsFilesWhenConfirmationDeclined() {
+        Core core;
+        FakeInteractions fake;
+        fake.confirmAnswer = false;
+        core.ui_ = &fake;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        const int before = core.model->fileCount();
+
+        core.moveToTrash();
+
+        QCOMPARE(fake.confirmCalls, 1);
+        QCOMPARE(core.model->fileCount(), before);
+        QVERIFY(QFileInfo::exists(QDir(alpha).filePath("a.png")));
+    }
+
+    void renameCurrentSelectionForcesAfterScriptedConfirmation() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        // the collision the rename will hit: renamed.png already exists
+        const QString colliding = QDir(alpha).filePath("renamed.png");
+        writeImage(colliding);
+        const QByteArray original = contentOf(QDir(alpha).filePath("a.png"));
+
+        core.renameCurrentSelection("renamed.png");
+
+        QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo::exists(QDir(alpha).filePath("a.png")), 10000);
+        QVERIFY(QFileInfo::exists(colliding));
+        // a forced rename moves the bytes, so the colliding name now holds
+        // exactly what the old name held
+        QCOMPARE(contentOf(colliding), original);
+        QCOMPARE(fake.confirmCalls, 1); // the overwrite question was asked and scripted yes
+    }
+
 private:
+    QString makeTxt(const QString &dir, const QString &name, const char *content) {
+        const QString path = QDir(dir).filePath(name);
+        QFile f(path);
+        if(!f.open(QIODevice::WriteOnly)) {
+            QTest::qFail(qPrintable(QStringLiteral("cannot create %1").arg(path)), __FILE__, __LINE__);
+            return {};
+        }
+        f.write(content);
+        return path;
+    }
+    QByteArray contentOf(const QString &path) {
+        QFile f(path);
+        if(!f.open(QIODevice::ReadOnly)) {
+            QTest::qFail(qPrintable(QStringLiteral("cannot read %1").arg(path)), __FILE__, __LINE__);
+            return {};
+        }
+        return f.readAll();
+    }
     static QMap<QString, int> widgetClasses() {
         QMap<QString, int> counts;
         const QList<QWidget *> widgets = QApplication::allWidgets();
