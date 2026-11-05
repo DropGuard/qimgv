@@ -42,6 +42,9 @@
 #include "gui/viewers/imageviewerv2.h"
 #include "gui/folderview/folderview.h"
 #include "gui/folderview/fvoptionspopup.h"
+#include "gui/folderview/bookmarksitem.h"
+#include "gui/customwidgets/ssidebar.h"
+#include "gui/customwidgets/entryinfoitem.h"
 #include "gui/customwidgets/iconwidget.h"
 #include <QCheckBox>
 #include <QSettings>
@@ -680,6 +683,40 @@ private slots:
     void wallpaperMenuIconIsCompiledIntoResources() {
         QVERIFY(QFile::exists(":/res/icons/common/menuitem/wallpaper16.png"));
         QVERIFY(QFile::exists(":/res/icons/common/menuitem/wallpaper16@2x.png"));
+    }
+
+    // The teardown census extended over the classes the first sweep never
+    // covered — constructed, POPULATED, shown, and destroyed. The folder-grid
+    // SEGV lived exactly in the populated+destroyed state, which is why the
+    // construct-only sweep missed it. Each class here carries value-member
+    // widgets parented through its own layout: the pattern whose teardown had
+    // never once run. (SSidebar has zero external references — swept anyway,
+    // since it still compiles into the binary.)
+    void populatedCensusCoversTheRemainingWidgetClasses() {
+        const QMap<QString, int> before = widgetClasses();
+        const int beforeTotal = QApplication::allWidgets().size();
+        {
+            BookmarksItem bookmark("some dir", "/tmp");
+            SSideBarItem sidebarItem("icon", "label");
+            SSideBar sidebar;
+            EntryInfoItem info;
+            FolderView fv;
+            fv.populate(1); // the populated-grid state that killed the folder grid
+            bookmark.show();
+            sidebar.show();
+            info.show();
+            fv.show();
+            QVERIFY(QApplication::allWidgets().size() > beforeTotal);
+        }
+        const QMap<QString, int> after = widgetClasses();
+        QStringList surplus;
+        for (auto it = after.constBegin(); it != after.constEnd(); ++it) {
+            const int left = it.value() - before.value(it.key(), 0);
+            if (left > 0)
+                surplus << QStringLiteral("%1 x%2").arg(it.key()).arg(left);
+        }
+        QVERIFY2(surplus.isEmpty(),
+                 qPrintable(QStringLiteral("widgets outliving their owner: ") + surplus.join(", ")));
     }
 
     void renameCurrentSelectionForcesAfterScriptedConfirmation() {
