@@ -149,7 +149,9 @@ endif()
 # QArrayData-region races between QtGui's own 'Thread (pooled)' threads around
 # image save/read — reproduced without any qimgv code in
 # ~/tsan-qthreadpool-check/qtimagepool.cpp — plus stripped libQt6Gui/libtbb
-# offsets that cannot be name-matched; blanket-called_from_lib would hide every
+# offsets that cannot be name-matched, plus the exit-time OpenBLAS teardown
+# race (blas_thread_shutdown_ frees thread buffers while Core::~Core frees the
+# window tree; libopenblas arrives through OpenCV); blanket-called_from_lib would hide every
 # real app race through Qt, so the residue stays visible and the tree stays
 # out of the gate until upstream grows a clockjoin interceptor (filed: LLVM
 # #239326) or Qt's image paths stop racing themselves.

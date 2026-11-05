@@ -118,3 +118,8 @@ baselines). What remains here is the part needing judgment.
    the instrument that would catch its violation, several times for
    timing-dependent triggers, or make the violation structurally impossible
    (the fork-per-test harness exists for exactly that).
+9. **Identifier searches are case-insensitive.** `SSidebar` vs `SSideBar`
+   cost two grep audits in one session: a case-sensitive sweep missed the
+   SettingsDialog .ui reference and declared a live class dead (caught before
+   the deletion landed), and the same trap bit the census constructions. The
+   class was renamed SettingsSidebar to bury the trap itself.
