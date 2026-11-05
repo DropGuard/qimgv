@@ -282,6 +282,20 @@ private slots:
         QCOMPARE(parts.at(2), QStringLiteral("tail"));
     }
 
+    void fileManagerSelectCommandKeepsPathWithSpacesAsOneArgument() {
+        const QString path = QStringLiteral("/mnt/data/a b/name-0024.mp4");
+        auto parts = ScriptManager::splitCommandLine(
+            ScriptManager::fileManagerSelectCommand(QStringLiteral("dolphin"), path));
+        QCOMPARE(parts.size(), 3);
+        QCOMPARE(parts.at(1), QStringLiteral("--select"));
+        QCOMPARE(parts.at(2), path);
+        // the pre-fix call-site form, kept as the counterexample: unquoted, the
+        // path splits at its space and the file manager receives a truncated
+        // nonexistent argument -- that is what broke "show in folder"
+        auto broken = ScriptManager::splitCommandLine(QStringLiteral("dolphin --select ") + path);
+        QCOMPARE(broken.size(), 4);
+    }
+
     void processArgumentsSubstitutesTheFileTag() {
         resetFixture();
         QVERIFY(writeBigImage(fixtureDir + "/tagged.png", "png", QSize(8, 8)));

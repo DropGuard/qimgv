@@ -32,6 +32,10 @@ public:
     Script getScript(const QString& scriptName);
     void addScript(const QString& scriptName, const Script& script);
     static QStringList splitCommandLine(const QString &cmdLine);
+    // builds "<app> --select <path>" with the path quoted: splitCommandLine
+    // tokenizes on unquoted spaces, so an unquoted path with a space arrives
+    // as two arguments and the file manager selects nothing
+    static QString fileManagerSelectCommand(const QString& app, const QString& path);
 
 signals:
     void error(QString);

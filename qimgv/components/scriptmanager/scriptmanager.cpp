@@ -77,6 +77,10 @@ void ScriptManager::runCommandDetached(const QString& cmd) {
     QProcess::startDetached(cmdSplit.takeAt(0), cmdSplit);
 }
 
+QString ScriptManager::fileManagerSelectCommand(const QString& app, const QString& path) {
+    return app + " --select \"" + path + "\"";
+}
+
 // TODO: what if filename contains one of the tags?
 void ScriptManager::processArguments(QStringList &cmd, const std::shared_ptr<Image>& img) {
     for (auto& i : cmd) {
