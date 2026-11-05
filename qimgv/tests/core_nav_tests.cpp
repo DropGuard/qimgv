@@ -388,6 +388,31 @@ private slots:
         owner.hide();
     }
 
+    // The broad form of this instrument, unlocked by the ownership unification:
+    // build a real Core — the full window tree the app never used to tear down —
+    // and destroy it, then require the widget census to return exactly to the
+    // pre-existing baseline. Until every widget shared_ptr became an observer,
+    // this crashed at the first double-free, exactly as the comment it replaces
+    // predicted; that prediction is what this test now pins.
+    void destroyingTheCoreFreesTheWholeWindowTree() {
+        const QMap<QString, int> before = widgetClasses();
+        const int beforeTotal = QApplication::allWidgets().size();
+        {
+            Core core;
+            // the probe only means something if the window tree is really live
+            QVERIFY(QApplication::allWidgets().size() > beforeTotal);
+        }
+        const QMap<QString, int> after = widgetClasses();
+        QStringList surplus;
+        for (auto it = after.constBegin(); it != after.constEnd(); ++it) {
+            const int left = it.value() - before.value(it.key(), 0);
+            if (left > 0)
+                surplus << QStringLiteral("%1 x%2").arg(it.key()).arg(left);
+        }
+        QVERIFY2(surplus.isEmpty(),
+                 qPrintable(QStringLiteral("widgets outliving the destroyed core: ") + surplus.join(", ")));
+    }
+
 private:
     static QMap<QString, int> widgetClasses() {
         QMap<QString, int> counts;
@@ -397,14 +422,6 @@ private:
         return counts;
     }
 
-    // The broad form of this instrument — build a Core, delete its window, and let
-    // the same before/after assert run over the whole tree — is written and does not
-    // pass: it crashes. The reason is the finding, not the test. MW,
-    // CentralWidget, DocumentWidget, ViewerWidget and MainPanel each hold a
-    // std::shared_ptr to widgets that are simultaneously QObject children of that
-    // same tree, so two ownership systems claim every one of those objects and the
-    // one that loses last double-frees. The window has to pick a single owner before
-    // this probe can exist; until then the scope above is the measurable part.
 };
 
 int main(int argc, char **argv) {

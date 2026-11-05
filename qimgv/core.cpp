@@ -51,6 +51,14 @@ Core::Core()
 }
 
 Core::~Core() {
+    // the window tree is Core's to tear down — the single-owner rule puts the
+    // top-level window here, and this delete is the first full destruction in
+    // the app's history (until the ownership unification, MW was never freed
+    // and every Core instance leaked one). Presenters hold raw views into the
+    // tree but run no code after this point; their own destruction follows as
+    // ordinary member teardown.
+    delete mw;
+    mw = nullptr;
     // the translator lives on the application's translator list, so it has to
     // come off that list before it is freed — and it had no parent and no
     // destructor, so until now nothing ever freed it
