@@ -569,7 +569,7 @@ QString MW::getSaveFileName(const QString& filePath) {
     if(writerFormats.contains("dds"))  filters.append("DDS (*.dds)");
     if(writerFormats.contains("wbmp")) filters.append("WBMP (*.wbmp)");
     // add everything else from imagewriter
-    for(auto fmt : writerFormats) {
+    for(const auto &fmt : std::as_const(writerFormats)) {
         if(filters.filter(fmt).isEmpty())
             filters.append(fmt.toUpper() + " (*." + fmt + ")");
     }
@@ -578,7 +578,7 @@ QString MW::getSaveFileName(const QString& filePath) {
     // find matching filter for the current image
     QString selectedFilter = "JPEG (*.jpg *.jpeg *jpe *jfif)";
     QFileInfo fi(filePath);
-    for(auto filter : filters) {
+    for(const QString &filter : std::as_const(filters)) {
         if(filter.contains(fi.suffix().toLower())) {
             selectedFilter = filter;
             break;

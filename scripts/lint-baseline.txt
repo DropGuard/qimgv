@@ -28,9 +28,9 @@
 #   duplInheritedMember — Qt-style signal/slot re-declaration patterns
 #   (non-virtual shadowing is intentional in this framework).
 clazy qcolor-from-literal 50
-clazy range-loop-detach 20
+clazy range-loop-detach 18
 clazy connect-3arg-lambda 14
-clazy range-loop-reference 7
+clazy range-loop-reference 3
 clazy qproperty-without-notify 3
 clazy detaching-temporary 3
 clazy container-anti-pattern 2
@@ -40,5 +40,5 @@ clazy const-signal-or-slot 1
 clazy non-pod-global-static 1
 clazy connect-by-name 1
 cppcheck returnByReference 10
-cppcheck iterateByValue 4
+cppcheck iterateByValue 1
 cppcheck useInitializationList 2
