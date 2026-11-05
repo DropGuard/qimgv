@@ -12,6 +12,7 @@ class FolderGridView : public ThumbnailView {
     Q_OBJECT
 public:
     explicit FolderGridView(QWidget *parent = nullptr);
+    ~FolderGridView() override;
 
     const int THUMBNAIL_SIZE_MIN = 80;  // px
     const int THUMBNAIL_SIZE_MAX = 400;  // these should be divisible by ZOOM_STEP

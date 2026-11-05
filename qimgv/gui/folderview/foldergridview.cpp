@@ -27,6 +27,19 @@ FolderGridView::FolderGridView(QWidget *parent)
             this, &FolderGridView::onitemSelected);
 }
 
+FolderGridView::~FolderGridView() {
+    // the thumbnail widgets' QGraphicsLayoutItemPrivate::parentLayoutItem
+    // points at this class's FlowLayout, and derived-member destruction kills
+    // that layout BEFORE the base ThumbnailView's scene member deletes the
+    // widgets — a teardown that has never once run in the app's history, and
+    // which SEGVs inside ~QGraphicsLayoutItem through the dead layout pointer.
+    // Discharge the widgets while the layout can still be notified: removeAll
+    // is the exact order populate's own re-populate path uses (the layout
+    // drops references first, then the widgets die), so it is the
+    // battle-tested sequence, not a new one.
+    removeAll();
+}
+
 void FolderGridView::dropEvent(QDropEvent *event) {
     event->accept();
     ThumbnailWidget *item = dynamic_cast<ThumbnailWidget*>(itemAt(event->position().toPoint()));
