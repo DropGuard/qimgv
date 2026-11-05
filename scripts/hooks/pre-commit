@@ -22,3 +22,20 @@ if ! (cd build && ctest -Q); then
     echo "(fix it, or git commit --no-verify if you truly mean it)" >&2
     exit 1
 fi
+# engine pure layer touched → Miri rides the commit. The semantics layer's only
+# deep instrument (watcher/apply, model, meta, property — scripts/miri.sh) is
+# too slow for every commit (~2 min hot, ~8 min cold) and too easy to forget
+# otherwise, so the trigger is mechanical. fd.rs and engine.rs are excluded
+# from the trigger: their tests are the ones Miri refuses (real fd machinery),
+# so an instrument run there buys nothing — they are covered by the
+# integration suites on the real machine instead.
+PURE_TOUCHED=$(git diff --cached --name-only --diff-filter=ACMR -- engine/qimgv-engine \
+    | grep -vE '(watcher/fd\.rs|src/engine\.rs)' || true)
+if [ -n "$PURE_TOUCHED" ]; then
+    echo "pre-commit: engine pure layer touched — running Miri (~2 min)" >&2
+    sh scripts/miri.sh || {
+        echo "pre-commit: Miri red — evidence above" >&2
+        echo "(fix it, or git commit --no-verify if you truly mean it)" >&2
+        exit 1
+    }
+fi

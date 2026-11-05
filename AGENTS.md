@@ -64,8 +64,11 @@ cmake --build build-asan -j$(nproc) && cd build-asan && ASAN_OPTIONS=detect_leak
 # same block.
 ```
 
-The pre-commit hook runs incremental build + 5 suites (~10-30 s) and is
-**CMake self-installing**: every configure points `core.hooksPath` at
+The pre-commit hook runs incremental build + 5 suites (~10-30 s), plus Miri
+(~2 min) whenever the engine's pure layer is staged — the trigger is a
+mechanical staged-path check, with watcher/fd.rs and engine.rs excluded
+because their tests are the ones Miri refuses. The hook is **CMake
+self-installing**: every configure points `core.hooksPath` at
 `scripts/hooks` — clone → configure → build is itself the install step.
 `lint --gate` takes ~2m20s; run it manually before pushing. The `--no-verify`
 escape hatch exists, but a red gate entering history is how f8e8b216's six
