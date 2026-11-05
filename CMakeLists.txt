@@ -117,11 +117,17 @@ endif()
 # Thumbnailer pools against the UI thread) is clean. What it cannot answer: the Rust
 # side shows up only through memcpy interception, so the ~120 reports on the arena
 # and listing path name both accesses and see neither one's ordering — noise, not a
-# queue of bugs. OPEN, and it blocks this tree from being a gate: libtsan aborts the
-# two long suites at sanitizer_thread_registry.cpp:186 (live_.try_emplace(user_id,
-# tid)) on the first thread created once enough threads have churned —
-# engine_stack_tests reaches it entering TestWireFormat — identically under gcc-15's
-# and clang-21's runtime.
+# queue of bugs. It is not a gate yet either, because the sanitizer aborts the two
+# long suites on itself, at sanitizer_thread_registry.cpp:186
+# (live_.try_emplace(user_id, tid).second): a QThreadPool doing start() +
+# waitForDone() waves makes the runtime hand out a thread id its own registry still
+# lists as live. That is not this project's code — a 30-line Qt-only program
+# reproduces it in 40 waves, deterministically, under gcc-15's libtsan and clang-21's
+# compiler-rt alike, and the same program runs clean without instrumentation. The
+# repro (with both build lines and the hypotheses it killed: mixed-ABI instrumentation,
+# our pool churn, QThreadPool::clear(), a short expiry timeout) lives in the owner's
+# ~/tsan-qthreadpool-check/. Do not re-derive it; the two long suites will keep
+# dying at that CHECK until upstream does.
 # The Rust half is measured against its own consistent runtime:
 #   RUSTUP_TOOLCHAIN=nightly \
 #   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-Zsanitizer=thread \
