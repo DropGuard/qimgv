@@ -144,8 +144,8 @@ endif()
 # ~/tsan-qthreadpool-check/qtimagepool.cpp — plus stripped libQt6Gui/libtbb
 # offsets that cannot be name-matched; blanket-called_from_lib would hide every
 # real app race through Qt, so the residue stays visible and the tree stays
-# out of the gate until upstream grows a clockjoin interceptor or Qt's image
-# paths stop racing themselves.
+# out of the gate until upstream grows a clockjoin interceptor (filed: LLVM
+# #239326) or Qt's image paths stop racing themselves.
 # The Rust half is measured by Miri over the semantics layer, on the seam the
 # watcher split made explicit (watcher/apply is libc-free semantics; watcher/fd
 # is real syscalls by design):
