@@ -17,6 +17,16 @@ add_executable(engine_contract_tests test_engine_contract.cpp)
 target_link_libraries(engine_contract_tests PRIVATE qimgv_engine_ffi)
 target_include_directories(engine_contract_tests PRIVATE ${CMAKE_SOURCE_DIR}/engine/qimgv-engine-ffi/include)
 add_test(NAME ENGINE_CONTRACT COMMAND engine_contract_tests)
+set_tests_properties(ENGINE_CONTRACT PROPERTIES ENVIRONMENT "${TSAN_ENV}")
+
+# The TSan tree's named noise baseline, wired where the tests are registered so
+# it is machine-absorbed rather than read by a human each run: the mixed binary
+# reports only the uninstrumented side (qimgv_engine / Rust std — see
+# tsan-noise.supp for why that is undecidable rather than informative), and the
+# "thread leak" reports are joins TSan never recorded (pthread_clockjoin_np —
+# the same upstream gap behind the QThreadPool CHECK). A no-op in every other
+# tree: TSAN_OPTIONS is only read by the TSan runtime.
+set(TSAN_ENV "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan-noise.supp:report_thread_leaks=0")
 
 # Engine stack integration: EngineBridge pump + DirectoryManager async wiring.
 # Links qimgv_nongui — the same objects the executable is built from — so a test
@@ -38,6 +48,7 @@ add_executable(engine_stack_tests
     infra_tests.cpp)
 target_link_libraries(engine_stack_tests PRIVATE Qt6::Test qimgv_nongui)
 add_test(NAME ENGINE_STACK COMMAND engine_stack_tests)
+set_tests_properties(ENGINE_STACK PROPERTIES ENVIRONMENT "${TSAN_ENV}")
 
 # Core-level navigation: links the widget tree too, so a real Core can be built
 # and driven under the offscreen platform. OBJECT libraries do not re-export each
@@ -45,6 +56,7 @@ add_test(NAME ENGINE_STACK COMMAND engine_stack_tests)
 add_executable(core_nav_tests core_nav_tests.cpp)
 target_link_libraries(core_nav_tests PRIVATE Qt6::Test qimgv_gui qimgv_nongui)
 add_test(NAME CORE_NAV COMMAND core_nav_tests)
+set_tests_properties(CORE_NAV PROPERTIES ENVIRONMENT "${TSAN_ENV}")
 
 # executable architecture rules (ArchUnit-style): gui isolation, FFI speaker
 # allowlist, rust internal seal

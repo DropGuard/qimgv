@@ -1,0 +1,32 @@
+# The named baseline for the mixed TSan tree's noise — same discipline as
+# lint-baseline.txt: what is listed here is machine-absorbed, and anything NEW
+# (any report whose stack names a C++ frame of ours) still fails the run.
+#
+# Why the noise exists: the tree instruments the C++ shell and leaves the Rust
+# engine uninstrumented (measured, not taste — see the QIMGV_SANITIZERS block
+# in the root CMakeLists.txt). Every report the mixed binary produces names the
+# uninstrumented side: a qimgv_engine symbol, or Rust std internals
+# (library/alloc, library/core) reached through memcpy interception, with no
+# ordering visible to either access. A real cross-boundary race is invisible
+# here regardless — the boundary is covered by the sole-writer contract and
+# architecture_rules.py, and the engine's own surface is measured on its own
+# runtime — so suppressing by these frame shapes hides nothing that was
+# decidable.
+race:qimgv_engine
+race:library/alloc/src
+race:library/core/src
+
+# Third-party internals with our frames only as the caller: glibc's own
+# timezone-init race (first localtime/tzset from a worker thread), and libpng's
+# row writer colliding with an already-dead thread's memcpy — the thread whose
+# death pthread_clockjoin_np never recorded, so TSan still counts it live.
+race:png_write_row
+race:tzset_internal
+
+# The residue that stays red, enumerated here so nobody re-derives it:
+# QArrayData-region races between two of Qt 6.10.2's own 'Thread (pooled)'
+# threads around image save/read, plus stripped libQt6Gui/libtbb offsets. They
+# cannot be name-matched (stripped libraries) and must not be blanket-blinded
+# (called_from_lib would hide every real app race through Qt). Reproduced
+# without any qimgv code in ~/tsan-qthreadpool-check/qtimagepool.cpp — 30
+# lines, QImage save + scaled read, same shape. Upstream's.

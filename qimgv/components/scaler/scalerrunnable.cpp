@@ -4,9 +4,8 @@
 
 #include <utility>
 
-ScalerRunnable::ScalerRunnable(ScalerRequest r) {
-    req = std::move(r);
-}
+ScalerRunnable::ScalerRunnable(ScalerRequest r)
+    : req(std::move(r)) {}
 
 void ScalerRunnable::run() {
     //QElapsedTimer t;

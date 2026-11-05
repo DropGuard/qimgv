@@ -6,6 +6,10 @@
 #include <QGuiApplication>
 #include <QStandardPaths>
 
+#include <cerrno>
+#include <sys/wait.h>
+#include <unistd.h>
+
 int runListingTests(int argc, char **argv);
 int runWireFormatTests(int argc, char **argv);
 int runFolderBoundaryTests(int argc, char **argv);
@@ -46,7 +50,24 @@ int main(int argc, char **argv) {
         runImageOpsTests,
         runInfraTests,
     };
-    for(auto run : runs)
-        failures += run(argc, argv) != 0 ? 1 : 0;
+    // One process per class. Not for parallelism and not primarily for crash
+    // isolation: QtTest starts a WatchDog QThread per class and joins it at
+    // class end through QThread::wait, i.e. pthread_clockjoin_np — the one
+    // join TSan does not intercept, same root cause as the QThreadPool waves
+    // (see the QIMGV_SANITIZERS block). Ten classes in one process means ten
+    // registry-live thread ids for the next class's pthread_create to collide
+    // with; one process per class gives every watchdog a private registry that
+    // is abandoned at exit before any pthread_t value can be reused. Per-class
+    // LSan attribution at exit is a side effect worth having.
+    for(auto run : runs) {
+        fflush(nullptr); // fork would duplicate whatever is buffered in stdout
+        pid_t pid = fork();
+        if(pid == 0)
+            return run(argc, argv) != 0 ? 1 : 0;
+        int status = 0;
+        while(waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+        }
+        failures += (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : 1;
+    }
     return failures;
 }

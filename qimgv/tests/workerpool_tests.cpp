@@ -27,8 +27,8 @@ namespace {
 
 class CountingJob : public PoolJob {
 public:
-    CountingJob(std::atomic_int *runs, std::atomic_int *deaths)
-        : runs(runs), deaths(deaths) {}
+    CountingJob(std::atomic_int *_runs, std::atomic_int *_deaths)
+        : runs(_runs), deaths(_deaths) {}
     ~CountingJob() override { deaths->fetch_add(1); }
     void run() override { runs->fetch_add(1); }
 private:
@@ -39,8 +39,8 @@ private:
 // occupies its worker until released, so the test controls what stays queued
 class GatedJob : public PoolJob {
 public:
-    GatedJob(std::atomic_bool *gate, std::atomic_int *starts, std::atomic_int *deaths)
-        : gate(gate), starts(starts), deaths(deaths) {}
+    GatedJob(std::atomic_bool *_gate, std::atomic_int *_starts, std::atomic_int *_deaths)
+        : gate(_gate), starts(_starts), deaths(_deaths) {}
     ~GatedJob() override { deaths->fetch_add(1); }
     void run() override {
         starts->fetch_add(1);
@@ -55,8 +55,8 @@ private:
 
 class OrderJob : public PoolJob {
 public:
-    OrderJob(int marker, std::atomic_int *next, int *order)
-        : marker(marker), next(next), order(order) {}
+    OrderJob(int _marker, std::atomic_int *_next, int *_order)
+        : marker(_marker), next(_next), order(_order) {}
     void run() override { order[next->fetch_add(1)] = marker; }
 private:
     int marker;

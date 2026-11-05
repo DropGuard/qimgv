@@ -113,21 +113,39 @@ endif()
 # takes nightly + -Zbuild-std (rustc refuses -Zsanitizer against a prebuilt std),
 # and the mixed binary then reports nothing and dies at the same libtsan check the
 # uninstrumented one dies at — no coverage bought, run lost.
-# What the C++-only tree answers: C++/C++ sharing (Cache, the Loader/Scaler/
-# Thumbnailer pools against the UI thread) is clean. What it cannot answer: the Rust
-# side shows up only through memcpy interception, so the ~120 reports on the arena
-# and listing path name both accesses and see neither one's ordering — noise, not a
-# queue of bugs. It is not a gate yet either, because the sanitizer aborts the two
-# long suites on itself, at sanitizer_thread_registry.cpp:186
-# (live_.try_emplace(user_id, tid).second): a QThreadPool doing start() +
-# waitForDone() waves makes the runtime hand out a thread id its own registry still
-# lists as live. That is not this project's code — a 30-line Qt-only program
-# reproduces it in 40 waves, deterministically, under gcc-15's libtsan and clang-21's
-# compiler-rt alike, and the same program runs clean without instrumentation. The
-# repro (with both build lines and the hypotheses it killed: mixed-ABI instrumentation,
-# our pool churn, QThreadPool::clear(), a short expiry timeout) lives in the owner's
-# ~/tsan-qthreadpool-check/. Do not re-derive it; the two long suites will keep
-# dying at that CHECK until upstream does.
+# What the C++-only tree answers: C++/C++ sharing (Cache, the shared WorkerPool
+# against the UI thread) is clean. What it cannot answer: the Rust side shows up
+# only through memcpy interception, so the arena/listing reports name both
+# accesses and see neither one's ordering — noise, not a queue of bugs; that
+# noise is machine-absorbed by qimgv/tests/tsan-noise.supp, and a NEW report
+# shape (any frame of ours) still fails the run.
+#
+# The registry CHECK that used to kill both long suites
+# (sanitizer_thread_registry.cpp:186, live_.try_emplace duplicate-user_id guard)
+# is fixed in-tree, not waited out. Root cause, pinned 2026-11-06: every join Qt
+# 6.10 performs goes through pthread_clockjoin_np — the one join call TSan does
+# not intercept (join/tryjoin_np/timedjoin_np are intercepted; clockjoin is
+# absent from gcc-15's libtsan and clang-21's compiler-rt alike) — so the
+# registry keeps each clockjoin'd pthread_t in its live_ map, glibc hands the
+# same value back on the next pthread_create, and the CHECK aborts the process.
+# Three churn sources fed it: QThreadPool's waitForDone() (tears the pool down
+# and re-joins it per wave — repro, mechanism, lifecycle log and the erratum
+# that its "40 waves" argument is dead live in ~/tsan-qthreadpool-check/;
+# Qt 6.10's waitForDone ends in reset(), which joins and deletes every pool
+# thread); QTest's WatchDog QThread, one per test class, joined at class end;
+# and both are gone now — the components run on the persistent WorkerPool
+# (workers created once, joined once; the waves pin lives in
+# workerpool_tests.cpp), and engine_stack_main runs one process per QtTest
+# class so every watchdog gets a private registry. ENGINE_STACK and CORE_NAV
+# now reach the end with zero CHECKs.
+# What still keeps the tree red is enumerated, third-party, and not ours: the
+# QArrayData-region races between QtGui's own 'Thread (pooled)' threads around
+# image save/read — reproduced without any qimgv code in
+# ~/tsan-qthreadpool-check/qtimagepool.cpp — plus stripped libQt6Gui/libtbb
+# offsets that cannot be name-matched; blanket-called_from_lib would hide every
+# real app race through Qt, so the residue stays visible and the tree stays
+# out of the gate until upstream grows a clockjoin interceptor or Qt's image
+# paths stop racing themselves.
 # The Rust half is measured against its own consistent runtime:
 #   RUSTUP_TOOLCHAIN=nightly \
 #   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-Zsanitizer=thread \
