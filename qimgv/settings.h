@@ -156,6 +156,9 @@ public:
     QStringList savedPaths();
     void setSavedPaths(const QStringList& paths);
     QString tmpDir();
+    // single source of truth for the cache location, usable before any
+    // Settings instance exists (main installs the file log handler with it)
+    static QString resolveCacheDir();
     int thumbnailerThreadCount();
     void setThumbnailerThreadCount(int count);
     bool smoothUpscaling();

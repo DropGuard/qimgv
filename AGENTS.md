@@ -34,6 +34,11 @@ CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
 # 行覆盖率(逻辑层/GUI 层分开报;只为排序测试优先级,不是门禁)
 python3 scripts/coverage.py
 
+# 开发绊线:任何 qWarning 当场 abort + 栈。静默腐烂类 bug(@Variant 死序列化
+# 就是现行犯)第一次接触就暴露。启动期警告现已进会话日志(handler 装在任何
+# 配置读取之前)
+QT_FATAL_WARNINGS=1 build/qimgv/qimgv <path>
+
 # 消毒树(独立目录,默认构建不变):ASan+UBSan 抓堆错误/泄漏/UB。
 # 注意:断言全过时套件仍可能因 LSan 退出泄漏而红——证据在
 # Testing/Temporary/LastTest.log,不在 ctest 输出里

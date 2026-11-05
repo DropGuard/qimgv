@@ -181,8 +181,7 @@ private slots:
         QVERIFY(raw.toString().startsWith('{'));
     }
 
-    void scriptsFallBackToPreJsonPlainKeys() {
-        FreshSettings fresh;
+    void scriptsFallBackToPreJsonPlainKeys() {        FreshSettings fresh;
         QSettings conf(QCoreApplication::organizationName(), QCoreApplication::applicationName());
         conf.beginGroup("Scripts");
         conf.beginWriteArray("script");
@@ -197,6 +196,19 @@ private slots:
         settings->readScripts(out);
         QCOMPARE(out.size(), 1);
         QCOMPARE(out.value("Favorite").command, QStringLiteral("/usr/local/bin/fav %file%"));
+    }
+
+    void resolveCacheDirHonorsExplicitCacheDirKey() {
+        // main() installs the file log with this resolver before Settings
+        // exists; a configured cacheDir must be honored there exactly as it
+        // is inside setupCache, or logs and thumbnails split across dirs
+        FreshSettings fresh;
+        const QString alt = QDir::tempPath() + QStringLiteral("/qimgv-cache-alt-%1").arg(QCoreApplication::applicationPid());
+        QSettings conf;
+        conf.setValue(QStringLiteral("cacheDir"), alt);
+        conf.sync();
+        QCOMPARE(Settings::resolveCacheDir(), alt);
+        QVERIFY(QDir(alt).exists());
     }
 };
 

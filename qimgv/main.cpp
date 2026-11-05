@@ -94,6 +94,10 @@ int main(int argc, char *argv[]) {
     qRegisterMetaType<ScalerRequest>("ScalerRequest");
     qRegisterMetaType<std::shared_ptr<Image>>("std::shared_ptr<Image>");
     qRegisterMetaType<std::shared_ptr<Thumbnail>>("std::shared_ptr<Thumbnail>");
+    // the log handler goes up before anything reads config: startup-window
+    // warnings (the QSettings @Variant load screams among them) previously
+    // reached only stderr and never landed in the session log
+    FileLog::install(Settings::resolveCacheDir() + "/logs");
     // globals
     inputMap = InputMap::getInstance();
     appActions = Actions::getInstance();
@@ -103,7 +107,6 @@ int main(int argc, char *argv[]) {
     shrRes = SharedResources::getInstance();
 
     atexit(saveSettings);
-    FileLog::install(settings->tmpDir() + "/logs");
     qDebug() << "[probe] message right after install";
 
 // parse args ------------------------------------------------------------------

@@ -130,31 +130,34 @@ Settings *Settings::getInstance() {
     return settings;
 }
 //------------------------------------------------------------------------------
-void Settings::setupCache() {
-#if defined(__linux__) ||  defined(__FreeBSD__)
+QString Settings::resolveCacheDir() {
+#if defined(__linux__) || defined(__FreeBSD__)
     QString genericCacheLocation = QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation);
     if(genericCacheLocation.isEmpty())
         genericCacheLocation = QDir::homePath() + "/.cache";
     genericCacheLocation.append("/" + QApplication::applicationName());
-    QString cacheLocation = settingsConf->value("cacheDir", genericCacheLocation).toString();
-    mTmpDir = new QDir(cacheLocation);
-    mTmpDir->mkpath(mTmpDir->absolutePath());
-    QFileInfo dirTest(mTmpDir->absolutePath());
+    QString cacheLocation = QSettings().value("cacheDir", genericCacheLocation).toString();
+    QDir(cacheLocation).mkpath(cacheLocation);
+    QFileInfo dirTest(cacheLocation);
     if(!dirTest.isDir() || !dirTest.isWritable() || !dirTest.exists()) {
         // fallback
-        qDebug() << "Error: cache dir is not writable" << mTmpDir->absolutePath();
+        qDebug() << "Error: cache dir is not writable" << cacheLocation;
         qDebug() << "Trying to use" << genericCacheLocation << "instead";
-        mTmpDir->setPath(genericCacheLocation);
-        mTmpDir->mkpath(mTmpDir->absolutePath());
+        QDir(genericCacheLocation).mkpath(genericCacheLocation);
+        cacheLocation = genericCacheLocation;
     }
+    return cacheLocation;
+#else
+    QString cacheLocation = QApplication::applicationDirPath() + "/cache";
+    QDir(cacheLocation).mkpath(cacheLocation);
+    return cacheLocation;
+#endif
+}
+//------------------------------------------------------------------------------
+void Settings::setupCache() {
+    mTmpDir = new QDir(resolveCacheDir());
     mThumbCacheDir = new QDir(mTmpDir->absolutePath() + "/thumbnails");
     mThumbCacheDir->mkpath(mThumbCacheDir->absolutePath());
-#else
-    mTmpDir = new QDir(QApplication::applicationDirPath() + "/cache");
-    mTmpDir->mkpath(mTmpDir->absolutePath());
-    mThumbCacheDir = new QDir(QApplication::applicationDirPath() + "/thumbnails");
-    mThumbCacheDir->mkpath(mThumbCacheDir->absolutePath());
-#endif
 }
 //------------------------------------------------------------------------------
 void Settings::sync() {
