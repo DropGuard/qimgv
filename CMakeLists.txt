@@ -165,15 +165,32 @@ endif()
 # The fd machinery's Rust side has no interpreter-compatible instrument. The one
 # dynamic race check that ever covered it — engine_tests and thumb_tests run the
 # real watcher threads, so their crossbeam handoffs and buffer handling were
-# race-checked there — was the standalone -Zsanitizer=thread run: nightly +
-# -Zbuild-std, manual, never a gate, kept documented for occasional use rather
-# than deleted, because the coverage it alone provides is real:
+# race-checked there — is the standalone -Zsanitizer=thread run: nightly +
+# -Zbuild-std, manual, never a gate, kept documented:
 #   RUSTUP_TOOLCHAIN=nightly \
 #   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-Zsanitizer=thread \
 #   cargo test --workspace --lib --tests --target x86_64-unknown-linux-gnu -Zbuild-std
 # (--lib --tests because rustdoc rebuilds the crate without the sanitizer flag,
-# which rustc correctly refuses.) A green run in either instrument is partial
-# evidence — judge findings, not the absence of them.
+# which rustc correctly refuses.)
+# Re-measured 2026-11-06, after the in-tree CHECK fixes unlocked it: the MIXED
+# setup (this crate built with -Zsanitizer=thread -Zbuild-std via corrosion
+# alongside the C++ tree) builds and RUNS — and it is not a usable instrument,
+# for a sharper reason than the old note recorded. One process gets TWO TSan
+# runtimes: gcc's libtsan.so for the C++ side and rustc's statically linked
+# compiler-rt for the Rust side, each with its own thread registry. Qt threads
+# register in one, Rust threads in the other, each join consumes in whichever
+# registry the joiner resolves to, so live_ entries go permanently stale across
+# the divide and the duplicate-user_id CHECK fires on the next pthread_create —
+# the old "mixed binary reports nothing and dies at the same CHECK" was this
+# split brain, not a coverage measurement. What the mixed run DID establish:
+# with both sides instrumented the engine-side memcpy noise vanishes entirely
+# (consistent shadow), and on every path the suites exercise — real watcher
+# threads, real inotify — the Rust side reports CLEAN. The untested
+# configuration that would make it a real instrument is one SHARED runtime
+# generation for both sides (clang -shared-libsanitizer against a rustc that
+# can link a shared tsan, or pointing the C++ link at rustc's runtime archive);
+# everything else is measured dead ends. A green run in either instrument is
+# partial evidence — judge findings, not the absence of them.
 set(QIMGV_SANITIZERS "" CACHE STRING "sanitizers for a diagnostics tree: address,undefined | thread")
 if(QIMGV_SANITIZERS)
     add_compile_options(-fno-omit-frame-pointer -fsanitize=${QIMGV_SANITIZERS})
