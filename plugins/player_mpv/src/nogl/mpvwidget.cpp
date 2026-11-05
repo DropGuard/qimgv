@@ -20,9 +20,17 @@ MpvWidget::MpvWidget(QWidget *parent, Qt::WindowFlags f)
     mpv_set_option_string(mpv, "cursor-autohide", "no");// no cursor-autohide, we handle that
     //mpv_set_option_string(mpv, "terminal", "yes");
     //mpv_set_option_string(mpv, "msg-level", "all=v");
+    // ffmpeg's ff_cuda_check formats CUDA failures with uninitialized
+    // err_name/err_string pointers; mpv filters by level before formatting,
+    // so keeping ffmpeg output at fatal keeps the crash path unreachable.
+    mpv_set_option_string(mpv, "msg-level", "ffmpeg=fatal");
 
-    // Request hw decoding, just for testing.
-    mpv::qt::set_property(mpv, "hwdec", "auto");
+    // nvdec instead of auto: auto's probe order (vd_lavc hwdec_autoprobe_info)
+    // tries vulkan before nvdec; the decoder-side vulkan candidate creates its
+    // own AVHWDevice and inside an active NVIDIA GL process that enumeration
+    // segfaults in the driver's vk_icdNegotiateLoaderICDInterfaceVersion.
+    // Non-NVIDIA GPUs fall back to software decoding.
+    mpv::qt::set_property(mpv, "hwdec", "nvdec");
 
     //mpv::qt::set_property(mpv, "video-unscaled", "downscale-big");
 
