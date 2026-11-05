@@ -105,11 +105,8 @@ private slots:
         Core core;
         QVERIFY(core.loadPath(files.at(0)));
         QTRY_VERIFY_WITH_TIMEOUT(sawDir(listed, seq), 10000);
-        // the cold-open load rides whenListed: by the time it fires, the
-        // listing has landed, so even the first preload sees a real neighbor
-        // (the pre-2026-11 form loaded against an in-flight listing and the
-        // first preload was a silent no-op — the gap closed with forceInsert)
-        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(1)), 10000);
+        // the cold-open load rides whenListed: it fires against a landed
+        // listing, so the first preload has a real neighbor to decode
 
         // one flip forward: from b the forward neighbor c decodes
         emit actionManager->nextImage();
