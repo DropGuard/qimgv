@@ -133,11 +133,18 @@ endif()
 # that its "40 waves" argument is dead live in ~/tsan-qthreadpool-check/;
 # Qt 6.10's waitForDone ends in reset(), which joins and deletes every pool
 # thread); QTest's WatchDog QThread, one per test class, joined at class end;
-# and both are gone now — the components run on the persistent WorkerPool
-# (workers created once, joined once; the waves pin lives in
-# workerpool_tests.cpp), and engine_stack_main runs one process per QtTest
-# class so every watchdog gets a private registry. ENGINE_STACK and CORE_NAV
-# now reach the end with zero CHECKs.
+# and two are gone — the components run on the persistent WorkerPool (workers
+# created once, joined once; the waves pin lives in workerpool_tests.cpp), and
+# engine_stack_main runs one process per QtTest class so every watchdog gets a
+# private registry. A fourth source is inside QtGui itself: the image paths
+# spawn and clockjoin-join their own 'Thread (pooled)' threads (the same ones
+# behind the QArrayData races below), and no in-tree code can intercept that —
+# CORE_NAV, which decodes images and then creates threads, hit it once after
+# the fixes above were declared final. core_nav_tests now forks per test
+# FUNCTION: every function gets a private registry, measured 3/3 runs zero
+# CHECKs. The CHECK is therefore not "eliminated" — it is made unreachable by
+# construction wherever we own the process layout, and its one remaining
+# in-process source belongs to QtGui.
 # What still keeps the tree red is enumerated, third-party, and not ours: the
 # QArrayData-region races between QtGui's own 'Thread (pooled)' threads around
 # image save/read — reproduced without any qimgv code in

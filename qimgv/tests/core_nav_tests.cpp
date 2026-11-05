@@ -10,6 +10,10 @@
 
 #include <QtTest>
 #include <QApplication>
+
+#include <cerrno>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QImage>
@@ -428,7 +432,42 @@ int main(int argc, char **argv) {
     qputenv("QT_QPA_PLATFORM", "offscreen");
     QApplication app(argc, argv);
     TestCoreNav t;
-    return QTest::qExec(&t, argc, argv);
+    // One process per test function — the same rationale as engine_stack_main's
+    // fork per class, taken one level down: this suite decodes images, which
+    // makes QtGui spawn and clockjoin-join its own internal pooled threads, and
+    // each of those joins leaves a registry-live pthread_t behind (TSan does not
+    // intercept clockjoin — LLVM #239326). A later test's WorkerPool or engine
+    // threads then collide with the stale value. A private registry per test
+    // function ends the reuse; explicit argv (a named test) skips the fork for
+    // targeted debugging.
+    if (argc > 1)
+        return QTest::qExec(&t, argc, argv);
+    const QMetaObject *mo = t.metaObject();
+    QStringList testSlots;
+    for (int i = 0; i < mo->methodCount(); ++i) {
+        const QMetaMethod m = mo->method(i);
+        const QByteArray name = m.name();
+        if (m.methodType() == QMetaMethod::Slot && m.access() == QMetaMethod::Private
+            && m.parameterCount() == 0
+            && name != "initTestCase" && name != "cleanupTestCase"
+            && name != "init" && name != "cleanup")
+            testSlots << QString::fromUtf8(name);
+    }
+    int failures = 0;
+    for (const QString &slot : testSlots) {
+        fflush(nullptr); // fork would duplicate whatever is buffered in stdout
+        pid_t pid = fork();
+        if (pid == 0) {
+            QByteArray nameBytes = slot.toUtf8();
+            char *childArgv[] = {argv[0], nameBytes.data(), nullptr};
+            return QTest::qExec(&t, 2, childArgv) != 0 ? 1 : 0;
+        }
+        int status = 0;
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+        }
+        failures += (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : 1;
+    }
+    return failures;
 }
 
 #include "core_nav_tests.moc"
