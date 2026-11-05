@@ -146,15 +146,34 @@ endif()
 # real app race through Qt, so the residue stays visible and the tree stays
 # out of the gate until upstream grows a clockjoin interceptor or Qt's image
 # paths stop racing themselves.
-# The Rust half is measured against its own consistent runtime:
+# The Rust half is measured by Miri over the semantics layer, on the seam the
+# watcher split made explicit (watcher/apply is libc-free semantics; watcher/fd
+# is real syscalls by design):
+#   cd engine/qimgv-engine
+#   PROPTEST_CASES=8 MIRIFLAGS="-Zmiri-disable-isolation" RUSTUP_TOOLCHAIN=nightly \
+#   cargo +nightly miri test --lib --test watcher_tests --test model_tests \
+#     --test property_tests --test meta_tests
+# (prop cases reduced for interpreter overhead — ~6 min total, meta_tests alone
+# ~4; -Zmiri-disable-isolation because the fixtures exercise real fs semantics;
+# miri's own flags go through MIRIFLAGS, not the rustc command line.)
+# Excluded, not skipped quietly: engine_tests and thumb_tests drive the real fd
+# machinery (inotify FFI), which an interpreter refuses by design. The arming
+# test is tests/race_arm.rs, #[ignore]d because its expected result IS the
+# report:
+#   cargo +nightly miri test --test race_arm -- --ignored
+# → "Data race detected" at race_arm.rs:30; the nonzero exit IS the pass.
+# The fd machinery's Rust side has no interpreter-compatible instrument. The one
+# dynamic race check that ever covered it — engine_tests and thumb_tests run the
+# real watcher threads, so their crossbeam handoffs and buffer handling were
+# race-checked there — was the standalone -Zsanitizer=thread run: nightly +
+# -Zbuild-std, manual, never a gate, kept documented for occasional use rather
+# than deleted, because the coverage it alone provides is real:
 #   RUSTUP_TOOLCHAIN=nightly \
 #   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-Zsanitizer=thread \
 #   cargo test --workspace --lib --tests --target x86_64-unknown-linux-gnu -Zbuild-std
-# (rust-src for -Zbuild-std; --lib --tests because rustdoc rebuilds the crate
-# without the sanitizer flag, which rustc correctly refuses. It runs clean, and it
-# is armed: a deliberately unsynchronised counter is reported at its own source
-# line.) A green run in either half is partial evidence — judge findings, not the
-# absence of them.
+# (--lib --tests because rustdoc rebuilds the crate without the sanitizer flag,
+# which rustc correctly refuses.) A green run in either instrument is partial
+# evidence — judge findings, not the absence of them.
 set(QIMGV_SANITIZERS "" CACHE STRING "sanitizers for a diagnostics tree: address,undefined | thread")
 if(QIMGV_SANITIZERS)
     add_compile_options(-fno-omit-frame-pointer -fsanitize=${QIMGV_SANITIZERS})
