@@ -3,6 +3,15 @@
 #include "utils/inputmap.h"
 #include "shortcutbuilder.h"
 #include "components/thumbnailer/thumbnailerrunnable.h"
+#include "components/cache/thumbnailcache.h"
+
+#include <QDateTime>
+#include <QFile>
+#include <QImage>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <time.h>
 
 // the machinery that degrades quietly instead of crashing: randomizer, cache,
 // DocumentInfo, thumbnailer accounting
@@ -294,6 +303,41 @@ private slots:
         // nonexistent argument -- that is what broke "show in folder"
         auto broken = ScriptManager::splitCommandLine(QStringLiteral("dolphin --select ") + path);
         QCOMPARE(broken.size(), 4);
+    }
+
+    void thumbnailCachePurgesByIdleTimeAndReadRefreshesTheClock() {
+        resetFixture();
+        ThumbnailCache cache;
+        // the Settings singleton may have resolved its cache dir under an
+        // earlier suite's IsolatedHome that is already gone; make the dir the
+        // cache points at real before anything can be saved into it
+        QVERIFY(QDir().mkpath(QFileInfo(cache.thumbnailPath(QStringLiteral("x"))).absolutePath()));
+        QImage dot(4, 4, QImage::Format_ARGB32);
+        dot.fill(Qt::black);
+        const QDateTime now = QDateTime::currentDateTime();
+        auto age = [&now](const QString &path, int days) {
+            const struct timespec times[2] = { { 0, UTIME_OMIT },
+                                               { now.addDays(-days).toSecsSinceEpoch(), 0 } };
+            return ::utimensat(AT_FDCWD, path.toLocal8Bit().constData(), times, 0) == 0;
+        };
+
+        cache.saveThumbnail(&dot, QStringLiteral("hot"));
+        cache.saveThumbnail(&dot, QStringLiteral("stale"));
+        QVERIFY(age(cache.thumbnailPath(QStringLiteral("hot")), 8));
+        QVERIFY(age(cache.thumbnailPath(QStringLiteral("stale")), 16));
+        QCOMPARE(cache.purgeOlderThan(15), 1);
+        QVERIFY(cache.exists(QStringLiteral("hot")));
+        QVERIFY(!cache.exists(QStringLiteral("stale")));
+
+        // a read hit refreshes mtime: a 20-day-old entry that gets displayed
+        // once survives the next sweep -- idle time, not age
+        cache.saveThumbnail(&dot, QStringLiteral("revived"));
+        QVERIFY(age(cache.thumbnailPath(QStringLiteral("revived")), 20));
+        QImage *hit = cache.readThumbnail(QStringLiteral("revived"));
+        QVERIFY(hit);
+        delete hit;
+        QCOMPARE(cache.purgeOlderThan(15), 0);
+        QVERIFY(cache.exists(QStringLiteral("revived")));
     }
 
     void processArgumentsSubstitutesTheFileTag() {

@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include <QTimer>
+
 #include "../directorymanager/enginebridge.h"
 
 Thumbnailer::Thumbnailer(EngineBridge &bridge)
@@ -16,6 +18,10 @@ Thumbnailer::Thumbnailer(EngineBridge &bridge)
     if(threads > globalThreads)
         threads = globalThreads;
     pool->setMaxThreadCount(threads);
+    // startup sweep, after the first frames have settled; stat-only walk
+    QTimer::singleShot(3000, this, [this]() {
+        cache->purgeOlderThan(ThumbnailCache::cacheMaxIdleDays);
+    });
 }
 
 Thumbnailer::~Thumbnailer() {
