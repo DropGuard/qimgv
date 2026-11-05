@@ -961,6 +961,113 @@ private slots:
         QCOMPARE(core.model->getImage(img)->size(), QSize(16, 8)); // back to the disk state
     }
 
+    // ---- FolderGridView's navigation cluster: the selection math (columns,
+    // shifted columns on irregular last rows, page jumps) and the zoom clamps,
+    // driven on a real sized+shown grid. Column counts are self-calibrated
+    // from the observed selectBelow jump instead of hardcoding layout
+    // arithmetic, so the tests survive spacing/margin changes.
+
+    void navigationMovesByColumnsAndBack() {
+        FolderGridView grid;
+        grid.resize(500, 600);
+        grid.populate(25);
+        grid.show();
+        grid.select(0);
+
+        grid.selectBelow();
+        const int rowJump = grid.selection().last(); // = the column count
+        QVERIFY2(rowJump >= 1, "selectBelow must leave the first row");
+        grid.selectBelow();
+        QCOMPARE(grid.selection().last(), rowJump * 2); // column-preserving on a regular row
+        grid.selectAbove();
+        QCOMPARE(grid.selection().last(), rowJump);
+        grid.selectAbove();
+        QCOMPARE(grid.selection().last(), 0);
+        grid.selectAbove(); // first row: already at the top, stays
+        QCOMPARE(grid.selection().last(), 0);
+    }
+
+    void navigationRefusesToLeaveTheGridEdges() {
+        FolderGridView grid;
+        grid.resize(500, 600);
+        grid.populate(25);
+        grid.show();
+        grid.select(0);
+
+        grid.selectAbove(); // first row: already at the top
+        QCOMPARE(grid.selection().last(), 0);
+
+        grid.select(24); // the last item
+        grid.selectBelow(); // last row: stays
+        QCOMPARE(grid.selection().last(), 24);
+        grid.selectNext(); // past the end: stays
+        QCOMPARE(grid.selection().last(), 24);
+        grid.selectPrev();
+        QCOMPARE(grid.selection().last(), 23);
+        grid.selectPrev();
+        QCOMPARE(grid.selection().last(), 22);
+        grid.select(0);
+        grid.selectPrev(); // before the start: stays
+        QCOMPARE(grid.selection().last(), 0);
+    }
+
+    void pageJumpsMoveFourRows() {
+        FolderGridView grid;
+        grid.resize(500, 600);
+        grid.populate(25);
+        grid.show();
+        grid.select(0);
+        grid.selectBelow();
+        const int cols = grid.selection().last();
+        grid.select(0); // pageDown jumps from lastSelected(): restart from the top
+
+        grid.pageDown();
+        QCOMPARE(grid.selection().last(), 4 * cols); // exactly four rows down
+        grid.pageUp();
+        QCOMPARE(grid.selection().last(), 0);        // and exactly four rows back
+    }
+
+    void navigationRestoresTheColumnOnIrregularRows() {
+        FolderGridView grid;
+        grid.resize(500, 600);
+        grid.populate(23); // 23 % cols != 0: the last row is short
+        grid.show();
+        grid.select(0);
+        grid.selectBelow();
+        const int cols = grid.selection().last();
+        QVERIFY2(cols >= 2, "this calibration needs at least two columns");
+        // the last item of the second-to-last row: its column lies beyond the
+        // short last row, so selectBelow clamps and the shifted-column logic
+        // must remember the original column for selectAbove to restore it
+        const int rows = 23 / cols + 1;
+        const int orig = (rows - 2) * cols + (cols - 1);
+        grid.select(orig);
+
+        grid.selectBelow();
+        QVERIFY(grid.selection().last() != orig);
+        grid.selectAbove();
+
+        QCOMPARE(grid.selection().last(), orig); // the shifted column was restored
+    }
+
+    void zoomClampsToTheDocumentedLimits() {
+        FolderGridView grid;
+        grid.resize(500, 600);
+        grid.populate(4);
+        grid.show();
+        QSignalSpy spy(&grid, &FolderGridView::thumbnailSizeChanged);
+        QVERIFY(spy.isValid());
+
+        for(int i = 0; i < 20; ++i)
+            grid.zoomIn();
+        QVERIFY(spy.count() > 0);
+        QCOMPARE(spy.at(spy.count() - 1).at(0).toInt(), grid.THUMBNAIL_SIZE_MAX);
+
+        for(int i = 0; i < 40; ++i)
+            grid.zoomOut();
+        QCOMPARE(spy.at(spy.count() - 1).at(0).toInt(), grid.THUMBNAIL_SIZE_MIN);
+    }
+
 private:
     QString makeTxt(const QString &dir, const QString &name, const char *content) {
         const QString path = QDir(dir).filePath(name);
