@@ -1,5 +1,5 @@
-#ifndef SSIDEBAR_H
-#define SSIDEBAR_H
+#ifndef SETTINGSIDEBAR_H
+#define SETTINGSIDEBAR_H
 
 #include <QWidget>
 #include <QLabel>
@@ -8,18 +8,18 @@
 #include <QBoxLayout>
 #include "gui/customwidgets/iconwidget.h"
 
-class SSideBarItem;
+class SettingsSidebarItem;
 
-class SSideBar : public QWidget {
+class SettingsSidebar : public QWidget {
     Q_OBJECT
 public:
-    explicit SSideBar(QWidget *parent = nullptr);
+    explicit SettingsSidebar(QWidget *parent = nullptr);
     void addEntry(QString icon, QString name);
     void selectEntry(int idx);
 
 private:
     QBoxLayout *layout;
-    QList<SSideBarItem *> entries;
+    QList<SettingsSidebarItem *> entries;
     Qt::Orientation orientation = Qt::Vertical;
     void selectEntryAt(QPoint pos);
 
@@ -33,10 +33,10 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 };
 
-class SSideBarItem : public QWidget {
+class SettingsSidebarItem : public QWidget {
     Q_OBJECT
 public:
-    explicit SSideBarItem(const QString& icon, const QString& name, QWidget *parent = nullptr);
+    explicit SettingsSidebarItem(const QString& icon, const QString& name, QWidget *parent = nullptr);
     void setHighlighted(bool mode);
     bool highlighted();
 
@@ -50,4 +50,4 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 };
 
-#endif // SSIDEBAR_H
+#endif // SETTINGSIDEBAR_H

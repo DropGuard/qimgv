@@ -43,7 +43,7 @@
 #include "gui/folderview/folderview.h"
 #include "gui/folderview/fvoptionspopup.h"
 #include "gui/folderview/bookmarksitem.h"
-#include "gui/customwidgets/ssidebar.h"
+#include "gui/customwidgets/settingsidebar.h"
 #include "gui/customwidgets/entryinfoitem.h"
 #include "gui/customwidgets/iconwidget.h"
 #include <QCheckBox>
@@ -690,15 +690,17 @@ private slots:
     // SEGV lived exactly in the populated+destroyed state, which is why the
     // construct-only sweep missed it. Each class here carries value-member
     // widgets parented through its own layout: the pattern whose teardown had
-    // never once run. (SSidebar has zero external references — swept anyway,
-    // since it still compiles into the binary.)
+    // never once run. (SSideBar — used by SettingsDialog's .ui as sideBar2 —
+    // was renamed SettingsSidebar after this census initially shipped with a
+    // "dead code" note that was a case-sensitive grep miss; the rename also
+    // buries the case trap that produced it.)
     void populatedCensusCoversTheRemainingWidgetClasses() {
         const QMap<QString, int> before = widgetClasses();
         const int beforeTotal = QApplication::allWidgets().size();
         {
             BookmarksItem bookmark("some dir", "/tmp");
-            SSideBarItem sidebarItem("icon", "label");
-            SSideBar sidebar;
+            SettingsSidebarItem sidebarItem("icon", "label");
+            SettingsSidebar sidebar;
             EntryInfoItem info;
             FolderView fv;
             fv.populate(1); // the populated-grid state that killed the folder grid
@@ -975,16 +977,16 @@ private slots:
         grid.select(0);
 
         grid.selectBelow();
-        const int rowJump = grid.selection().last(); // = the column count
+        const int rowJump = lastSelection(grid); // = the column count
         QVERIFY2(rowJump >= 1, "selectBelow must leave the first row");
         grid.selectBelow();
-        QCOMPARE(grid.selection().last(), rowJump * 2); // column-preserving on a regular row
+        QCOMPARE(lastSelection(grid), rowJump * 2); // column-preserving on a regular row
         grid.selectAbove();
-        QCOMPARE(grid.selection().last(), rowJump);
+        QCOMPARE(lastSelection(grid), rowJump);
         grid.selectAbove();
-        QCOMPARE(grid.selection().last(), 0);
+        QCOMPARE(lastSelection(grid), 0);
         grid.selectAbove(); // first row: already at the top, stays
-        QCOMPARE(grid.selection().last(), 0);
+        QCOMPARE(lastSelection(grid), 0);
     }
 
     void navigationRefusesToLeaveTheGridEdges() {
@@ -995,20 +997,20 @@ private slots:
         grid.select(0);
 
         grid.selectAbove(); // first row: already at the top
-        QCOMPARE(grid.selection().last(), 0);
+        QCOMPARE(lastSelection(grid), 0);
 
         grid.select(24); // the last item
         grid.selectBelow(); // last row: stays
-        QCOMPARE(grid.selection().last(), 24);
+        QCOMPARE(lastSelection(grid), 24);
         grid.selectNext(); // past the end: stays
-        QCOMPARE(grid.selection().last(), 24);
+        QCOMPARE(lastSelection(grid), 24);
         grid.selectPrev();
-        QCOMPARE(grid.selection().last(), 23);
+        QCOMPARE(lastSelection(grid), 23);
         grid.selectPrev();
-        QCOMPARE(grid.selection().last(), 22);
+        QCOMPARE(lastSelection(grid), 22);
         grid.select(0);
         grid.selectPrev(); // before the start: stays
-        QCOMPARE(grid.selection().last(), 0);
+        QCOMPARE(lastSelection(grid), 0);
     }
 
     void pageJumpsMoveFourRows() {
@@ -1018,13 +1020,13 @@ private slots:
         grid.show();
         grid.select(0);
         grid.selectBelow();
-        const int cols = grid.selection().last();
+        const int cols = lastSelection(grid);
         grid.select(0); // pageDown jumps from lastSelected(): restart from the top
 
         grid.pageDown();
-        QCOMPARE(grid.selection().last(), 4 * cols); // exactly four rows down
+        QCOMPARE(lastSelection(grid), 4 * cols); // exactly four rows down
         grid.pageUp();
-        QCOMPARE(grid.selection().last(), 0);        // and exactly four rows back
+        QCOMPARE(lastSelection(grid), 0);        // and exactly four rows back
     }
 
     void navigationRestoresTheColumnOnIrregularRows() {
@@ -1034,7 +1036,7 @@ private slots:
         grid.show();
         grid.select(0);
         grid.selectBelow();
-        const int cols = grid.selection().last();
+        const int cols = lastSelection(grid);
         QVERIFY2(cols >= 2, "this calibration needs at least two columns");
         // the last item of the second-to-last row: its column lies beyond the
         // short last row, so selectBelow clamps and the shifted-column logic
@@ -1044,10 +1046,10 @@ private slots:
         grid.select(orig);
 
         grid.selectBelow();
-        QVERIFY(grid.selection().last() != orig);
+        QVERIFY(lastSelection(grid) != orig);
         grid.selectAbove();
 
-        QCOMPARE(grid.selection().last(), orig); // the shifted column was restored
+        QCOMPARE(lastSelection(grid), orig); // the shifted column was restored
     }
 
     void zoomClampsToTheDocumentedLimits() {
@@ -1069,6 +1071,12 @@ private slots:
     }
 
 private:
+    // selection() returns QList by value: capturing it in a named local keeps
+    // clazy's detaching-temporary quiet AND avoids a real detach per .last()
+    int lastSelection(FolderGridView &grid) {
+        const QList<int> sel = grid.selection();
+        return sel.last();
+    }
     QString makeTxt(const QString &dir, const QString &name, const char *content) {
         const QString path = QDir(dir).filePath(name);
         QFile f(path);

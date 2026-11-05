@@ -94,7 +94,7 @@
         </size>
        </property>
        <property name="accessibleName">
-        <string notr="true">SSideBarContainer</string>
+        <string notr="true">SettingsSidebarContainer</string>
        </property>
        <layout class="QVBoxLayout" name="verticalLayout_37">
         <property name="leftMargin">
@@ -110,7 +110,7 @@
          <number>0</number>
         </property>
         <item>
-         <widget class="SSideBar" name="sideBar2" native="true">
+         <widget class="SettingsSidebar" name="sideBar2" native="true">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
             <horstretch>0</horstretch>
@@ -5009,9 +5009,9 @@ li.checked::marker { content: &quot;\2612&quot;; }
    <header>gui/customwidgets/colorselectorbutton.h</header>
   </customwidget>
   <customwidget>
-   <class>SSideBar</class>
+   <class>SettingsSidebar</class>
    <extends>QWidget</extends>
-   <header>gui/customwidgets/ssidebar.h</header>
+   <header>gui/customwidgets/settingsidebar.h</header>
    <container>1</container>
    <slots>
     <signal>entrySelected(int)</signal>

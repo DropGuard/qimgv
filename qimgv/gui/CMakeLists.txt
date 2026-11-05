@@ -28,7 +28,7 @@ target_sources(qimgv_gui PRIVATE
     customwidgets/styledcombobox.cpp
     customwidgets/colorselectorbutton.cpp
     customwidgets/entryinfoitem.cpp
-    customwidgets/ssidebar.cpp
+    customwidgets/settingsidebar.cpp
 
     dialogs/filereplacedialog.cpp
     dialogs/resizedialog.cpp

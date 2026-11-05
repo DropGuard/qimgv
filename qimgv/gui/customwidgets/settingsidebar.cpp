@@ -1,8 +1,8 @@
-#include "ssidebar.h"
+#include "settingsidebar.h"
 
 #include <utility>
 
-SSideBar::SSideBar(QWidget *parent) : QWidget{parent} {
+SettingsSidebar::SettingsSidebar(QWidget *parent) : QWidget{parent} {
     layout = new QBoxLayout(QBoxLayout::TopToBottom);
     layout->setSpacing(0);
     layout->setContentsMargins(8,8,9,9);
@@ -17,15 +17,15 @@ SSideBar::SSideBar(QWidget *parent) : QWidget{parent} {
     addEntry(":res/icons/common/settings/about32.png",      tr("About"));
 }
 
-void SSideBar::addEntry(QString icon, QString name) {
-    SSideBarItem *entry = new SSideBarItem(std::move(icon), std::move(name));
+void SettingsSidebar::addEntry(QString icon, QString name) {
+    SettingsSidebarItem *entry = new SettingsSidebarItem(std::move(icon), std::move(name));
     layout->insertWidget(entries.count(), entry);
     entries.append(entry);
     if(entries.count() == 1)
         selectEntry(0);
 }
 
-void SSideBar::selectEntry(int idx) {
+void SettingsSidebar::selectEntry(int idx) {
     if(idx >= 0 && idx < entries.count()) {
         foreach(auto entry, entries)
             entry->setHighlighted(false);
@@ -34,7 +34,7 @@ void SSideBar::selectEntry(int idx) {
     }
 }
 
-void SSideBar::mousePressEvent(QMouseEvent *event) {
+void SettingsSidebar::mousePressEvent(QMouseEvent *event) {
     event->accept();
     if(!(event->buttons() & Qt::LeftButton))
         return;
@@ -42,14 +42,14 @@ void SSideBar::mousePressEvent(QMouseEvent *event) {
 
 }
 
-void SSideBar::mouseMoveEvent(QMouseEvent *event) {
+void SettingsSidebar::mouseMoveEvent(QMouseEvent *event) {
     event->accept();
     if(!(event->buttons() & Qt::LeftButton))
         return;
     selectEntryAt(event->pos());
 }
 
-void SSideBar::selectEntryAt(QPoint pos) {
+void SettingsSidebar::selectEntryAt(QPoint pos) {
     int newSelection = -1;
     for(int i = 0; i < entries.count(); i++) {
         if(entries[i]->geometry().contains(pos)) {
@@ -61,7 +61,7 @@ void SSideBar::selectEntryAt(QPoint pos) {
     selectEntry(newSelection);
 }
 
-void SSideBar::paintEvent(QPaintEvent *event) {
+void SettingsSidebar::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event)
     QStyleOption opt;
     opt.initFrom(this);
@@ -71,7 +71,7 @@ void SSideBar::paintEvent(QPaintEvent *event) {
 
 // -------------------------------------------------------------------
 
-SSideBarItem::SSideBarItem(const QString& icon, const QString& name, QWidget *parent) : QWidget{parent} {
+SettingsSidebarItem::SettingsSidebarItem(const QString& icon, const QString& name, QWidget *parent) : QWidget{parent} {
     QPalette p;
     if(p.base().color().valueF() <= 0.45f)
         iconWidget.setColor(QColor(184,184,185));
@@ -89,18 +89,18 @@ SSideBarItem::SSideBarItem(const QString& icon, const QString& name, QWidget *pa
     setMouseTracking(true);
 }
 
-void SSideBarItem::setHighlighted(bool mode) {
+void SettingsSidebarItem::setHighlighted(bool mode) {
     mHighlighted = mode;
     this->setProperty("checked", mHighlighted);
     style()->unpolish(this);
     style()->polish(this);
 }
 
-bool SSideBarItem::highlighted() {
+bool SettingsSidebarItem::highlighted() {
     return mHighlighted;
 }
 
-void SSideBarItem::paintEvent(QPaintEvent *event) {
+void SettingsSidebarItem::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event)
     QStyleOption opt;
     opt.initFrom(this);

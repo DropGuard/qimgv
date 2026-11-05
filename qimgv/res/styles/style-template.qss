@@ -25,16 +25,16 @@ SettingsDialog QComboBox {
     font-size: %font_large%;
 }
 
-[accessibleName="SSideBarContainer"] {
+[accessibleName="SettingsSidebarContainer"] {
     background-color: %sys_window_tinted_lc2%;
     border-right: 1px solid %sys_window_tinted_lc%;
 }
 
-SSideBarItem {
+SettingsSidebarItem {
     border-radius: 5px;
 }
 
-SSideBarItem[checked="true"] {
+SettingsSidebarItem[checked="true"] {
     background-color: %sys_window_tinted_hc%;
 }
 
