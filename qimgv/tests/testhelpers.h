@@ -5,6 +5,7 @@
 // QSettings) and, previously, the EngineBridge — the bridge became
 // constructible per-test, and these helpers cover the rest.
 
+#include <QTest>
 #include <QTemporaryDir>
 #include <QCoreApplication>
 
@@ -14,6 +15,30 @@
 // the lifetime of the object. Construct it BEFORE anything touches Settings —
 // QStandardPaths and QSettings both resolve through these values lazily, so
 // the earlier the better.
+// value-returning file helpers for tests: they report through qFail (a bare
+// return inside these would be a compile error, and three copies of that
+// mistake across two suites is the reason this lives here)
+inline QString writeTestFile(const QString &path, const QByteArray &content) {
+    QFile f(path);
+    if(!f.open(QIODevice::WriteOnly)) {
+        QTest::qFail(qPrintable(QStringLiteral("cannot create %1: %2").arg(path, f.errorString())),
+                     __FILE__, __LINE__);
+        return {};
+    }
+    f.write(content);
+    return path;
+}
+
+inline QByteArray readTestFile(const QString &path) {
+    QFile f(path);
+    if(!f.open(QIODevice::ReadOnly)) {
+        QTest::qFail(qPrintable(QStringLiteral("cannot read %1: %2").arg(path, f.errorString())),
+                     __FILE__, __LINE__);
+        return {};
+    }
+    return f.readAll();
+}
+
 class IsolatedHome {
 public:
     IsolatedHome() {

@@ -797,6 +797,124 @@ private slots:
         QVERIFY2(proxy.isInitialized(), "re-setting a model on a live binding must repopulate");
     }
 
+    // ---- the editing cluster: edit_template's executors are dialog-free in
+    // document mode (edits stay in memory until an explicit save) and
+    // confirmation-gated in folder view (edits hit the disk immediately). The
+    // fake scripts the confirmation; the assertions watch memory, disk, and
+    // the confirm count. The fixture is a 16x8 with two colored halves: a
+    // solid square could never show a rotation.
+
+    QString writeRectImage(const QString &path) {
+        QImage img(16, 8, QImage::Format_RGB32);
+        img.fill(Qt::red);
+        QPainter p(&img);
+        p.fillRect(8, 0, 8, 8, Qt::blue);
+        p.end();
+        if(!img.save(path, "png")) {
+            QTest::qFail(qPrintable(QStringLiteral("cannot encode %1").arg(path)), __FILE__, __LINE__);
+            return {};
+        }
+        return path;
+    }
+
+    void editingInDocumentModeEditsInMemoryWithoutConfirmation() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString img = QDir(alpha).filePath("rect.png");
+        writeRectImage(img);
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(img), 10000);
+        const QByteArray diskBefore = contentOf(img);
+
+        core.rotateLeft();
+
+        QTRY_COMPARE_WITH_TIMEOUT(core.model->getImage(img)->size(), QSize(8, 16), 10000);
+        QCOMPARE(fake.confirmCalls, 0); // document mode: in memory, no save, no ask
+        QCOMPARE(contentOf(img), diskBefore); // the disk file is untouched until save
+    }
+
+    void editingInFolderViewSavesAfterScriptedConfirmation() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString img = QDir(alpha).filePath("rect.png");
+        writeRectImage(img);
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        core.toggleFolderView();
+
+        core.rotateLeft();
+
+        QCOMPARE(fake.confirmCalls, 1); // folder view saves immediately, so it asks first
+        QCOMPARE(QImage(img).size(), QSize(8, 16)); // the disk file is the rotated one
+    }
+
+    void editingDeclinedInFolderViewLeavesTheDiskAlone() {
+        Core core;
+        FakeInteractions fake;
+        fake.confirmAnswer = false;
+        core.ui_ = &fake;
+        const QString img = QDir(alpha).filePath("rect.png");
+        writeRectImage(img);
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        core.toggleFolderView();
+
+        core.rotateLeft();
+
+        QCOMPARE(fake.confirmCalls, 1);
+        QCOMPARE(QImage(img).size(), QSize(16, 8)); // declined: the disk is untouched
+    }
+
+    void resizeEditsTheLoadedImage() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString img = QDir(alpha).filePath("rect.png");
+        writeRectImage(img);
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.resize(QSize(4, 4));
+
+        QTRY_COMPARE_WITH_TIMEOUT(core.model->getImage(img)->size(), QSize(4, 4), 10000);
+        QCOMPARE(fake.confirmCalls, 0); // resize never asks
+    }
+
+    void cropAndSaveWritesTheCroppedFile() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString img = QDir(alpha).filePath("rect.png");
+        writeRectImage(img);
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.cropAndSave(QRect(0, 0, 8, 8));
+
+        QCOMPARE(QImage(img).size(), QSize(8, 8)); // cropped AND saved to disk
+        QCOMPARE(fake.confirmCalls, 0); // cropAndSave bypasses the confirmation
+    }
+
+    void discardEditsRestoresTheOnDiskImage() {
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        const QString img = QDir(alpha).filePath("rect.png");
+        writeRectImage(img);
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.rotateLeft();
+        QTRY_COMPARE_WITH_TIMEOUT(core.model->getImage(img)->size(), QSize(8, 16), 10000);
+
+        core.discardEdits();
+
+        QCOMPARE(core.model->getImage(img)->size(), QSize(16, 8)); // back to the disk state
+    }
+
 private:
     QString makeTxt(const QString &dir, const QString &name, const char *content) {
         const QString path = QDir(dir).filePath(name);
