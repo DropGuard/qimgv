@@ -673,6 +673,15 @@ private slots:
         QVERIFY(QFileInfo::exists(QDir(alpha).filePath("a.png")));
     }
 
+    // a menuitem icon can exist on disk and still render blank: bf65eac2 added
+    // the wallpaper icon files and the setIconPath call but forgot the
+    // resources.qrc entry, so the resource did not exist at runtime. Pin the
+    // compiled resource, not the file on disk.
+    void wallpaperMenuIconIsCompiledIntoResources() {
+        QVERIFY(QFile::exists(":/res/icons/common/menuitem/wallpaper16.png"));
+        QVERIFY(QFile::exists(":/res/icons/common/menuitem/wallpaper16@2x.png"));
+    }
+
     void renameCurrentSelectionForcesAfterScriptedConfirmation() {
         Core core;
         FakeInteractions fake;
@@ -981,6 +990,13 @@ int main(int argc, char **argv) {
         int status = 0;
         while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
         }
+        // a crashed child loses its buffered output entirely — without naming
+        // the slot here, the evidence is a red ctest with nothing in the log
+        if(!(WIFEXITED(status) && WEXITSTATUS(status) == 0))
+            fprintf(stderr, "core_nav: slot '%s' exited abnormally (exit=%d, sig=%d)\n",
+                    slot.toUtf8().constData(),
+                    WIFEXITED(status) ? WEXITSTATUS(status) : -1,
+                    WIFSIGNALED(status) ? WTERMSIG(status) : -1);
         failures += (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : 1;
     }
     return failures;
