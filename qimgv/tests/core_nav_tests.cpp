@@ -82,6 +82,33 @@ public:
     }
 };
 
+class TestableFolderGridView : public FolderGridView {
+public:
+    using FolderGridView::dragEnterEvent;
+    using FolderGridView::dragMoveEvent;
+    using FolderGridView::dragLeaveEvent;
+    using FolderGridView::dropEvent;
+};
+
+QPoint dropPosOverThumbnail(FolderGridView &grid, int index) {
+    QList<ThumbnailWidget *> widgets;
+    const QList<QGraphicsItem *> sceneItems = grid.items(); // named: no detach
+    for(QGraphicsItem *item : sceneItems)
+        if(auto *tw = dynamic_cast<ThumbnailWidget *>(item))
+            widgets << tw;
+    if(widgets.count() <= index) {
+        QTest::qFail(qPrintable(QStringLiteral("no thumbnail #%1").arg(index)), __FILE__, __LINE__);
+        return {};
+    }
+    std::sort(widgets.begin(), widgets.end(), [](const ThumbnailWidget *a, const ThumbnailWidget *b) {
+        const QPointF pa = a->scenePos(), pb = b->scenePos();
+        return pa.y() != pb.y() ? pa.y() < pb.y() : pa.x() < pb.x();
+    });
+    const QPointF center = widgets.at(index)->mapToScene(widgets.at(index)->boundingRect().center());
+    return grid.mapFromScene(center);
+}
+
+
 class TestCoreNav : public QObject {
     Q_OBJECT
     IsolatedHome home;
@@ -961,6 +988,132 @@ private slots:
         core.discardEdits();
 
         QCOMPARE(core.model->getImage(img)->size(), QSize(16, 8)); // back to the disk state
+    }
+
+    // ---- the drag-drop surface. The handlers are invoked DIRECTLY through a
+    // using-exposed subclass: their contracts (enter accepts, move hit-tests
+    // and emits draggedOver(index), drop emits droppedInto(mimeData, source,
+    // landing index)) are what we pin, and QApplication::notify's drag-protocol
+    // gating (a synthetic Drop without an accepted DragMove in the drag
+    // manager's state is refused delivery) isQt plumbing this arc must not
+    // depend on. Positions are computed from the live scene (item scenePos
+    // mapped to viewport coords), not hardcoded.
+
+    void dragEnterAcceptsUnconditionally() {
+        TestableFolderGridView grid;
+        grid.resize(300, 300);
+        grid.populate(1);
+        grid.show();
+
+        auto mime = std::make_unique<QMimeData>();
+        mime->setUrls({QUrl::fromLocalFile("/tmp/whatever.png")});
+        QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, mime.get(),
+                              Qt::LeftButton, Qt::NoModifier);
+        grid.dragEnterEvent(&enter);
+        QVERIFY2(enter.isAccepted(), "dragEnter rejected a drop the grid is built to accept");
+
+        QMimeData plain;
+        plain.setText("just text");
+        QDragEnterEvent plainEnter(QPoint(10, 10), Qt::CopyAction, &plain,
+                                   Qt::LeftButton, Qt::NoModifier);
+        grid.dragEnterEvent(&plainEnter);
+        QVERIFY2(plainEnter.isAccepted(),
+                 "the grid accepts without inspecting the mime — reporting is the drop's job");
+    }
+
+    void dragMoveReportsTheHoveredThumbnailIndex() {
+        TestableFolderGridView grid;
+        grid.resize(300, 300);
+        grid.populate(2);
+        grid.show();
+        QTest::qWait(50); // let the flow layout position the two cells
+        QSignalSpy spy(&grid, &FolderGridView::draggedOver);
+        QVERIFY(spy.isValid());
+
+        const QPoint pos0 = dropPosOverThumbnail(grid, 0);
+        const QPoint pos1 = dropPosOverThumbnail(grid, 1);
+        QVERIFY2(pos0 != pos1, "the two thumbnails share a position — layout never ran");
+
+        QDragMoveEvent move0(QPoint(pos0), Qt::CopyAction, nullptr, Qt::LeftButton, Qt::NoModifier);
+        grid.dragMoveEvent(&move0);
+        QCOMPARE(spy.last().at(0).toInt(), 0);
+
+        QDragMoveEvent move1(QPoint(pos1), Qt::CopyAction, nullptr, Qt::LeftButton, Qt::NoModifier);
+        grid.dragMoveEvent(&move1);
+        QCOMPARE(spy.last().at(0).toInt(), 1);
+
+        QDragMoveEvent moveEmpty(QPoint(1, 1), Qt::CopyAction, nullptr, Qt::LeftButton, Qt::NoModifier);
+        grid.dragMoveEvent(&moveEmpty);
+        QCOMPARE(spy.last().at(0).toInt(), -1); // off-grid: the consumer learns "no target"
+    }
+
+    void dropReportsMimeSourceAndLandingIndex() {
+        TestableFolderGridView grid;
+        grid.resize(300, 300);
+        grid.populate(2);
+        grid.show();
+        QTest::qWait(50);
+        QSignalSpy spy(&grid, &FolderGridView::droppedInto);
+        QVERIFY(spy.isValid());
+
+        auto mime = std::make_unique<QMimeData>();
+        const QList<QUrl> urls {QUrl::fromLocalFile("/tmp/dropped1.png"),
+                                QUrl::fromLocalFile("/tmp/dropped2.png")};
+        mime->setUrls(urls);
+
+        const QPoint pos1 = dropPosOverThumbnail(grid, 1);
+        QDropEvent drop(QPointF(pos1), Qt::CopyAction, mime.get(),
+                        Qt::LeftButton | Qt::RightButton, Qt::NoModifier);
+        grid.dropEvent(&drop);
+        QVERIFY(drop.isAccepted());
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).value<const QMimeData *>(), mime.get()); // payload passes through
+        QCOMPARE(spy.at(0).at(1).value<QObject *>(), nullptr);            // no source (external drop)
+        QCOMPARE(spy.at(0).at(2).toInt(), 1);                             // landed on thumbnail #1
+        QCOMPARE(spy.at(0).at(0).value<const QMimeData *>()->urls(), urls);
+    }
+
+    void dropOutsideAnyThumbnailReportsMinusOne() {
+        TestableFolderGridView grid;
+        grid.resize(300, 300);
+        grid.populate(2);
+        grid.show();
+        QTest::qWait(50);
+        QSignalSpy spy(&grid, &FolderGridView::droppedInto);
+        QVERIFY(spy.isValid());
+
+        auto mime = std::make_unique<QMimeData>();
+        mime->setUrls({QUrl::fromLocalFile("/tmp/x.png")});
+        QDropEvent drop(QPointF(1, 1), Qt::CopyAction, mime.get(),
+                        Qt::LeftButton, Qt::NoModifier);
+        grid.dropEvent(&drop);
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(2).toInt(), -1); // the consumer decides: nothing to highlight
+    }
+
+    void dragReportingSurvivesALeave() {
+        TestableFolderGridView grid;
+        grid.resize(300, 300);
+        grid.populate(2);
+        grid.show();
+        QTest::qWait(50);
+        QSignalSpy spy(&grid, &FolderGridView::draggedOver);
+        QVERIFY(spy.isValid());
+
+        const QPoint pos0 = dropPosOverThumbnail(grid, 0);
+        QDragMoveEvent move0(QPoint(pos0), Qt::CopyAction, nullptr, Qt::LeftButton, Qt::NoModifier);
+        grid.dragMoveEvent(&move0);
+        QCOMPARE(spy.last().at(0).toInt(), 0);
+
+        QDragLeaveEvent leave;
+        grid.dragLeaveEvent(&leave);
+        QVERIFY(leave.isAccepted());
+
+        // a new drag sequence after the leave reports from a clean slate
+        QDragMoveEvent move0again(QPoint(pos0), Qt::CopyAction, nullptr, Qt::LeftButton, Qt::NoModifier);
+        grid.dragMoveEvent(&move0again);
+        QCOMPARE(spy.last().at(0).toInt(), 0);
     }
 
     // ---- FolderGridView's navigation cluster: the selection math (columns,
