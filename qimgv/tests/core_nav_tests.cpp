@@ -694,6 +694,109 @@ private slots:
         QCOMPARE(fake.confirmCalls, 1); // the overwrite question was asked and scripted yes
     }
 
+    // ---- DirectoryPresenter lifecycle: the view is an injected observer, the
+    // model connections are per-model, and disconnectView (until now a todo)
+    // is what allows a presenter to outlive one view and bind another.
+
+    void presenterPopulatesTheViewWhenModelArrives() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        ThumbnailStripProxy proxy;
+        DirectoryPresenter presenter(pool);
+
+        presenter.setView(&proxy);
+        presenter.setModel(model);
+        proxy.show(); // the strip materializes on showEvent, not on populate
+
+        QVERIFY2(proxy.isInitialized(), "show never materialized the strip");
+    }
+
+    void presenterSetViewTwiceKeepsTheFirstBinding() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        ThumbnailStripProxy first, second;
+        DirectoryPresenter presenter(pool);
+
+        presenter.setView(&first);
+        first.show();
+        presenter.setView(&second); // rejected: the binding is already live
+        presenter.setModel(model);
+
+        QVERIFY(first.isInitialized());
+        QVERIFY2(!second.isInitialized(), "the second setView silently replaced the first");
+    }
+
+    void presenterForwardsActivationToTheFilePath() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        ThumbnailStripProxy proxy;
+        DirectoryPresenter presenter(pool);
+        presenter.setView(&proxy);
+        proxy.show(); // materialize the strip so the forwarding path is the real one
+        presenter.setModel(model);
+        QSignalSpy activated(&presenter, &DirectoryPresenter::fileActivated);
+        QVERIFY(activated.isValid());
+
+        QMetaObject::invokeMethod(&proxy, "itemActivated", Q_ARG(int, 0));
+
+        QCOMPARE(activated.count(), 1);
+        QCOMPARE(activated.at(0).at(0).toString(), QDir(alpha).filePath("a.png"));
+    }
+
+    void presenterDisconnectViewStopsForwardingAndAllowsRebinding() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        ThumbnailStripProxy first, second;
+        DirectoryPresenter presenter(pool);
+        presenter.setView(&first);
+        presenter.setModel(model);
+        QSignalSpy activated(&presenter, &DirectoryPresenter::fileActivated);
+
+        QMetaObject::invokeMethod(&first, "itemActivated", Q_ARG(int, 0));
+        QCOMPARE(activated.count(), 1);
+
+        presenter.disconnectView();
+        QMetaObject::invokeMethod(&first, "itemActivated", Q_ARG(int, 0));
+        QCOMPARE(activated.count(), 1); // the detached view no longer reaches us
+
+        presenter.setView(&second); // rebinding was impossible before disconnectView
+        second.show();
+        presenter.setModel(model);
+        QVERIFY2(second.isInitialized(), "rebinding after disconnectView does not populate");
+        QMetaObject::invokeMethod(&second, "itemActivated", Q_ARG(int, 0));
+        QCOMPARE(activated.count(), 2);
+        QCOMPARE(activated.at(1).at(0).toString(), QDir(alpha).filePath("a.png"));
+    }
+
+    void presenterUnsetModelKeepsTheViewBinding() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        ThumbnailStripProxy proxy;
+        DirectoryPresenter presenter(pool);
+        presenter.setView(&proxy);
+        proxy.show();
+        presenter.setModel(model);
+
+        presenter.unsetModel(); // detaches the model, keeps the view on purpose
+
+        QVERIFY(proxy.isInitialized()); // the binding survived the model swap
+        auto model2 = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model2->setDirectory(beta));
+        QTRY_COMPARE_WITH_TIMEOUT(model2->fileCount(), 1, 10000);
+        presenter.setModel(model2);
+        QVERIFY2(proxy.isInitialized(), "re-setting a model on a live binding must repopulate");
+    }
+
 private:
     QString makeTxt(const QString &dir, const QString &name, const char *content) {
         const QString path = QDir(dir).filePath(name);

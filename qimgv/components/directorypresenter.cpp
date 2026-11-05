@@ -70,7 +70,21 @@ void DirectoryPresenter::populateView() {
 }
 
 void DirectoryPresenter::disconnectView() {
-   // todo
+    if(!view)
+        return;
+    // mirrors setView's five string-based connects exactly — a string-based
+    // disconnect must name the same SIGNAL/SLOT signatures
+    disconnect(dynamic_cast<QObject *>(view), SIGNAL(itemActivated(int)),
+               this, SLOT(onItemActivated(int)));
+    disconnect(dynamic_cast<QObject *>(view), SIGNAL(thumbnailsRequested(QList<int>, int, bool, bool)),
+               this, SLOT(generateThumbnails(QList<int>, int, bool, bool)));
+    disconnect(dynamic_cast<QObject *>(view), SIGNAL(draggedOut()),
+               this, SLOT(onDraggedOut()));
+    disconnect(dynamic_cast<QObject *>(view), SIGNAL(draggedOver(int)),
+               this, SLOT(onDraggedOver(int)));
+    disconnect(dynamic_cast<QObject *>(view), SIGNAL(droppedInto(const QMimeData*,QObject*,int)),
+               this, SLOT(onDroppedInto(const QMimeData*,QObject*,int)));
+    view = nullptr;
 }
 
 //------------------------------------------------------------------------------
