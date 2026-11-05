@@ -106,9 +106,31 @@ endif()
 # classes a Rust-core/C++-shell app actually carries — the Rust side is
 # memory-safe by construction, so what the sanitizers watch is exactly the
 # C++ shell and the FFI boundary. Green here is a decidable property of the
-# exercised paths, not a heuristic. TSan is its own tree (-DQIMGV_SANITIZERS=
-# thread): it cannot combine with ASan, and uninstrumented Qt/Rust code makes
-# its silence only partial evidence — judge findings, not the absence of them.
+# exercised paths, not a heuristic. TSan is its own tree — it cannot combine with
+# ASan:
+#   cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=thread
+# The engine stays uninstrumented there by measurement, not taste: instrumenting it
+# takes nightly + -Zbuild-std (rustc refuses -Zsanitizer against a prebuilt std),
+# and the mixed binary then reports nothing and dies at the same libtsan check the
+# uninstrumented one dies at — no coverage bought, run lost.
+# What the C++-only tree answers: C++/C++ sharing (Cache, the Loader/Scaler/
+# Thumbnailer pools against the UI thread) is clean. What it cannot answer: the Rust
+# side shows up only through memcpy interception, so the ~120 reports on the arena
+# and listing path name both accesses and see neither one's ordering — noise, not a
+# queue of bugs. OPEN, and it blocks this tree from being a gate: libtsan aborts the
+# two long suites at sanitizer_thread_registry.cpp:186 (live_.try_emplace(user_id,
+# tid)) on the first thread created once enough threads have churned —
+# engine_stack_tests reaches it entering TestWireFormat — identically under gcc-15's
+# and clang-21's runtime.
+# The Rust half is measured against its own consistent runtime:
+#   RUSTUP_TOOLCHAIN=nightly \
+#   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-Zsanitizer=thread \
+#   cargo test --workspace --lib --tests --target x86_64-unknown-linux-gnu -Zbuild-std
+# (rust-src for -Zbuild-std; --lib --tests because rustdoc rebuilds the crate
+# without the sanitizer flag, which rustc correctly refuses. It runs clean, and it
+# is armed: a deliberately unsynchronised counter is reported at its own source
+# line.) A green run in either half is partial evidence — judge findings, not the
+# absence of them.
 set(QIMGV_SANITIZERS "" CACHE STRING "sanitizers for a diagnostics tree: address,undefined | thread")
 if(QIMGV_SANITIZERS)
     add_compile_options(-fno-omit-frame-pointer -fsanitize=${QIMGV_SANITIZERS})

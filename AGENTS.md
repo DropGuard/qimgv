@@ -46,6 +46,11 @@ QT_FATAL_WARNINGS=1 build/qimgv/qimgv <path>
 # Testing/Temporary/LastTest.log, not ctest output.
 cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined
 cmake --build build-asan -j$(nproc) && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
+
+# the thread-sanitizer tree is the same option with `thread`. What it can and
+# cannot answer — engine uninstrumented, the arena reports that are noise, the
+# libtsan check that currently blocks it from being a gate — is documented at the
+# option itself, in the QIMGV_SANITIZERS block of CMakeLists.txt.
 ```
 
 The pre-commit hook runs incremental build + 5 suites (~10-30 s) and is
