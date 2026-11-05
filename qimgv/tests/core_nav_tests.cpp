@@ -94,10 +94,11 @@ private slots:
         QString seq = QDir(base).filePath("seq");
         QVERIFY(QDir().mkpath(seq));
         QStringList files;
-        for(const char *n : {"a", "b", "c", "d"})
-            files << QDir(seq).filePath(QString(n) + ".png");
-        for(const QString &f : files)
-            writeImage(f);
+        for(const char *n : {"a", "b", "c", "d"}) {
+            const QString path = QDir(seq).filePath(QString(n) + ".png");
+            writeImage(path);
+            files << path;
+        }
 
         QSignalSpy listed(&EngineBridge::instance(), &EngineBridge::dirListed);
         QVERIFY(listed.isValid());
@@ -139,10 +140,11 @@ private slots:
         QString dir = QDir(base).filePath("waitfirst");
         QVERIFY(QDir().mkpath(dir));
         QStringList files;
-        for(const char *n : {"one", "two"})
-            files << QDir(dir).filePath(QString(n) + ".png");
-        for(const QString &f : files)
-            writeImage(f);
+        for(const char *n : {"one", "two"}) {
+            const QString path = QDir(dir).filePath(QString(n) + ".png");
+            writeImage(path);
+            files << path;
+        }
 
         Core core;
         QVERIFY(!core.mw->isVisible());
