@@ -172,7 +172,9 @@ endif()
 # The fd machinery's Rust side has no dynamic instrument of any kind — the
 # standing named gap, accepted by owner's decision 2026-11-06 along with the
 # retirement of the standalone -Zsanitizer=thread run that once covered it
-# (nightly + -Zbuild-std, manual, never a gate). What bounds the gap is
+# (nightly + -Zbuild-std, manual, never a gate; the pure layer's Miri check is
+# wired as the opt-in MIRI ctest entry, -DMIRI_TESTS=ON, scripts/miri.sh).
+# What bounds the gap is
 # construction, not instrumentation: safe Rust cannot data-race, so the surface
 # is the six unsafe syscall wrappers in watcher/fd.rs (none shares a pointer
 # across threads) plus std/crossbeam internals, logic errors are not TSan's
@@ -279,4 +281,15 @@ if(LINT_TESTS)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/lint.py
                      --gate ${CMAKE_CURRENT_BINARY_DIR})
     set_tests_properties(LINT PROPERTIES LABELS lint TIMEOUT 3600)
+endif()
+
+# Miri over the Rust pure layer, opt-in for the same reason LINT is: ~8 minutes
+# of interpreter time does not belong in every commit. scripts/miri.sh runs the
+# semantics layer clean AND requires the armed race test to fail with its
+# expected report — a passing armed run is an instrument declared dead, and any
+# other failure is an instrument broken; both are red here.
+option(MIRI_TESTS "Add the Rust pure-layer Miri run to ctest (nightly + miri component required)" OFF)
+if(MIRI_TESTS)
+    add_test(NAME MIRI COMMAND sh ${CMAKE_SOURCE_DIR}/scripts/miri.sh)
+    set_tests_properties(MIRI PROPERTIES TIMEOUT 1200)
 endif()

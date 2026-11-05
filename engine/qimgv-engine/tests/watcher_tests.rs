@@ -234,6 +234,7 @@ fn the_hidden_rule_is_the_scanner_s_rule() {
 
 // --- live watching through a real engine ---------------------------------------
 
+#[cfg_attr(miri, allow(dead_code))]
 fn config() -> EngineConfig {
     EngineConfig {
         scan_threads: 2,
@@ -243,6 +244,7 @@ fn config() -> EngineConfig {
     }
 }
 
+#[cfg_attr(miri, allow(dead_code))]
 fn wait_for(engine: &Engine, pred: impl Fn(&qimgv_engine::DirectoryState) -> bool, secs: u64) {
     let deadline = std::time::Instant::now() + Duration::from_secs(secs);
     loop {
@@ -255,6 +257,7 @@ fn wait_for(engine: &Engine, pred: impl Fn(&qimgv_engine::DirectoryState) -> boo
 }
 
 /// Drains until an event carrying a session id shows up, and returns that id.
+#[cfg_attr(miri, allow(dead_code))]
 fn next_session_event(engine: &qimgv_engine::Engine) -> u64 {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
@@ -268,6 +271,7 @@ fn next_session_event(engine: &qimgv_engine::Engine) -> u64 {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "drives the real fd machinery: no interpreter")]
 fn an_engine_initiated_rescan_answers_the_session_it_belongs_to() {
     // The stale-scan guard asks "is this job the newest session", so the only
     // thing allowed to start a session is a request. Deleting the watched folder
@@ -302,6 +306,7 @@ fn an_engine_initiated_rescan_answers_the_session_it_belongs_to() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "drives the real fd machinery: no interpreter")]
 fn live_watch_applies_creates_and_deletes() {
     let (notify_tx, _notify_rx) = mpsc::channel::<()>();
     let engine = Engine::spawn(config(), Arc::new(move || {
@@ -323,6 +328,7 @@ fn live_watch_applies_creates_and_deletes() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "drives the real fd machinery: no interpreter")]
 fn live_watch_burst_keeps_up() {
     // the drain discipline: 2000 creates in a burst must all land in the
     // state (the kernel queue must not lose events at this scale)
@@ -342,6 +348,7 @@ fn live_watch_burst_keeps_up() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "drives the real fd machinery: no interpreter")]
 fn include_path_bypasses_filter_and_survives_rescan() {
     let (notify_tx, _notify_rx) = mpsc::channel::<()>();
     let engine = Engine::spawn(config(), Arc::new(move || {
@@ -365,6 +372,7 @@ fn include_path_bypasses_filter_and_survives_rescan() {
 }
 
 #[test]
+#[cfg_attr(miri, ignore = "drives the real fd machinery: no interpreter")]
 fn operations_on_a_settled_folder_all_land_in_the_listing() {
     // The C++ suite's remaining divergence happens with the folder already
     // settled: everything below occurs after the initial scan landed, so this
