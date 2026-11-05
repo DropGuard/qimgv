@@ -70,8 +70,8 @@ public:
 
     void setCurrentInfo(int fileIndex, int fileCount, const QString &filePath, const QString &fileName, QSize imageSize, qint64 fileSize, bool slideshow, bool shuffle, bool edited);
     void setExifInfo(const QMap<QString, QString> &exifInfo);
-    std::shared_ptr<FolderViewProxy> getFolderView();
-    std::shared_ptr<ThumbnailStripProxy> getThumbnailPanel();
+    FolderViewProxy *getFolderView();
+    ThumbnailStripProxy *getThumbnailPanel();
 
     ViewMode currentViewMode();
 
@@ -79,15 +79,17 @@ public:
     DialogResult fileReplaceDialog(const QString &source, const QString &target, FileReplaceMode mode, bool multiple);
 
 private:
-    std::shared_ptr<ViewerWidget> viewerWidget;
+    // the parent tree owns every widget; these observe. See the rule comment
+    // at mainpanel.cpp ("The pointer here only observes"), generalized here.
+    ViewerWidget *viewerWidget = nullptr;
     QHBoxLayout layout;
     QTimer windowGeometryChangeTimer;
     int currentDisplay;
 
     bool cropPanelActive, showInfoBarFullscreen, showInfoBarWindowed, maximized;
-    std::shared_ptr<DocumentWidget> docWidget;
-    std::shared_ptr<FolderViewProxy> folderView;
-    std::shared_ptr<CentralWidget> centralWidget;
+    DocumentWidget *docWidget = nullptr;
+    FolderViewProxy *folderView = nullptr;
+    CentralWidget *centralWidget = nullptr;
     ActiveSidePanel activeSidePanel;
     SidePanel *sidePanel;
     CopyOverlay *copyOverlay;
@@ -98,10 +100,10 @@ private:
     FloatingMessageProxy *floatingMessage;
     CropPanel *cropPanel;
     CropOverlay *cropOverlay;
-    ChangelogWindow *changelogWindow;
+    ChangelogWindow *changelogWindow = nullptr;
 
     ControlsOverlay *controlsOverlay;
-    std::shared_ptr<InfoBarProxy> infoBarWindowed;
+    InfoBarProxy *infoBarWindowed = nullptr;
 
     PanelPosition panelPosition;
     CurrentInfo info;

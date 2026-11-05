@@ -1,6 +1,6 @@
 #include "centralwidget.h"
 
-CentralWidget::CentralWidget(std::shared_ptr<DocumentWidget> _docWidget, std::shared_ptr<FolderViewProxy> _folderView, QWidget *parent)
+CentralWidget::CentralWidget(DocumentWidget *_docWidget, FolderViewProxy *_folderView, QWidget *parent)
     : QStackedWidget(parent),
       documentView(_docWidget),
       folderView(_folderView)
@@ -10,9 +10,9 @@ CentralWidget::CentralWidget(std::shared_ptr<DocumentWidget> _docWidget, std::sh
         qDebug() << "[CentralWidget] Error: child widget is null. We will crash now.  Bye.";
 
     // docWidget - 0, folderView - 1
-    addWidget(documentView.get());
+    addWidget(documentView);
     if(folderView)
-        addWidget(folderView.get());
+        addWidget(folderView);
     showDocumentView();
 }
 

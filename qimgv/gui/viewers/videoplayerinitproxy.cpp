@@ -34,7 +34,7 @@ void VideoPlayerInitProxy::onSettingsChanged() {
     player->setVideoUnscaled(!settings->expandImage());
 }
 
-std::shared_ptr<VideoPlayer> VideoPlayerInitProxy::getPlayer() {
+VideoPlayer *VideoPlayerInitProxy::getPlayer() {
     return player;
 }
 
@@ -67,7 +67,7 @@ inline bool VideoPlayerInitProxy::initPlayer() {
     createPlayerWidgetFn fn = reinterpret_cast<createPlayerWidgetFn>(playerLib.resolve("CreatePlayerWidget"));
     if(fn) {
         VideoPlayer* pl = fn();
-        player.reset(pl);
+        player = pl;
     }
     if(!player) {
         qDebug() << "Could not load:" << playerLib.fileName() << ". Wrong plugin version?";
@@ -79,16 +79,16 @@ inline bool VideoPlayerInitProxy::initPlayer() {
     player->setVolume(settings->volume());
 
     player->setParent(this);
-    layout.addWidget(player.get());
+    layout.addWidget(player);
     player->hide();
-    setFocusProxy(player.get());
-    connect(player.get(), SIGNAL(durationChanged(int)), this, SIGNAL(durationChanged(int)));
-    connect(player.get(), SIGNAL(positionChanged(int)), this, SIGNAL(positionChanged(int)));
-    connect(player.get(), SIGNAL(videoPaused(bool)),    this, SIGNAL(videoPaused(bool)));
-    connect(player.get(), SIGNAL(playbackFinished()),   this, SIGNAL(playbackFinished()));
+    setFocusProxy(player);
+    connect(player, SIGNAL(durationChanged(int)), this, SIGNAL(durationChanged(int)));
+    connect(player, SIGNAL(positionChanged(int)), this, SIGNAL(positionChanged(int)));
+    connect(player, SIGNAL(videoPaused(bool)),    this, SIGNAL(videoPaused(bool)));
+    connect(player, SIGNAL(playbackFinished()),   this, SIGNAL(playbackFinished()));
 
     if(eventFilterObj)
-        player.get()->installEventFilter(eventFilterObj);
+        player->installEventFilter(eventFilterObj);
 
     return true;
 }

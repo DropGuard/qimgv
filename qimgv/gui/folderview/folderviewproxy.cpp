@@ -13,23 +13,23 @@ void FolderViewProxy::init() {
     QMutexLocker ml(&m);
     if(folderView)
         return;
-    folderView.reset(new FolderView());
+    folderView = new FolderView();
     folderView->setParent(this);
     ml.unlock();
-    layout.addWidget(folderView.get());
-    this->setFocusProxy(folderView.get());
+    layout.addWidget(folderView);
+    this->setFocusProxy(folderView);
     this->setLayout(&layout);
 
-    connect(folderView.get(), &FolderView::itemActivated, this, &FolderViewProxy::itemActivated);
-    connect(folderView.get(), &FolderView::thumbnailsRequested, this, &FolderViewProxy::thumbnailsRequested);
-    connect(folderView.get(), &FolderView::sortingSelected, this, &FolderViewProxy::sortingSelected);
-    connect(folderView.get(), &FolderView::showFoldersChanged, this, &FolderViewProxy::showFoldersChanged);
-    connect(folderView.get(), &FolderView::directorySelected, this, &FolderViewProxy::directorySelected);
-    connect(folderView.get(), &FolderView::draggedOut, this, &FolderViewProxy::draggedOut);
-    connect(folderView.get(), &FolderView::copyUrlsRequested, this, &FolderViewProxy::copyUrlsRequested);
-    connect(folderView.get(), &FolderView::moveUrlsRequested, this, &FolderViewProxy::moveUrlsRequested);
-    connect(folderView.get(), &FolderView::droppedInto, this, &FolderViewProxy::droppedInto);
-    connect(folderView.get(), &FolderView::draggedOver, this, &FolderViewProxy::draggedOver);
+    connect(folderView, &FolderView::itemActivated, this, &FolderViewProxy::itemActivated);
+    connect(folderView, &FolderView::thumbnailsRequested, this, &FolderViewProxy::thumbnailsRequested);
+    connect(folderView, &FolderView::sortingSelected, this, &FolderViewProxy::sortingSelected);
+    connect(folderView, &FolderView::showFoldersChanged, this, &FolderViewProxy::showFoldersChanged);
+    connect(folderView, &FolderView::directorySelected, this, &FolderViewProxy::directorySelected);
+    connect(folderView, &FolderView::draggedOut, this, &FolderViewProxy::draggedOut);
+    connect(folderView, &FolderView::copyUrlsRequested, this, &FolderViewProxy::copyUrlsRequested);
+    connect(folderView, &FolderView::moveUrlsRequested, this, &FolderViewProxy::moveUrlsRequested);
+    connect(folderView, &FolderView::droppedInto, this, &FolderViewProxy::droppedInto);
+    connect(folderView, &FolderView::draggedOver, this, &FolderViewProxy::draggedOver);
 
     folderView->show();
 

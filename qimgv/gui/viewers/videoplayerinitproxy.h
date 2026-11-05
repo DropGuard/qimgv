@@ -32,7 +32,7 @@ public:
     int volume() override;
     void setVideoUnscaled(bool mode) override;
     void setLoopPlayback(bool mode) override;
-    std::shared_ptr<VideoPlayer> getPlayer();
+    VideoPlayer *getPlayer();
     bool isInitialized();
 
     void installEventFilter(QObject *filterObj);
@@ -47,7 +47,7 @@ protected:
 
 private:
     QLibrary playerLib;
-    std::shared_ptr<VideoPlayer> player;
+    VideoPlayer *player = nullptr;
     bool initPlayer();
     QVBoxLayout layout;
     QLabel *errorLabel = nullptr;

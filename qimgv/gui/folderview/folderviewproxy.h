@@ -52,7 +52,7 @@ signals:
     void draggedOver(int) override;
 
 private:
-    std::shared_ptr<FolderView> folderView;
+    FolderView *folderView = nullptr;
     QVBoxLayout layout;
     FolderViewStateBuffer stateBuf;
     QMutex m;

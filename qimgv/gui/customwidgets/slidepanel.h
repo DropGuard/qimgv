@@ -19,7 +19,7 @@ public:
     explicit SlidePanel(FloatingWidgetContainer *parent);
     ~SlidePanel() override;
     bool hasWidget();
-    void setWidget(std::shared_ptr<QWidget> w);
+    void setWidget(QWidget *w);
     // Use visibleGeometry instead of geometry() here.
     // If this is called mid-animation then geometry() will be all wrong.
     QRect triggerRect();
@@ -44,7 +44,7 @@ protected:
     QHBoxLayout mLayout;
     QGraphicsOpacityEffect *fadeEffect;
     int panelSize, slideAmount;
-    std::shared_ptr<QWidget> mWidget;
+    QWidget *mWidget = nullptr;
     QRect mTriggerRect;
     void setAnimationRange(QPoint start, QPoint end);
     void saveStaticGeometry(QRect geometry);

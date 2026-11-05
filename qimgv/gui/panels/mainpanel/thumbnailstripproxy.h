@@ -45,7 +45,7 @@ signals:
     void draggedOver(int) override;
 
 private:
-    std::shared_ptr<ThumbnailStrip> thumbnailStrip = nullptr;
+    ThumbnailStrip *thumbnailStrip = nullptr;
     QVBoxLayout layout;
     ThumbnailStripStateBuffer stateBuf;
     QMutex m;

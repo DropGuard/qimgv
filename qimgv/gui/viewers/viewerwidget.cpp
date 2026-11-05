@@ -427,7 +427,7 @@ void ViewerWidget::hideCursor() {
 
             // only hide when we are under viewer or player widget
             QWidget *w = qApp->widgetAt(QCursor::pos());
-            if(w && (w == imageViewer.get()->viewport() || w == videoPlayer->getPlayer().get())) {
+            if(w && (w == imageViewer.get()->viewport() || w == videoPlayer->getPlayer())) {
                 if(!videoControls->isVisible() || !videoControlsArea().contains(posMapped)) {
                     setCursor(QCursor(Qt::BlankCursor));
                     videoControls->hide();

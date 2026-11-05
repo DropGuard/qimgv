@@ -22,21 +22,21 @@ void DirectoryPresenter::unsetModel() {
     // also empty view?
 }
 
-void DirectoryPresenter::setView(std::shared_ptr<IDirectoryView> _view) {
+void DirectoryPresenter::setView(IDirectoryView *_view) {
     if(view)
         return;
     view = _view;
     if(model)
         view->populate(mShowDirs ? model->totalCount() : model->fileCount());
-    connect(dynamic_cast<QObject *>(view.get()), SIGNAL(itemActivated(int)),
+    connect(dynamic_cast<QObject *>(view), SIGNAL(itemActivated(int)),
             this, SLOT(onItemActivated(int)));
-    connect(dynamic_cast<QObject *>(view.get()), SIGNAL(thumbnailsRequested(QList<int>, int, bool, bool)),
+    connect(dynamic_cast<QObject *>(view), SIGNAL(thumbnailsRequested(QList<int>, int, bool, bool)),
             this, SLOT(generateThumbnails(QList<int>, int, bool, bool)));
-    connect(dynamic_cast<QObject *>(view.get()), SIGNAL(draggedOut()),
+    connect(dynamic_cast<QObject *>(view), SIGNAL(draggedOut()),
             this, SLOT(onDraggedOut()));
-    connect(dynamic_cast<QObject *>(view.get()), SIGNAL(draggedOver(int)),
+    connect(dynamic_cast<QObject *>(view), SIGNAL(draggedOver(int)),
             this, SLOT(onDraggedOver(int)));
-    connect(dynamic_cast<QObject *>(view.get()), SIGNAL(droppedInto(const QMimeData*,QObject*,int)),
+    connect(dynamic_cast<QObject *>(view), SIGNAL(droppedInto(const QMimeData*,QObject*,int)),
             this, SLOT(onDroppedInto(const QMimeData*,QObject*,int)));
 }
 

@@ -16,7 +16,7 @@ class DirectoryPresenter : public QObject {
 public:
     explicit DirectoryPresenter(WorkerPool &pool, QObject *parent = nullptr);
 
-    void setView(std::shared_ptr<IDirectoryView>);
+    void setView(IDirectoryView *view);
     void setModel(std::shared_ptr<DirectoryModel> newModel);
     void unsetModel();
 
@@ -62,7 +62,8 @@ private:
     // the destruction order keeps the pool alive through the thumbnailer's
     // drain
     WorkerPool &pool;
-    std::shared_ptr<IDirectoryView> view = nullptr;
+    // observes; the Qt parent tree owns the view widget
+    IDirectoryView *view = nullptr;
     std::shared_ptr<DirectoryModel> model = nullptr;
     Thumbnailer thumbnailer;
     bool mShowDirs;

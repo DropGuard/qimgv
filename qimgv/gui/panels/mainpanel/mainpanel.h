@@ -11,7 +11,7 @@ public:
     MainPanel(FloatingWidgetContainer *parent);
     void setPosition(PanelPosition);
     void setExitButtonEnabled(bool mode);
-    std::shared_ptr<ThumbnailStripProxy> getThumbnailStrip();
+    ThumbnailStripProxy *getThumbnailStrip();
     void setupThumbnailStrip();
     QSize sizeHint() const override;
 
@@ -27,7 +27,7 @@ private slots:
 private:
     QVBoxLayout *buttonsLayout = nullptr;
     QWidget buttonsWidget;
-    std::shared_ptr<ThumbnailStripProxy> thumbnailStrip;
+    ThumbnailStripProxy *thumbnailStrip = nullptr;
     ActionButton *openButton, *settingsButton, *exitButton, *folderViewButton, *pinButton;
 
 protected:

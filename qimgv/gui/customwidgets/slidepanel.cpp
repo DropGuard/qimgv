@@ -66,14 +66,14 @@ void SlidePanel::setLayoutManaged(bool mode) {
         recalculateGeometry();
 }
 
-void SlidePanel::setWidget(std::shared_ptr<QWidget> w) {
+void SlidePanel::setWidget(QWidget *w) {
     if(!w)
         return;
     if(hasWidget())
-        layout()->removeWidget(mWidget.get());
+        layout()->removeWidget(mWidget);
     mWidget = w;
     mWidget->setParent(this);
-    mLayout.insertWidget(0, mWidget.get());
+    mLayout.insertWidget(0, mWidget);
 }
 
 bool SlidePanel::hasWidget() {

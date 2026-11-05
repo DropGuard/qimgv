@@ -11,15 +11,15 @@ void ThumbnailStripProxy::init() {
         return;
     qApp->processEvents(); // chew through events in case we have something that alters stateBuf in queue
     QMutexLocker ml(&m);
-    thumbnailStrip.reset(new ThumbnailStrip());
+    thumbnailStrip = new ThumbnailStrip();
     thumbnailStrip->setParent(this);
     ml.unlock();
-    layout.addWidget(thumbnailStrip.get());
-    this->setFocusProxy(thumbnailStrip.get());
+    layout.addWidget(thumbnailStrip);
+    this->setFocusProxy(thumbnailStrip);
     this->setLayout(&layout);
 
-    connect(thumbnailStrip.get(), &ThumbnailStrip::itemActivated, this, &ThumbnailStripProxy::itemActivated);
-    connect(thumbnailStrip.get(), &ThumbnailStrip::thumbnailsRequested, this, &ThumbnailStripProxy::thumbnailsRequested);
+    connect(thumbnailStrip, &ThumbnailStrip::itemActivated, this, &ThumbnailStripProxy::itemActivated);
+    connect(thumbnailStrip, &ThumbnailStrip::thumbnailsRequested, this, &ThumbnailStripProxy::thumbnailsRequested);
 
     thumbnailStrip->show();
 
