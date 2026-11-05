@@ -37,6 +37,17 @@ Core::Core()
         onUpdate();
 }
 
+Core::~Core() {
+    // the translator lives on the application's translator list, so it has to
+    // come off that list before it is freed — and it had no parent and no
+    // destructor, so until now nothing ever freed it
+    if(translator) {
+        qApp->removeTranslator(translator);
+        delete translator;
+        translator = nullptr;
+    }
+}
+
 void Core::readSettings() {
     loopSlideshow = settings->loopSlideshow();
     folderEndAction = settings->folderEndAction();

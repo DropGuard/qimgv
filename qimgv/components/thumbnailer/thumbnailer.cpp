@@ -27,6 +27,9 @@ Thumbnailer::Thumbnailer(EngineBridge &bridge)
 Thumbnailer::~Thumbnailer() {
     pool->clear();
     pool->waitForDone();
+    // a parentless QObject: nothing else in the graph owns it, and the runnables
+    // that were handed its pointer are gone with the drain above
+    delete cache;
 }
 
 void Thumbnailer::waitForDone() {

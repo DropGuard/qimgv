@@ -5,6 +5,16 @@ Loader::Loader() {
     pool->setMaxThreadCount(2);
 }
 
+Loader::~Loader() {
+    // same deal as the scaler's runnable: autoDelete(false) makes every task in
+    // `tasks` ours to free. A finished task is normally taken by
+    // onLoadFinished, but that needs the event loop — a task whose result never
+    // got delivered is still here, and so is everything still queued.
+    pool->waitForDone();
+    qDeleteAll(tasks);
+    tasks.clear();
+}
+
 void Loader::clearTasks() {
     clearPool();
     pool->waitForDone();

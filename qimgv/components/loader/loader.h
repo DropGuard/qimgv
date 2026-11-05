@@ -9,6 +9,7 @@ class Loader : public QObject {
     Q_OBJECT
 public:
     explicit Loader();
+    ~Loader() override;
     // nullopt when the file cannot be opened; the async path reports the same
     // case as loadFailed(), so loadFinished() never carries an absent image
     std::optional<std::shared_ptr<Image>> load(const QString &path, const LoadPolicy &policy);

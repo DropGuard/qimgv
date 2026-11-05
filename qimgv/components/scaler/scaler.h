@@ -11,6 +11,7 @@ class Scaler : public QObject {
     Q_OBJECT
 public:
     explicit Scaler(Cache *_cache, QObject *parent = nullptr);
+    ~Scaler() override;
 
 signals:
     void scalingFinished(QPixmap result, const ScalerRequest &request);

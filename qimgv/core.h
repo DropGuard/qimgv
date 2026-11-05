@@ -43,6 +43,7 @@ class Core : public QObject {
     Q_OBJECT
 public:
     Core();
+    ~Core() override;
     void showGui();
     // the file on screen; the state Core owns and every navigation decision reads
     QString currentFilePath() const;

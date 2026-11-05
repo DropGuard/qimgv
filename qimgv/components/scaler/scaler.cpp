@@ -27,6 +27,16 @@ Scaler::Scaler(Cache *_cache, QObject *parent)
     connect(this, &Scaler::acceptScalingResult, this, &Scaler::slotForwardScaledResult, Qt::QueuedConnection);
 }
 
+Scaler::~Scaler() {
+    // the runnable is ours alone: autoDelete(false) is the pool's permission not
+    // to free it, and it is one reusable object handed out repeatedly, so it can
+    // only be deleted once no pool thread is inside run() and none is queued to
+    // enter it — hence drain first, then delete
+    pool->clear();
+    pool->waitForDone();
+    delete runnable;
+}
+
 void Scaler::requestScaled(const ScalerRequest &req) {
     Q_ASSERT(QThread::currentThread() == thread());
     if(!running) {

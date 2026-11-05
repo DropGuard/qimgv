@@ -578,6 +578,38 @@ private slots:
         QVERIFY(!cache.contains(a->filePath())); // unlocked by now, so this pass takes it
     }
 
+    // The runnable is the one object the Scaler creates and nobody owns: it goes
+    // to the pool with autoDelete(false), so the pool runs it but never frees it,
+    // and Scaler had no destructor to free it either. Every Scaler that ever
+    // scaled something left a runnable behind, still holding its last
+    // ScalerRequest and through it the decoded image — unreachable, but pinned.
+    void destroyingTheScalerReleasesTheImageItWasHolding() {
+        resetFixture();
+        const QSize orig(64, 64);
+        QVERIFY(writeBigImage(fixtureDir + "/real.png", "png", orig));
+        auto image = *ImageFactory::createImage(fixtureDir + "/real.png", false, loadPolicy());
+        QCOMPARE(image.use_count(), 1L);
+
+        {
+            Cache cache;
+            QVERIFY(cache.insert(image));
+            Scaler scaler(&cache);
+            int delivered = 0;
+            QObject::connect(&scaler, &Scaler::scalingFinished, [&](QPixmap, ScalerRequest) {
+                ++delivered;
+            });
+            scaler.requestScaled(ScalerRequest(image, QSize(32, 32), fixtureDir + "/real.png",
+                                               QI_FILTER_BILINEAR, true));
+            QTRY_COMPARE_WITH_TIMEOUT(delivered, 1, 10000);
+        }
+
+        // the result travels through a queued hop, which copies the request into
+        // a posted event; give that a chance to settle before blaming a holder
+        QTest::qWait(100);
+        QVERIFY2(image.use_count() == 1,
+                 "a destroyed Scaler still holds its last request, and the image inside it");
+    }
+
     void videoFrameTempFilesDoNotCollideAcrossDirectories() {
         // Two clips that share a basename in different folders used to be handed
         // the same temp file in the shared tmpDir: one worker read and removed the
