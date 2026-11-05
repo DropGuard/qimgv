@@ -132,8 +132,7 @@ private slots:
 
     // the shortcut map's round trip through the ini, including the "eq" escape
     // for names that would collide with the k=v encoding
-    void shortcutRoundTripEscapesTrailingEquals() {
-        FreshSettings fresh;
+    void shortcutRoundTripEscapesTrailingEquals() {        FreshSettings fresh;
         QMap<QString, QString> shortcuts;
         shortcuts.insert("ctrl+x", "25");
         shortcuts.insert("ctrl+=", "26"); // the "=" key needs the escape
@@ -157,6 +156,47 @@ private slots:
         }
         // the original instance and its in-memory state are back
         QVERIFY(settings->sortingMode() == SORT_TIME);
+    }
+
+    // Qt6 killed the @Variant channel for custom types in QSettings: the old
+    // Script storage wrote empty shells and read nothing back, silently
+    // destroying scripts on every settings save. Scripts now persist as JSON
+    // in the same value slot, with a fallback to the pre-@Variant plain keys.
+    void scriptsRoundTripAsJsonNotMetatypeShells() {
+        FreshSettings fresh;
+        QMap<QString, Script> in;
+        in.insert(QStringLiteral("Favorite"), Script(QStringLiteral("/usr/local/bin/fav a b %file%"), true));
+        settings->saveScripts(in);
+        QMap<QString, Script> out;
+        settings->readScripts(out);
+        QCOMPARE(out.size(), 1);
+        QCOMPARE(out.value("Favorite").command, QStringLiteral("/usr/local/bin/fav a b %file%"));
+        QCOMPARE(out.value("Favorite").blocking, true);
+        // the stored form must be a JSON string, not a @Variant(...) shell
+        QSettings probe(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+        probe.beginGroup("Scripts");
+        const QVariant raw = probe.value("script/1/value");
+        probe.endGroup();
+        QCOMPARE(raw.typeId(), QMetaType::QString);
+        QVERIFY(raw.toString().startsWith('{'));
+    }
+
+    void scriptsFallBackToPreJsonPlainKeys() {
+        FreshSettings fresh;
+        QSettings conf(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+        conf.beginGroup("Scripts");
+        conf.beginWriteArray("script");
+        conf.setArrayIndex(0);
+        conf.setValue("name", QStringLiteral("Favorite"));
+        conf.setValue("value", QStringLiteral("@Variant(\\0\\0\\0\\x7f\\0\\0\\0\\aScript\\0)"));
+        conf.endArray();
+        conf.setValue("1/command", QStringLiteral("/usr/local/bin/fav %file%"));
+        conf.endGroup();
+        conf.sync();
+        QMap<QString, Script> out;
+        settings->readScripts(out);
+        QCOMPARE(out.size(), 1);
+        QCOMPARE(out.value("Favorite").command, QStringLiteral("/usr/local/bin/fav %file%"));
     }
 };
 

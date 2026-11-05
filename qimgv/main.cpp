@@ -29,17 +29,6 @@ void saveSettings() {
     delete settings;
 }
 //------------------------------------------------------------------------------
-QDataStream& operator<<(QDataStream& out, const Script& v) {
-    out << v.command << v.blocking;
-    return out;
-}
-//------------------------------------------------------------------------------
-QDataStream& operator>>(QDataStream& in, Script& v) {
-    in >> v.command;
-    in >> v.blocking;
-    return in;
-}
-//------------------------------------------------------------------------------
 int main(int argc, char *argv[]) {
 
     // force some env variables
@@ -103,7 +92,6 @@ int main(int argc, char *argv[]) {
 
     // use custom types in signals
     qRegisterMetaType<ScalerRequest>("ScalerRequest");
-    qRegisterMetaType<Script>("Script");
     qRegisterMetaType<std::shared_ptr<Image>>("std::shared_ptr<Image>");
     qRegisterMetaType<std::shared_ptr<Thumbnail>>("std::shared_ptr<Thumbnail>");
     // globals

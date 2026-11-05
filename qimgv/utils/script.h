@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QMetaType>
 #include <QString>
 
 class Script {
@@ -10,5 +9,3 @@ public:
     QString command;
     bool blocking;
 };
-
-Q_DECLARE_METATYPE(Script)

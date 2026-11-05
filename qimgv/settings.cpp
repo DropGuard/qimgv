@@ -1,10 +1,38 @@
 #include <type_traits>
 #include <algorithm>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include "settings.h"
 
 Settings *settings = nullptr;
 
 namespace {
+// Qt6 removed the QDataStream channel that let custom types ride in QSettings
+// as @Variant(...): writes land as empty shells with a "QVariant::save"
+// warning, reads land with "unable to load type". Scripts persist as a JSON
+// string in the same value slot instead.
+QString scriptToJson(const Script &s) {
+    QJsonObject obj;
+    obj.insert(QStringLiteral("command"), s.command);
+    obj.insert(QStringLiteral("blocking"), s.blocking);
+    return QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+}
+
+Script scriptFromStoredValue(const QVariant &value) {
+    Script s;
+    if(value.typeId() != QMetaType::QString)
+        return s;
+    const QString raw = value.toString().trimmed();
+    if(!raw.startsWith('{'))
+        return s;
+    QJsonParseError err;
+    const QJsonObject obj = QJsonDocument::fromJson(raw.toUtf8(), &err).object();
+    if(err.error != QJsonParseError::NoError)
+        return s;
+    s.command = obj.value(QStringLiteral("command")).toString();
+    s.blocking = obj.value(QStringLiteral("blocking")).toBool();
+    return s;
+}
 template<class T> constexpr SettingDesc::Kind kindOf();
 template<> constexpr SettingDesc::Kind kindOf<bool>()      { return SettingDesc::Kind::Bool; }
 template<> constexpr SettingDesc::Kind kindOf<int>()        { return SettingDesc::Kind::Int; }
@@ -716,15 +744,46 @@ void Settings::saveShortcuts(const QMap<QString, QString> &shortcuts) {
 void Settings::readScripts(QMap<QString, Script> &scripts) {
     scripts.clear();
     settingsConf->beginGroup("Scripts");
+
+    // pre-@Variant generation layout: <n>/name and <n>/command sit directly
+    // under the group; collect them so the array pass can fall back to real
+    // data when the value slot holds a Qt6-dead shell
+    QMap<int, Script> legacy;
+    const QStringList groupKeys = settingsConf->allKeys();
+    for(const QString &k : groupKeys) {
+        const QStringList parts = k.split('/');
+        if(parts.size() != 2 || parts.at(1) != QStringLiteral("command"))
+            continue;
+        bool isIndex = false;
+        const int idx = parts.at(0).toInt(&isIndex);
+        if(!isIndex)
+            continue;
+        Script s;
+        s.command = settingsConf->value(k).toString();
+        s.blocking = settingsConf->value(parts.at(0) + "/blocking").toBool();
+        legacy.insert(idx, s);
+    }
+
     int size = settingsConf->beginReadArray("script");
     for(int i=0; i < size; i++) {
         settingsConf->setArrayIndex(i);
         QString name = settingsConf->value("name").toString();
-        QVariant value = settingsConf->value("value");
-        Script scr = value.value<Script>();
-        scripts.insert(name, scr);
+        Script scr = scriptFromStoredValue(settingsConf->value("value"));
+        if(scr.command.isEmpty() && legacy.contains(i + 1))
+            scr = legacy.value(i + 1);
+        if(!name.isEmpty())
+            scripts.insert(name, scr);
     }
     settingsConf->endArray();
+
+    // legacy-only configs: group keys without any array at all
+    if(size == 0) {
+        for(auto it = legacy.constBegin(); it != legacy.constEnd(); ++it) {
+            const QString name = settingsConf->value(QString::number(it.key()) + "/name").toString();
+            if(!name.isEmpty())
+                scripts.insert(name, it.value());
+        }
+    }
     settingsConf->endGroup();
 }
 
@@ -737,7 +796,7 @@ void Settings::saveScripts(const QMap<QString, Script> &scripts) {
         i.next();
         settingsConf->setArrayIndex(counter);
         settingsConf->setValue("name", i.key());
-        settingsConf->setValue("value", QVariant::fromValue(i.value()));
+        settingsConf->setValue("value", scriptToJson(i.value()));
         counter++;
     }
     settingsConf->endArray();
