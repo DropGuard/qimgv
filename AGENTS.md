@@ -16,7 +16,13 @@ helpers, mechanically enforced (R7). Architecture rules are enforced by
 `qimgv/tests/architecture_rules.py` (R1 gui isolation, R2 FFI speaker
 whitelist, R3 rust seal, R4 settings deref, R5 ABI pin, R6 signal
 redeclaration, R7 mirror-writer monopoly) — **structural rules live in the
-test suites, not in prose**.
+test suites, not in prose**. Two ownership rules are absolute and are
+enforced by construction rather than by discipline: the QObject parent tree
+owns every widget and every other pointer only observes (the generalized
+`mainpanel.cpp` rule), and the WorkerPool owns every job (submit transfers,
+drain returns, the pool destroys completed jobs on its worker thread;
+workers are created once and joined once — nothing else may create or join a
+pipeline thread).
 
 ## Everyday commands
 
@@ -47,10 +53,15 @@ QT_FATAL_WARNINGS=1 build/qimgv/qimgv <path>
 cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined
 cmake --build build-asan -j$(nproc) && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
 
-# the thread-sanitizer tree is the same option with `thread`. What it can and
-# cannot answer — engine uninstrumented, the arena reports that are noise, the
-# libtsan check that currently blocks it from being a gate — is documented at the
-# option itself, in the QIMGV_SANITIZERS block of CMakeLists.txt.
+# the thread-sanitizer tree is the same option with `thread`. Its state is
+# documented at the option itself (QIMGV_SANITIZERS block of CMakeLists.txt)
+# and its noise baseline lives in qimgv/tests/tsan-noise.supp: out of the gate
+# on enumerated third-party internals (QtGui's own pooled threads racing the
+# QArrayData region around image save/read), with any report naming one of our
+# frames still a failure. The harness forks per class / per test function so
+# every QTest watchdog gets a private TSan registry. The Rust pure layer is
+# Miri-checked — reach, command and the fd-machinery named gap are in the
+# same block.
 ```
 
 The pre-commit hook runs incremental build + 5 suites (~10-30 s) and is
@@ -91,3 +102,16 @@ baselines). What remains here is the part needing judgment.
    N-run batches answer "how often", not "why"; close them into a proptest
    seed, an injected repro, or a structural rule. Failures must leave a name —
    an unattributed 1/200 is unmeasured.
+7. **A green suite is only evidence if the test you think ran actually ran.**
+   QTest cannot see test functions declared below `private:`; a filter typo
+   runs nothing. The ownership probe (3e4c2f37) passed five suites while
+   itself never executing — caught by running the new test by name and seeing
+   "Function not found". Before trusting a suite, run the new test by name
+   and watch it PASS.
+8. **One clean instrument run is a sample, not a property.** "Zero CHECKs"
+   was declared off a single run and the fourth clockjoin source — QtGui's
+   own pooled threads, joined inside QtGui where no in-tree code can
+   intercept — surfaced on the next. When a fix claims an invariant, re-run
+   the instrument that would catch its violation, several times for
+   timing-dependent triggers, or make the violation structurally impossible
+   (the fork-per-test harness exists for exactly that).
