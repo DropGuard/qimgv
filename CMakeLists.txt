@@ -169,16 +169,16 @@ endif()
 # report:
 #   cargo +nightly miri test --test race_arm -- --ignored
 # → "Data race detected" at race_arm.rs:30; the nonzero exit IS the pass.
-# The fd machinery's Rust side has no interpreter-compatible instrument. The one
-# dynamic race check that ever covered it — engine_tests and thumb_tests run the
-# real watcher threads, so their crossbeam handoffs and buffer handling were
-# race-checked there — is the standalone -Zsanitizer=thread run: nightly +
-# -Zbuild-std, manual, never a gate, kept documented:
-#   RUSTUP_TOOLCHAIN=nightly \
-#   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=-Zsanitizer=thread \
-#   cargo test --workspace --lib --tests --target x86_64-unknown-linux-gnu -Zbuild-std
-# (--lib --tests because rustdoc rebuilds the crate without the sanitizer flag,
-# which rustc correctly refuses.)
+# The fd machinery's Rust side has no dynamic instrument of any kind — the
+# standing named gap, accepted by owner's decision 2026-11-06 along with the
+# retirement of the standalone -Zsanitizer=thread run that once covered it
+# (nightly + -Zbuild-std, manual, never a gate). What bounds the gap is
+# construction, not instrumentation: safe Rust cannot data-race, so the surface
+# is the six unsafe syscall wrappers in watcher/fd.rs (none shares a pointer
+# across threads) plus std/crossbeam internals, logic errors are not TSan's
+# target anyway, and the boundary itself is watched by ASan and governed by the
+# sole-writer contract. The re-measured MIXED setup below was the other
+# candidate and is a measured dead end:
 # Re-measured 2026-11-06, after the in-tree CHECK fixes unlocked it: the MIXED
 # setup (this crate built with -Zsanitizer=thread -Zbuild-std via corrosion
 # alongside the C++ tree) builds and RUNS — and it is not a usable instrument,
