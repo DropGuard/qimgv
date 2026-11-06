@@ -41,12 +41,12 @@ ThumbnailView::ThumbnailView(Qt::Orientation _orientation, QWidget *parent)
 
     horizontalScrollBar()->setContextMenuPolicy(Qt::NoContextMenu);
     horizontalScrollBar()->installEventFilter(this);
-    connect(horizontalScrollBar(), &QScrollBar::valueChanged, [this]() {
+    connect(horizontalScrollBar(), &QScrollBar::valueChanged, this, [this]() {
         loadVisibleThumbnails();
     });
     verticalScrollBar()->setContextMenuPolicy(Qt::NoContextMenu);
     verticalScrollBar()->installEventFilter(this);
-    connect(verticalScrollBar(), &QScrollBar::valueChanged, [this]() {
+    connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() {
         loadVisibleThumbnails();
     });
     if(qApp->platformName() == "wayland")
@@ -91,7 +91,7 @@ void ThumbnailView::createScrollTimeLine() {
     scrollTimeLine->setEasingCurve(QEasingCurve::OutSine);
     scrollTimeLine->setUpdateInterval(scrollRefreshRate);
 
-    connect(scrollTimeLine, &QTimeLine::frameChanged, [this](int value) {
+    connect(scrollTimeLine, &QTimeLine::frameChanged, this, [this](int value) {
         scrollFrameTimer.start();
         this->centerOn(value);
         // trigger repaint immediately
@@ -105,7 +105,7 @@ void ThumbnailView::createScrollTimeLine() {
         }
     });
 
-    connect(scrollTimeLine, &QTimeLine::finished, [this]() {
+    connect(scrollTimeLine, &QTimeLine::finished, this, [this]() {
         blockThumbnailLoading = false;
         loadVisibleThumbnails();
     });

@@ -35,7 +35,6 @@ signals:
     void crop(QRect);
     void cropAndSave(QRect);
     void cancel();
-    void cropClicked();
     void selectionChanged(QRect);
     void selectAll();
     void aspectRatioChanged(QPointF);

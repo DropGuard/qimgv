@@ -8,7 +8,8 @@ FileSystemModelCustom::FileSystemModelCustom(QObject *parent) : QFileSystemModel
     folderIcon.load(iconPath);
     ImageLib::recolor(this->folderIcon, settings->colorScheme().icons);
 
-    connect(settings, &Settings::settingsChanged, [this]() {
+    // `settings` outlives every object, so bind the connection to this one
+    connect(settings, &Settings::settingsChanged, this, [this]() {
         ImageLib::recolor(this->folderIcon, settings->colorScheme().icons);
     });
 }

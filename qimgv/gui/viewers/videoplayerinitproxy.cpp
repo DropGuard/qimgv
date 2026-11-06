@@ -82,10 +82,13 @@ inline bool VideoPlayerInitProxy::initPlayer() {
     layout.addWidget(player);
     player->hide();
     setFocusProxy(player);
-    connect(player, SIGNAL(durationChanged(int)), this, SIGNAL(durationChanged(int)));
-    connect(player, SIGNAL(positionChanged(int)), this, SIGNAL(positionChanged(int)));
-    connect(player, SIGNAL(videoPaused(bool)),    this, SIGNAL(videoPaused(bool)));
-    connect(player, SIGNAL(playbackFinished()),   this, SIGNAL(playbackFinished()));
+    // signal-to-signal forwarding, pointer form: both endpoints are the same
+    // four VideoPlayer signals (this class inherits them and must not
+    // re-declare them — R6), and the compiler now checks every name/signature
+    connect(player, &VideoPlayer::durationChanged, this, &VideoPlayer::durationChanged);
+    connect(player, &VideoPlayer::positionChanged, this, &VideoPlayer::positionChanged);
+    connect(player, &VideoPlayer::videoPaused,     this, &VideoPlayer::videoPaused);
+    connect(player, &VideoPlayer::playbackFinished, this, &VideoPlayer::playbackFinished);
 
     if(eventFilterObj)
         player->installEventFilter(eventFilterObj);

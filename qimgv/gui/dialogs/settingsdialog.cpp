@@ -55,7 +55,7 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
     // fake combobox that acts as a menu button
     // less code than using pushbutton with menu
     // will be replaced with something custom later
-    connect(ui->themeSelectorComboBox, qOverload<int>(&QComboBox::currentIndexChanged), [this](int index) {
+    connect(ui->themeSelectorComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index) {
         ui->themeSelectorComboBox->blockSignals(true);
         ui->themeSelectorComboBox->setCurrentIndex(index);
         ui->themeSelectorComboBox->blockSignals(false);
@@ -67,7 +67,7 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
         }
     });
 
-    connect(ui->useSystemColorsCheckBox, &QCheckBox::toggled, [this](bool useSystemTheme) {
+    connect(ui->useSystemColorsCheckBox, &QCheckBox::toggled, this, [this](bool useSystemTheme) {
         if(useSystemTheme) {
             ui->themeSelectorComboBox->setCurrentIndex(-1);
             setColorScheme(ThemeStore::colorScheme(COLORS_SYSTEM));
@@ -82,7 +82,7 @@ SettingsDialog::SettingsDialog(QWidget *parent) :
         ui->modifySystemSchemeLabel->setVisible(useSystemTheme);
     });
 
-    connect(ui->modifySystemSchemeLabel, &ClickableLabel::clicked, [this]() {
+    connect(ui->modifySystemSchemeLabel, &ClickableLabel::clicked, this, [this]() {
         ui->useSystemColorsCheckBox->setChecked(false);
         setColorScheme(ThemeStore::colorScheme(COLORS_CUSTOMIZED));
         settings->setColorTid(COLORS_CUSTOMIZED);

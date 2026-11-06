@@ -88,7 +88,7 @@ ImageViewerV2::ImageViewerV2(QWidget *parent) : QGraphicsView(parent),
 
     connect(animationTimer, &QTimer::timeout, this, &ImageViewerV2::onAnimationTimer, Qt::UniqueConnection);
 
-    QObject::connect(scaleTimer, &QTimer::timeout, [this]() {
+    QObject::connect(scaleTimer, &QTimer::timeout, this, [this]() {
         this->requestScaling();
     });
 

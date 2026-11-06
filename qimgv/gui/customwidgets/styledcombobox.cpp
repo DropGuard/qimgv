@@ -3,7 +3,9 @@
 StyledComboBox::StyledComboBox(QWidget *parent) : QComboBox(parent), hiResPixmap(false)
 {
     dpr = this->devicePixelRatioF();
-    connect(settings, &Settings::settingsChanged, [this]() {
+    // `settings` outlives every widget, so the connection has to be bound to
+    // this widget: the four-argument form disconnects it when `this` dies.
+    connect(settings, &Settings::settingsChanged, this, [this]() {
         ImageLib::recolor(this->downArrow, settings->colorScheme().icons);
     });
 }

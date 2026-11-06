@@ -14,7 +14,7 @@ OverlayWidget::OverlayWidget(FloatingWidgetContainer *parent)
     fadeAnimation->setStartValue(1.0f);
     fadeAnimation->setEndValue(0.0f);
     fadeAnimation->setEasingCurve(QEasingCurve::OutQuad);
-    connect(fadeAnimation, &QPropertyAnimation::finished, [this]() {
+    connect(fadeAnimation, &QPropertyAnimation::finished, this, [this]() {
         QWidget::hide();
     });
 }

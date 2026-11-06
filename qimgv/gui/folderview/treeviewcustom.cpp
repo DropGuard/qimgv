@@ -11,7 +11,7 @@ TreeViewCustom::TreeViewCustom(QWidget *parent) : QTreeView(parent) {
     overlayScrollbar.setStyleSheet("background-color: transparent;");
     connect(verticalScrollBar(), &QScrollBar::rangeChanged, &overlayScrollbar, &QScrollBar::setRange);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, &overlayScrollbar, &QScrollBar::setValue);
-    connect(&overlayScrollbar, &QScrollBar::valueChanged, [this]() {
+    connect(&overlayScrollbar, &QScrollBar::valueChanged, this, [this]() {
         this->verticalScrollBar()->setValue(overlayScrollbar.value());
     });
 }

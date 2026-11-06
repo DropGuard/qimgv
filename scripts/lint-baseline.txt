@@ -29,7 +29,11 @@
 #   (non-virtual shadowing is intentional in this framework).
 clazy qcolor-from-literal 50
 clazy range-loop-detach 18
-clazy connect-3arg-lambda 14
+#   connect-3arg-lambda — retired at zero on 2026-11-06: every lambda
+#   connect now names a context object, so the connection dies with the
+#   receiver instead of outliving it whenever the sender lives longer
+#   (the app-lifetime `settings` case was live-crashing on a destroyed
+#   widget as early as the first settingsChanged after the widget died).
 clazy range-loop-reference 3
 clazy qproperty-without-notify 3
 clazy detaching-temporary 3

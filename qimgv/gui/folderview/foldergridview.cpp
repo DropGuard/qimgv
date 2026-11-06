@@ -20,7 +20,8 @@ FolderGridView::FolderGridView(QWidget *parent)
     setDrawScrollbarIndicator(false);
     setSelectMode(ACTIVATE_BY_DOUBLECLICK);
 
-    connect(settings, &Settings::settingsChanged, [this]() {
+    // `settings` outlives every widget, so the connection must die with this one
+    connect(settings, &Settings::settingsChanged, this, [this]() {
         this->scene.setBackgroundBrush(settings->colorScheme().folderview);
     });
 
