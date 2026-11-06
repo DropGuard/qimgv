@@ -45,4 +45,4 @@ clazy non-pod-global-static 1
 clazy connect-by-name 1
 cppcheck returnByReference 10
 cppcheck iterateByValue 1
-cppcheck useInitializationList 2
+cppcheck useInitializationList 1

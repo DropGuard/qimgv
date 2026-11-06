@@ -12,11 +12,12 @@ Thumbnailer::Thumbnailer(WorkerPool &_pool, EngineBridge &bridge)
 {
     connect(&mBridge, &EngineBridge::thumbNext,
             this, &Thumbnailer::onThumbNext);
-    cache = new ThumbnailCache();
+    cache = new ThumbnailCache(settings->thumbnailCacheDir());
     // the shared pool's size is decided once, where it is constructed (Core)
     // startup sweep, after the first frames have settled; stat-only walk
     QTimer::singleShot(3000, this, [this]() {
-        cache->purgeOlderThan(ThumbnailCache::cacheMaxIdleDays);
+        cache->purgeOlderThan(ThumbnailCache::cacheMaxIdleDays,
+                              ThumbnailCache::cacheMaxBytes);
     });
 }
 

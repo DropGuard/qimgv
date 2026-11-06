@@ -307,10 +307,13 @@ private slots:
 
     void thumbnailCachePurgesByIdleTimeAndReadRefreshesTheClock() {
         resetFixture();
-        ThumbnailCache cache;
-        // the Settings singleton may have resolved its cache dir under an
-        // earlier suite's IsolatedHome that is already gone; make the dir the
-        // cache points at real before anything can be saved into it
+        // a purge deletes files and the byte assertions count every file in
+        // the directory, so the directory belongs to this test alone — a
+        // fixture shared with another suite, or with the same suite's previous
+        // process, silently changes the census
+        QTemporaryDir own;
+        QVERIFY(own.isValid());
+        ThumbnailCache cache(own.filePath("idlecache"));
         QVERIFY(QDir().mkpath(QFileInfo(cache.thumbnailPath(QStringLiteral("x"))).absolutePath()));
         QImage dot(4, 4, QImage::Format_ARGB32);
         dot.fill(Qt::black);
@@ -325,7 +328,10 @@ private slots:
         cache.saveThumbnail(&dot, QStringLiteral("stale"));
         QVERIFY(age(cache.thumbnailPath(QStringLiteral("hot")), 8));
         QVERIFY(age(cache.thumbnailPath(QStringLiteral("stale")), 16));
-        QCOMPARE(cache.purgeOlderThan(15), 1);
+        // a cap nobody can reach: this is the idle pass alone, unchanged
+        auto report = cache.purgeOlderThan(15, ThumbnailCache::cacheMaxBytes);
+        QCOMPARE(report.idleDropped, 1);
+        QCOMPARE(report.sizeEvicted, 0);
         QVERIFY(cache.exists(QStringLiteral("hot")));
         QVERIFY(!cache.exists(QStringLiteral("stale")));
 
@@ -336,8 +342,79 @@ private slots:
         QImage *hit = cache.readThumbnail(QStringLiteral("revived"));
         QVERIFY(hit);
         delete hit;
-        QCOMPARE(cache.purgeOlderThan(15), 0);
+        QCOMPARE(cache.purgeOlderThan(15, ThumbnailCache::cacheMaxBytes).idleDropped, 0);
         QVERIFY(cache.exists(QStringLiteral("revived")));
+    }
+
+    // The byte cap is a fuse behind the idle sweep, not a second policy: it may
+    // only fire on what the sweep left, it must order eviction by the same
+    // last-used clock the expiry uses, and the boundary has to be exact — a
+    // cache sitting AT the cap is a cache that is not over it.
+    void thumbnailCacheByteCapFiresOnlyOnWhatTheIdleSweepLeaves() {
+        resetFixture();
+        QTemporaryDir ownCap;
+        QVERIFY(ownCap.isValid());
+        QVERIFY(QDir().mkpath(ownCap.filePath("capcache")));
+        ThumbnailCache cache(ownCap.filePath("capcache"));
+        QImage dot(4, 4, QImage::Format_ARGB32);
+        dot.fill(Qt::green);
+        const QDateTime now = QDateTime::currentDateTime();
+        auto age = [&now](const QString &path, int days) {
+            const struct timespec times[2] = { { 0, UTIME_OMIT },
+                                               { now.addDays(-days).toSecsSinceEpoch(), 0 } };
+            return ::utimensat(AT_FDCWD, path.toLocal8Bit().constData(), times, 0) == 0;
+        };
+        auto size = [](const QString &path) { return QFileInfo(path).size(); };
+        const QString newest = cache.thumbnailPath(QStringLiteral("newest"));
+        const QString older  = cache.thumbnailPath(QStringLiteral("older"));
+        const QString older2 = cache.thumbnailPath(QStringLiteral("older2"));
+        const QString oldest = cache.thumbnailPath(QStringLiteral("oldest"));
+
+        // four live entries (all inside the idle window), aged so the eviction
+        // order is unambiguous: oldest is the one the LRU gives up first
+        cache.saveThumbnail(&dot, QStringLiteral("newest"));
+        cache.saveThumbnail(&dot, QStringLiteral("older"));
+        cache.saveThumbnail(&dot, QStringLiteral("older2"));
+        cache.saveThumbnail(&dot, QStringLiteral("oldest"));
+        QVERIFY(age(newest, 1));
+        QVERIFY(age(older, 2));
+        QVERIFY(age(older2, 3));
+        QVERIFY(age(oldest, 4));
+        const qint64 four = size(newest) + size(older) + size(older2) + size(oldest);
+        const qint64 twoNewest = size(newest) + size(older);
+        QVERIFY2(four > twoNewest, "fixture degenerate: entries have no size to evict");
+
+        // at the cap: nothing fires, nothing is touched
+        auto atCap = cache.purgeOlderThan(15, four);
+        QCOMPARE(atCap.idleDropped, 0);
+        QCOMPARE(atCap.sizeEvicted, 0);
+        QCOMPARE(atCap.bytesAfter, four);
+
+        // under it: evicted oldest-first, and it stops the moment the total is
+        // inside the cap — the two newest are the survivors because they are
+        // the two most recently used
+        auto overCap = cache.purgeOlderThan(15, twoNewest);
+        QCOMPARE(overCap.idleDropped, 0);      // none of these was idle-expired
+        QCOMPARE(overCap.sizeEvicted, 2);
+        QCOMPARE(overCap.bytesAfter, twoNewest);
+        QVERIFY(cache.exists(QStringLiteral("newest")));
+        QVERIFY(cache.exists(QStringLiteral("older")));
+        QVERIFY(!cache.exists(QStringLiteral("older2")));
+        QVERIFY(!cache.exists(QStringLiteral("oldest")));
+
+        // the ordering claim, and the reason the sweep runs first: a 30-day-old
+        // entry is removed as expired, not as oversized, and its bytes never
+        // count toward the cap — so a cache whose overage IS the junk the sweep
+        // already removed evicts nothing
+        cache.saveThumbnail(&dot, QStringLiteral("ancient"));
+        QVERIFY(age(cache.thumbnailPath(QStringLiteral("ancient")), 30));
+        const qint64 twoPlusAncient = twoNewest + size(cache.thumbnailPath(QStringLiteral("ancient")));
+        auto mixed = cache.purgeOlderThan(15, twoPlusAncient - 1);
+        QCOMPARE(mixed.idleDropped, 1);          // the ancient one, by expiry
+        QCOMPARE(mixed.sizeEvicted, 0);          // and the fuse never needed to fire
+        QVERIFY(cache.exists(QStringLiteral("newest")));
+        QVERIFY(cache.exists(QStringLiteral("older")));
+        QVERIFY(!cache.exists(QStringLiteral("ancient")));
     }
 
     void processArgumentsSubstitutesTheFileTag() {
