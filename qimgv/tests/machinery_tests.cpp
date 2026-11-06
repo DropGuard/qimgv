@@ -7,6 +7,7 @@
 #include "components/workerpool/workerpool.h"
 #include "components/loader/loader.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QFile>
@@ -528,6 +529,27 @@ private slots:
         QCOMPARE(process.state(), QProcess::NotRunning);
     }
 
+    // One frame file per concurrent extraction: the same clip at two sizes (the
+    // grid and the strip each run their own thumbnailer) used to hand two mpv
+    // writers one path, and the reader that lost the race cached a torn frame
+    // under its own correct id. The pid is the cross-instance face of the same
+    // race; basename stays for a crashed run's leftovers.
+    void videoFrameTempPathSeparatesConcurrentExtractions() {
+        QTemporaryDir own;
+        QVERIFY(own.isValid());
+        const QString dir = own.filePath("tmp") + "/";
+        const QString clip = "/some/where/clip.mp4";
+        const QString base = ThumbnailerRunnable::videoFrameTempPath(dir, clip, 120, false);
+        QCOMPARE(base, ThumbnailerRunnable::videoFrameTempPath(dir, clip, 120, false));
+        QVERIFY(base != ThumbnailerRunnable::videoFrameTempPath(dir, clip, 240, false));
+        QVERIFY(base != ThumbnailerRunnable::videoFrameTempPath(dir, clip, 120, true));
+        QVERIFY(base != ThumbnailerRunnable::videoFrameTempPath(dir, "/other/clip.mp4", 120, false));
+        QVERIFY(base.startsWith(dir));
+        QVERIFY(base.contains(QStringLiteral("clip.mp4-")));
+        QVERIFY2(base.contains(QString::number(QCoreApplication::applicationPid())),
+                 "the frame file name must be process-unique");
+    }
+
     // ShortcutBuilder had no coverage at all; these pin the event-to-sequence
     // mapping against the hardcoded default input map (Ctrl, WheelUp/Down,
     // the button names, and the double-click / RMB-release quirks).
@@ -825,13 +847,13 @@ private slots:
         // other's frame, then cached it under its own correct id — a wrong
         // thumbnail that stays wrong. The name has to be per source path, and
         // stable for one source because the writer deletes it after use.
-        const QString a = ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mp4");
-        const QString b = ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/y/clip.mp4");
+        const QString a = ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mp4", 120, false);
+        const QString b = ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/y/clip.mp4", 120, false);
         QVERIFY2(a != b, "same basename in different folders shared one temp file");
-        QCOMPARE(a, ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mp4"));
+        QCOMPARE(a, ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mp4", 120, false));
         QVERIFY(a.startsWith("/tmp/t/clip.mp4-"));
         // a source that differs by more than its directory still differs
-        QVERIFY(a != ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mkv"));
+        QVERIFY(a != ThumbnailerRunnable::videoFrameTempPath("/tmp/t/", "/videos/x/clip.mkv", 120, false));
     }
 
     void thumbnailerAccountingSurvivesAClearMidFlight() {

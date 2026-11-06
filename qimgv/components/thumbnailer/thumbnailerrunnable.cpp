@@ -2,6 +2,7 @@
 
 #include "qimgv_engine.h"
 
+#include <QCoreApplication>
 #include <QDeadlineTimer>
 #include <QFileInfo>
 #include <utility>
@@ -30,13 +31,17 @@ void ThumbnailerRunnable::run() {
     emit taskEnd(thumbnail, path, crop);
 }
 
-QString ThumbnailerRunnable::videoFrameTempPath(const QString &tmpDir, const QString &path) {
+QString ThumbnailerRunnable::videoFrameTempPath(const QString &tmpDir, const QString &path, int size, bool crop) {
     // Two clips named clip.mp4 in different folders used to be handed the same
     // temp file: one worker read (and then removed) the other's frame and cached
     // it under its own correct md5(path+size) id, which makes the wrong
     // thumbnail permanent until the cache is cleared. The basename stays in the
-    // name only to keep a crashed run's leftovers recognisable.
-    return tmpDir + QFileInfo(path).fileName() + "-" + generateIdString(path, 0, false) + ".png";
+    // name only to keep a crashed run's leftovers recognisable. Size, crop and
+    // pid are what keeps two concurrent extractions of the SAME clip from
+    // sharing one file: the grid and the strip each run their own thumbnailer,
+    // and so do two app instances.
+    return tmpDir + QFileInfo(path).fileName() + "-" + QString::number(QCoreApplication::applicationPid())
+           + "-" + generateIdString(path, size, crop) + ".png";
 }
 
 QString ThumbnailerRunnable::generateIdString(const QString& path, int size, bool crop) {
@@ -240,7 +245,7 @@ std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbn
                                                                                     const QString &tmpDir, const QString &mpvBinary,
                                                                                     const CancelToken *cancel) {
     QImageReader reader;
-    const QString tmpFilePath = videoFrameTempPath(tmpDir, path);
+    const QString tmpFilePath = videoFrameTempPath(tmpDir, path, size, squared);
     QString tmpFilePathEsc = tmpFilePath;
     tmpFilePathEsc.replace("%", "%%");
     QProcess process;
