@@ -773,6 +773,31 @@ private slots:
         QCOMPARE(mime->urls().first(), QUrl::fromLocalFile(far));
     }
 
+    // An image whose decoded size exceeds the allocation limit: the Image
+    // object EXISTS (the entry is listed) but its QImage was refused by
+    // QImageReader's allocation limit — and the drag must STILL offer the FILE
+    // on disk. Measured: the mime carries the file path regardless of the
+    // decode refusal (the refusal lives at the decode layer, the mime at the
+    // path layer — two different floors of the same building).
+    void draggingAnOverLimitImageStillOffersTheFile() {
+        Core core;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        // the user-side limit knob, tightened for the test: 8MB refuses the
+        // ~70MB decode deterministically, whatever Qt 6.10's own default is
+        settings->setMemoryAllocationLimit(8);
+        const QString huge = QDir(alpha).filePath("huge.png");
+        QImage big(4200, 4200, QImage::Format_ARGB32); // ~70MB decoded, over the limit
+        big.fill(Qt::red);
+        QVERIFY(big.save(huge, "png"));
+
+        std::unique_ptr<QMimeData> mime(core.mimeDataForPaths({huge}));
+
+        QVERIFY2(mime->hasUrls(), "an over-limit entry produced a mime without urls");
+        QCOMPARE(mime->urls().first(), QUrl::fromLocalFile(huge));
+        QVERIFY(QFileInfo::exists(huge)); // the offered payload is the real file
+    }
+
     void renameCurrentSelectionForcesAfterScriptedConfirmation() {
         Core core;
         FakeInteractions fake;
