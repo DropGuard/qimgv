@@ -214,6 +214,34 @@ if os.path.exists(dm_path):
 else:
     failures.append("R7 cannot run: directorymanager.cpp missing — scanned 0 files is not a pass")
 
+# Rule 8: the settings table is the only description of a setting's bounds.
+# A raw QSettings read of a key the table declares bypasses the row's junk and
+# range policy — which is how JPEGSaveQuality ended up saving at quality 0 on a
+# corrupt config (QSettings applies its second argument only to a MISSING key,
+# junk converts to 0, and 0 was inside the declared range). Keys whose accessor
+# maps the stored value to something the row cannot express are listed here
+# deliberately, the way R2 lists authorized FFI speakers: adding a name to this
+# set is the review, and the review has to be read.
+TABLE_KEYS = set()
+table_path = os.path.join(SRC, 'settings_table.h')
+if os.path.exists(table_path):
+    TABLE_KEYS = set(re.findall(r'=\s*(?:INT|INT_RESET|REAL|BOOL|STR)\("([^"]+)"', text_of(table_path)))
+RAW_BYPASS = re.compile(r'(?:settingsConf|stateConf|themeConf)->(?:value|setValue)\(\s*"([^"]+)"')
+MAPPING_EXEMPT = {
+    'mpvBinary',      # resolves to a fallback binary by file existence
+    'panelPosition',  # maps a string to an enum member, else-branch is the default
+}
+settings_path = os.path.join(SRC, 'settings.cpp')
+if not TABLE_KEYS:
+    failures.append("R8 cannot run: settings_table.h keys parsed to zero — update this rule, do not let it scan nothing")
+elif os.path.exists(settings_path):
+    scanned['R8'] = scanned.get('R8', 0) + 1
+    for lineno, line in enumerate(text_of(settings_path).splitlines(), 1):
+        for key in RAW_BYPASS.findall(line):
+            if key in TABLE_KEYS and key not in MAPPING_EXEMPT:
+                failures.append(f"R8 table key read raw: settings.cpp:{lineno} uses \"{key}\" "
+                                "through QSettings directly — go through load/store and its row")
+
 if failures:
     print("architecture violations:")
     for f in failures:

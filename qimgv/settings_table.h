@@ -24,6 +24,12 @@ struct SettingDesc {
     const char *defS = nullptr;
     double lo = 0.0, hi = 0.0;      // numeric clamp bounds
     bool hasLo = false, hasHi = false;
+    // Two policies exist for a value outside [lo, hi] and they answer
+    // differently: clamp moves it to the nearest legal value, reset discards it
+    // for the default. Enum-valued settings want reset (an out-of-range mode is
+    // a broken value, not a request for the last mode), a pixel size wants
+    // clamp (60 is a real size that only overshot the panel minimum).
+    bool resetOnRange = false;
 
     constexpr bool clamped() const { return hasLo || hasHi; }
 };
@@ -51,6 +57,19 @@ static constexpr SettingDesc INT(const char *key, qlonglong def, qlonglong lo, q
     d.lo = lo; d.hi = hi; d.hasLo = true; d.hasHi = true;
     return d;
 }
+// the same bounds, the other policy: out of range means "take the default"
+static constexpr SettingDesc INT_RESET(const char *key, qlonglong def, qlonglong lo) {
+    SettingDesc d;
+    d.key = key; d.kind = SettingDesc::Kind::Int; d.defI = def;
+    d.lo = lo; d.hasLo = true; d.resetOnRange = true;
+    return d;
+}
+static constexpr SettingDesc INT_RESET(const char *key, qlonglong def, qlonglong lo, qlonglong hi) {
+    SettingDesc d;
+    d.key = key; d.kind = SettingDesc::Kind::Int; d.defI = def;
+    d.lo = lo; d.hi = hi; d.hasLo = true; d.hasHi = true; d.resetOnRange = true;
+    return d;
+}
 static constexpr SettingDesc REAL(const char *key, double def, double lo, double hi) {
     SettingDesc d;
     d.key = key; d.kind = SettingDesc::Kind::Real; d.defR = def;
@@ -66,6 +85,7 @@ static constexpr SettingDesc STR(const char *key, const char *def) {
 
 using SettingRow::BOOL;
 using SettingRow::INT;
+using SettingRow::INT_RESET;
 using SettingRow::REAL;
 using SettingRow::STR;
 
@@ -109,21 +129,21 @@ inline constexpr SettingDesc K_ClickableEdgesVisible  = BOOL("clickableEdgesVisi
 inline constexpr SettingDesc K_ShowHiddenFiles        = BOOL("showHiddenFiles", false);
 inline constexpr SettingDesc K_PanelCenterSelection   = BOOL("panelCenterSelection", false);
 inline constexpr SettingDesc K_FolderViewIconSize     = INT("folderViewIconSize", 120);
-inline constexpr SettingDesc K_DefaultFitMode         = INT("defaultFitMode", 0, 0, 3);
-inline constexpr SettingDesc K_FocusPointIn1to1Mode   = INT("focusPointIn1to1Mode", 1, 0, 2);
-inline constexpr SettingDesc K_DefaultCropAction      = INT("defaultCropAction", 0, 0, 1);
-inline constexpr SettingDesc K_DefaultViewMode        = INT("defaultViewMode", 0, 0, 1);
-inline constexpr SettingDesc K_SortingMode            = INT("sortingMode", 0, 0, 5);
-inline constexpr SettingDesc K_FolderEndAction        = INT("folderEndAction", 0, 0, 2);
-inline constexpr SettingDesc K_FolderViewMode         = INT("folderViewMode", 2, 0, 2);
-inline constexpr SettingDesc K_ThumbPanelStyle        = INT("thumbPanelStyle", 1, 0, 1);
-inline constexpr SettingDesc K_ImageScrolling         = INT("imageScrolling", 1, 0, 2);
-inline constexpr SettingDesc K_ZoomIndicatorMode      = INT("zoomIndicatorMode", 0, 0, 2);
+inline constexpr SettingDesc K_DefaultFitMode         = INT_RESET("defaultFitMode", 0, 0, 3);
+inline constexpr SettingDesc K_FocusPointIn1to1Mode   = INT_RESET("focusPointIn1to1Mode", 1, 0, 2);
+inline constexpr SettingDesc K_DefaultCropAction      = INT_RESET("defaultCropAction", 0, 0, 1);
+inline constexpr SettingDesc K_DefaultViewMode        = INT_RESET("defaultViewMode", 0, 0, 1);
+inline constexpr SettingDesc K_SortingMode            = INT_RESET("sortingMode", 0, 0, 5);
+inline constexpr SettingDesc K_FolderEndAction        = INT_RESET("folderEndAction", 0, 0, 2);
+inline constexpr SettingDesc K_FolderViewMode         = INT_RESET("folderViewMode", 2, 0, 2);
+inline constexpr SettingDesc K_ThumbPanelStyle        = INT_RESET("thumbPanelStyle", 1, 0, 1);
+inline constexpr SettingDesc K_ImageScrolling         = INT_RESET("imageScrolling", 1, 0, 2);
+inline constexpr SettingDesc K_ZoomIndicatorMode      = INT_RESET("zoomIndicatorMode", 0, 0, 2);
 inline constexpr SettingDesc K_MemoryAllocationLimit  = INT("memoryAllocationLimit", 1024, 512, 8192);
-inline constexpr SettingDesc K_SlideshowInterval      = INT("slideshowInterval", 3000, 1);
-inline constexpr SettingDesc K_ThumbnailerThreads     = INT("thumbnailerThreads", 4, 1);
+inline constexpr SettingDesc K_SlideshowInterval      = INT_RESET("slideshowInterval", 3000, 1);
+inline constexpr SettingDesc K_ThumbnailerThreads     = INT_RESET("thumbnailerThreads", 4, 1);
 inline constexpr SettingDesc K_PanelPreviewsSize      = INT("panelPreviewsSize", 140, 100, 250);
-inline constexpr SettingDesc K_AutoResizeLimit        = INT("autoResizeLimit", 90, 30, 100);
+inline constexpr SettingDesc K_AutoResizeLimit        = INT_RESET("autoResizeLimit", 90, 30, 100);
 inline constexpr SettingDesc K_JPEGSaveQuality        = INT("JPEGSaveQuality", 95, 0, 100);
 inline constexpr SettingDesc K_ExpandLimit            = INT("expandLimit", 2);
 inline constexpr SettingDesc K_LastVerMajor           = INT("lastVerMajor", 0);

@@ -70,6 +70,10 @@ T Settings::load(const SettingDesc &d) const {
         qlonglong v = raw.toLongLong(&ok);
         if(!ok)
             return settingDefault<T>(d);
+        const bool outside = (d.hasLo && v < static_cast<qlonglong>(d.lo))
+                          || (d.hasHi && v > static_cast<qlonglong>(d.hi));
+        if(outside && d.resetOnRange)
+            return settingDefault<T>(d);
         if(d.hasLo) v = std::max<qlonglong>(v, static_cast<qlonglong>(d.lo));
         if(d.hasHi) v = std::min<qlonglong>(v, static_cast<qlonglong>(d.hi));
         return static_cast<T>(v);
@@ -77,6 +81,9 @@ T Settings::load(const SettingDesc &d) const {
         bool ok = false;
         double v = raw.toDouble(&ok);
         if(!ok)
+            return settingDefault<T>(d);
+        const bool outside = (d.hasLo && v < d.lo) || (d.hasHi && v > d.hi);
+        if(outside && d.resetOnRange)
             return settingDefault<T>(d);
         if(d.hasLo) v = std::max(v, d.lo);
         if(d.hasHi) v = std::min(v, d.hi);
@@ -452,16 +459,15 @@ void Settings::setUseSystemColorScheme(bool mode) {
 }
 //------------------------------------------------------------------------------
 QVersionNumber Settings::lastVersion() {
-    int vmajor = settingsConf->value("lastVerMajor", 0).toInt();
-    int vminor = settingsConf->value("lastVerMinor", 0).toInt();
-    int vmicro = settingsConf->value("lastVerMicro", 0).toInt();
-    return QVersionNumber(vmajor, vminor, vmicro);
+    return QVersionNumber(load<int>(K_LastVerMajor),
+                          load<int>(K_LastVerMinor),
+                          load<int>(K_LastVerMicro));
 }
 
 void Settings::setLastVersion(QVersionNumber &ver) {
-    settingsConf->setValue("lastVerMajor", ver.majorVersion());
-    settingsConf->setValue("lastVerMinor", ver.minorVersion());
-    settingsConf->setValue("lastVerMicro", ver.microVersion());
+    store(K_LastVerMajor, ver.majorVersion());
+    store(K_LastVerMinor, ver.minorVersion());
+    store(K_LastVerMicro, ver.microVersion());
 }
 //------------------------------------------------------------------------------
 void Settings::setShowChangelogs(bool mode) {
@@ -473,15 +479,7 @@ bool Settings::showChangelogs() {
 }
 //------------------------------------------------------------------------------
 qreal Settings::backgroundOpacity() {
-    bool ok = false;
-    qreal value = settingsConf->value("backgroundOpacity", 1.0).toReal(&ok);
-    if(!ok)
-        return 0.0;
-    if(value > 1.0)
-        return 1.0;
-    if(value < 0.0)
-        return 0.0;
-    return value;
+    return load<double>(K_BackgroundOpacity);
 }
 
 void Settings::setBackgroundOpacity(qreal value) {
@@ -510,10 +508,7 @@ void Settings::setSortingMode(SortingMode mode) {
 }
 
 SortingMode Settings::sortingMode() {
-    int mode = settingsConf->value("sortingMode", 0).toInt();
-    if(mode < 0 || mode >= 6)
-        mode = 0;
-    return static_cast<SortingMode>(mode);
+    return static_cast<SortingMode>(load<int>(K_SortingMode));
 }
 //------------------------------------------------------------------------------
 bool Settings::playVideoSounds() {
@@ -533,10 +528,7 @@ int Settings::volume() {
 }
 //------------------------------------------------------------------------------
 FolderViewMode Settings::folderViewMode() {
-    int mode = settingsConf->value("folderViewMode", 2).toInt();
-    if(mode < 0 || mode >= 3)
-        mode = 2;
-    return static_cast<FolderViewMode>(mode);
+    return static_cast<FolderViewMode>(load<int>(K_FolderViewMode));
 }
 
 void Settings::setFolderViewMode(FolderViewMode mode) {
@@ -544,10 +536,7 @@ void Settings::setFolderViewMode(FolderViewMode mode) {
 }
 //------------------------------------------------------------------------------
 ThumbPanelStyle Settings::thumbPanelStyle() {
-    int mode = settingsConf->value("thumbPanelStyle", 1).toInt();
-    if(mode < 0 || mode > 1)
-        mode = 1;
-    return static_cast<ThumbPanelStyle>(mode);
+    return static_cast<ThumbPanelStyle>(load<int>(K_ThumbPanelStyle));
 }
 
 void Settings::setThumbPanelStyle(ThumbPanelStyle mode) {
@@ -559,12 +548,7 @@ const QMultiMap<QByteArray, QByteArray> Settings::videoFormats() const {
 }
 //------------------------------------------------------------------------------
 int Settings::panelPreviewsSize() {
-    bool ok = true;
-    int size = settingsConf->value("panelPreviewsSize", 140).toInt(&ok);
-    if(!ok)
-        size = 140;
-    size = qBound(100, size, 250);
-    return size;
+    return load<int>(K_PanelPreviewsSize);
 }
 
 void Settings::setPanelPreviewsSize(int size) {
@@ -674,12 +658,7 @@ void Settings::setPanelPinned(bool mode) {
  * 3: fit window (stretch)
  */
 ImageFitMode Settings::imageFitMode() {
-    int mode = settingsConf->value("defaultFitMode", 0).toInt();
-    if(mode < 0 || mode > 3) {
-        qDebug() << "Settings: Invalid fit mode ( " + QString::number(mode) + " ). Resetting to default.";
-        mode = 0;
-    }
-    return static_cast<ImageFitMode>(mode);
+    return static_cast<ImageFitMode>(load<int>(K_DefaultFitMode));
 }
 
 void Settings::setImageFitMode(ImageFitMode mode) {
@@ -891,17 +870,11 @@ void Settings::setSlideshowInterval(int ms) {
 }
 
 int Settings::slideshowInterval() {
-    int interval = settingsConf->value("slideshowInterval", 3000).toInt();
-    if(interval <= 0)
-        interval = 3000;
-    return interval;
+    return load<int>(K_SlideshowInterval);
 }
 //------------------------------------------------------------------------------
 int Settings::thumbnailerThreadCount() {
-    int count = settingsConf->value("thumbnailerThreads", 4).toInt();
-    if(count < 1)
-        count = 4;
-    return count;
+    return load<int>(K_ThumbnailerThreads);
 }
 
 void Settings::setThumbnailerThreadCount(int count) {
@@ -941,8 +914,7 @@ void Settings::setExpandLimit(int value) {
 }
 //------------------------------------------------------------------------------
 int Settings::JPEGSaveQuality() {
-    int quality = std::clamp(settingsConf->value("JPEGSaveQuality", 95).toInt(), 0, 100);
-    return quality;
+    return load<int>(K_JPEGSaveQuality);
 }
 
 void Settings::setJPEGSaveQuality(int value) {
@@ -1051,12 +1023,7 @@ void Settings::setUnloadThumbs(bool mode) {
 }
 //------------------------------------------------------------------------------
 float Settings::zoomStep() {
-    bool ok = false;
-    float value = settingsConf->value("zoomStep", 0.2f).toFloat(&ok);
-    if(!ok)
-        return 0.2f;
-    value = qBound(0.01f, value, 0.5f);
-    return value;
+    return load<float>(K_ZoomStep);
 }
 
 void Settings::setZoomStep(float value) {
@@ -1065,12 +1032,7 @@ void Settings::setZoomStep(float value) {
 }
 //------------------------------------------------------------------------------
 float Settings::mouseScrollingSpeed() {
-    bool ok = false;
-    float value = settingsConf->value("mouseScrollingSpeed", 1.0f).toFloat(&ok);
-    if(!ok)
-        return 1.0f;
-    value = qBound(0.5f, value, 2.0f);
-    return value;
+    return load<float>(K_MouseScrollingSpeed);
 }
 
 void Settings::setMouseScrollingSpeed(float value) {
@@ -1083,10 +1045,7 @@ void Settings::setZoomIndicatorMode(ZoomIndicatorMode mode) {
 }
 
 ZoomIndicatorMode Settings::zoomIndicatorMode() {
-    int mode = settingsConf->value("zoomIndicatorMode", 0).toInt();
-    if(mode < 0 || mode > 2)
-        mode = 0;
-    return static_cast<ZoomIndicatorMode>(mode);
+    return static_cast<ZoomIndicatorMode>(load<int>(K_ZoomIndicatorMode));
 }
 //------------------------------------------------------------------------------
 void Settings::setFocusPointIn1to1Mode(ImageFocusPoint mode) {
@@ -1094,10 +1053,7 @@ void Settings::setFocusPointIn1to1Mode(ImageFocusPoint mode) {
 }
 
 ImageFocusPoint Settings::focusPointIn1to1Mode() {
-    int mode = settingsConf->value("focusPointIn1to1Mode", 1).toInt();
-    if(mode < 0 || mode > 2)
-        mode = 1;
-    return static_cast<ImageFocusPoint>(mode);
+    return static_cast<ImageFocusPoint>(load<int>(K_FocusPointIn1to1Mode));
 }
 
 void Settings::setDefaultCropAction(DefaultCropAction mode) {
@@ -1105,17 +1061,11 @@ void Settings::setDefaultCropAction(DefaultCropAction mode) {
 }
 
 DefaultCropAction Settings::defaultCropAction() {
-    int mode = settingsConf->value("defaultCropAction", 0).toInt();
-    if(mode < 0 || mode > 1)
-        mode = 0;
-    return static_cast<DefaultCropAction>(mode);
+    return static_cast<DefaultCropAction>(load<int>(K_DefaultCropAction));
 }
 
 ImageScrolling Settings::imageScrolling() {
-    int mode = settingsConf->value("imageScrolling", 1).toInt();
-    if(mode < 0 || mode > 2)
-        mode = 0;
-    return static_cast<ImageScrolling>(mode);
+    return static_cast<ImageScrolling>(load<int>(K_ImageScrolling));
 }
 
 void Settings::setImageScrolling(ImageScrolling mode) {
@@ -1123,10 +1073,7 @@ void Settings::setImageScrolling(ImageScrolling mode) {
 }
 //------------------------------------------------------------------------------
 ViewMode Settings::defaultViewMode() {
-    int mode = settingsConf->value("defaultViewMode", 0).toInt();
-    if(mode < 0 || mode > 1)
-        mode = 0;
-    return static_cast<ViewMode>(mode);
+    return static_cast<ViewMode>(load<int>(K_DefaultViewMode));
 }
 
 void Settings::setDefaultViewMode(ViewMode mode) {
@@ -1134,10 +1081,7 @@ void Settings::setDefaultViewMode(ViewMode mode) {
 }
 //------------------------------------------------------------------------------
 FolderEndAction Settings::folderEndAction() {
-    int mode = settingsConf->value("folderEndAction", 0).toInt();
-    if(mode < 0 || mode > 2)
-        mode = 0;
-    return static_cast<FolderEndAction>(mode);
+    return static_cast<FolderEndAction>(load<int>(K_FolderEndAction));
 }
 
 void Settings::setFolderEndAction(FolderEndAction mode) {
@@ -1201,10 +1145,7 @@ void Settings::setAutoResizeWindow(bool mode) {
 }
 //------------------------------------------------------------------------------
 int Settings::autoResizeLimit() {
-    int limit = settingsConf->value("autoResizeLimit", 90).toInt();
-    if(limit < 30 || limit > 100)
-        limit = 90;
-    return limit;
+    return load<int>(K_AutoResizeLimit);
 }
 
 void Settings::setAutoResizeLimit(int percent) {
@@ -1212,12 +1153,7 @@ void Settings::setAutoResizeLimit(int percent) {
 }
 //------------------------------------------------------------------------------
 int Settings::memoryAllocationLimit() {
-    int limit = settingsConf->value("memoryAllocationLimit", 1024).toInt();
-    if(limit < 512)
-        limit = 512;
-    else if(limit > 8192)
-        limit = 8192;
-    return limit;
+    return load<int>(K_MemoryAllocationLimit);
 }
 
 void Settings::setMemoryAllocationLimit(int limitMB) {

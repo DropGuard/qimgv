@@ -286,8 +286,6 @@ public:
 
     bool jxlAnimation();
     void setJxlAnimation(bool mode);
-    bool absoluteZoomStep();
-    void setAbsoluteZoomStep(bool mode);
     bool autoResizeWindow();
     void setAutoResizeWindow(bool mode);
     int autoResizeLimit();
@@ -330,7 +328,6 @@ private:    // null-initialized: a directly-constructed instance is safe to dest
     ColorScheme mColorScheme;
     QMultiMap<QByteArray, QByteArray> mVideoFormatsMap; // [mimetype, format]
     void saveTheme();
-    void createColorVariants();
 
     void setupCache();
     void fillVideoFormats();

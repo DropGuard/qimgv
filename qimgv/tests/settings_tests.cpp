@@ -1,5 +1,8 @@
 #include "engine_stack_fixture.h"
 
+#include <functional>
+#include <utility>          // std::as_const: a range loop over a non-const QList may detach
+
 // the declarative settings table: clamps, junk values, and the config isolation
 // the binding table stands on
 class TestSettingsTable : public QObject, protected EngineStackFixture {
@@ -59,30 +62,161 @@ private slots:
             }
         }
 
-        // clamp bounds hold on both ends, for every row that declares them
+        // Every row that declares bounds is fed a value outside them, and the
+        // expectation comes from the row's own policy: clamp moves it to the
+        // nearest bound, reset discards it for the default. Two policies
+        // because two real needs exist - an out-of-range enum member is a
+        // broken value (want the default), an out-of-range pixel size is a
+        // real size that merely overshot (want the bound).
+        // This walks load(), so it covers the machinery: it verifies each
+        // declared policy is implemented, not that an accessor uses it. The
+        // accessor-level pins are the other two tests below.
+        QStringList policyMismatch;
         for(const SettingDesc *d : kAllSettings) {
             if(!d->clamped())
                 continue;
-            if(d->kind == SettingDesc::Kind::Int) {
-                if(d->hasLo) {
-                    junk.setValue(d->key, QVariant(static_cast<qlonglong>(d->lo) - 1000));
+            QList<double> outside;                    // only the declared side
+            if(d->hasLo) outside << d->lo - 1000.0;
+            if(d->hasHi) outside << d->hi + 1000.0;
+            for(const double bad : std::as_const(outside)) {
+                if(d->kind == SettingDesc::Kind::Int) {
+                    junk.setValue(d->key, QVariant(static_cast<qlonglong>(bad)));
                     junk.sync();
-                    QCOMPARE(settings->load<qlonglong>(*d), static_cast<qlonglong>(d->lo));
-                }
-                if(d->hasHi) {
-                    junk.setValue(d->key, QVariant(static_cast<qlonglong>(d->hi) + 1000));
+                    const qlonglong want = d->resetOnRange ? d->defI
+                                             : qBound<qlonglong>(static_cast<qlonglong>(d->lo),
+                                                                 static_cast<qlonglong>(bad),
+                                                                 static_cast<qlonglong>(d->hi));
+                    const qlonglong got = settings->load<qlonglong>(*d);
+                    if(got != want)
+                        policyMismatch << QStringLiteral("%1 stored=%2 got=%3 want=%4 (%5)")
+                                              .arg(QString::fromUtf8(d->key))
+                                              .arg(bad).arg(got).arg(want)
+                                              .arg(d->resetOnRange ? QStringLiteral("reset")
+                                                                   : QStringLiteral("clamp"));
+                } else if(d->kind == SettingDesc::Kind::Real) {
+                    junk.setValue(d->key, QVariant(bad));
                     junk.sync();
-                    QCOMPARE(settings->load<qlonglong>(*d), static_cast<qlonglong>(d->hi));
+                    const double want = d->resetOnRange ? d->defR : qBound(d->lo, bad, d->hi);
+                    const double got = settings->load<double>(*d);
+                    if(qAbs(got - want) > 1e-9)
+                        policyMismatch << QStringLiteral("%1 stored=%2 got=%3 want=%4 (%5)")
+                                              .arg(QString::fromUtf8(d->key))
+                                              .arg(bad).arg(got).arg(want)
+                                              .arg(d->resetOnRange ? QStringLiteral("reset")
+                                                                   : QStringLiteral("clamp"));
                 }
-            } else if(d->kind == SettingDesc::Kind::Real) {
-                junk.setValue(d->key, QVariant(d->lo - 1000.0));
-                junk.sync();
-                QCOMPARE(settings->load<double>(*d), d->lo);
-                junk.setValue(d->key, QVariant(d->hi + 1000.0));
-                junk.sync();
-                QCOMPARE(settings->load<double>(*d), d->hi);
             }
         }
+        QVERIFY2(policyMismatch.isEmpty(),
+                 qPrintable(QStringLiteral("rows did not apply their declared range policy:\n  ")
+                            + policyMismatch.join(QStringLiteral("\n  "))));
+    }
+
+    // QSettings' second argument only covers a MISSING key: a junk value
+    // converts to 0/false, and if 0 happens to be legal the hand-rolled guard
+    // never fires. That is how JPEGSaveQuality ended up saving at quality 0
+    // from a corrupt config while its row declared the default 95.
+    void jpegSaveQualityServesTheDeclaredDefaultOnJunk() {
+        FreshSettings fresh;
+        QSettings junk(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+
+        junk.setValue("JPEGSaveQuality", QVariant(QStringLiteral("banana")));
+        junk.sync();
+        QCOMPARE(settings->JPEGSaveQuality(), 95);
+
+        junk.setValue("JPEGSaveQuality", QVariant(QString()));
+        junk.sync();
+        QCOMPARE(settings->JPEGSaveQuality(), 95);
+
+        junk.setValue("JPEGSaveQuality", QVariant(static_cast<qlonglong>(140)));
+        junk.sync();
+        QCOMPARE(settings->JPEGSaveQuality(), 100);   // the row's hi bound
+    }
+
+    // The accessors that used to read QSettings by hand and disagreed with
+    // their row on what a junk value means. Collected then asserted together:
+    // QCOMPARE returns from the test function at the first mismatch, which
+    // would otherwise hide every case after the first.
+    void junkFallsBackToTheDeclaredDefaultNotToSomeOtherValue() {
+        FreshSettings fresh;
+        QSettings junk(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+        const QList<QByteArray> keys { "backgroundOpacity", "folderViewMode", "thumbPanelStyle",
+                                       "memoryAllocationLimit", "imageScrolling",
+                                       "focusPointIn1to1Mode" };
+        for(const QByteArray &k : keys)
+            junk.setValue(QString::fromUtf8(k), QVariant(QStringLiteral("banana")));
+        junk.sync();
+
+        QStringList got {
+            QStringLiteral("backgroundOpacity=%1").arg(settings->backgroundOpacity()),
+            QStringLiteral("folderViewMode=%1").arg(settings->folderViewMode()),
+            QStringLiteral("thumbPanelStyle=%1").arg(settings->thumbPanelStyle()),
+            QStringLiteral("memoryAllocationLimit=%1").arg(settings->memoryAllocationLimit()),
+            QStringLiteral("imageScrolling=%1").arg(settings->imageScrolling()),
+            QStringLiteral("focusPointIn1to1Mode=%1").arg(settings->focusPointIn1to1Mode())
+        };
+        const QStringList want {
+            QStringLiteral("backgroundOpacity=1"), QStringLiteral("folderViewMode=2"),
+            QStringLiteral("thumbPanelStyle=1"), QStringLiteral("memoryAllocationLimit=1024"),
+            QStringLiteral("imageScrolling=1"), QStringLiteral("focusPointIn1to1Mode=1")
+        };
+        QStringList wrong;
+        for(int i = 0; i < got.size(); ++i)
+            if(got.at(i) != want.at(i))
+                wrong << QStringLiteral("%1 (row wants %2)")
+                             .arg(got.at(i), want.at(i).section('=', 1));
+        QVERIFY2(wrong.isEmpty(),
+                 qPrintable(QStringLiteral("junk values did not land on the declared defaults: ")
+                            + wrong.join(QStringLiteral("; "))));
+    }
+
+    // The reset-policy rows, pinned through their production accessors against
+    // the default each row declares. Deliberately not a comparison with load():
+    // expecting whatever load() answers is self-consistent and inert - flipping
+    // a row's policy moves that expectation with it, and the test stays green
+    // while every enum setting changes meaning. Measured: declaring
+    // K_ZoomIndicatorMode with the clamp policy fails this test by name while
+    // the machinery audit above does not.
+    void outOfRangeSettingsResolveThroughTheirAccessors() {
+        FreshSettings fresh;
+        QSettings probe(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+
+        struct Item { const SettingDesc *row; std::function<double()> get; };
+        const QList<Item> items {
+            {&K_SortingMode,          []{ return double(settings->sortingMode()); }},
+            {&K_FolderViewMode,       []{ return double(settings->folderViewMode()); }},
+            {&K_ThumbPanelStyle,      []{ return double(settings->thumbPanelStyle()); }},
+            {&K_DefaultFitMode,       []{ return double(settings->imageFitMode()); }},
+            {&K_ZoomIndicatorMode,    []{ return double(settings->zoomIndicatorMode()); }},
+            {&K_FocusPointIn1to1Mode, []{ return double(settings->focusPointIn1to1Mode()); }},
+            {&K_ImageScrolling,       []{ return double(settings->imageScrolling()); }},
+            {&K_DefaultCropAction,    []{ return double(settings->defaultCropAction()); }},
+            {&K_DefaultViewMode,      []{ return double(settings->defaultViewMode()); }},
+            {&K_FolderEndAction,      []{ return double(settings->folderEndAction()); }},
+            {&K_AutoResizeLimit,      []{ return double(settings->autoResizeLimit()); }},
+            {&K_SlideshowInterval,    []{ return double(settings->slideshowInterval()); }},
+            {&K_ThumbnailerThreads,   []{ return double(settings->thumbnailerThreadCount()); }},
+        };
+
+        QStringList wrong;
+        for(const Item &it : items) {
+            const SettingDesc *d = it.row;
+            QList<qlonglong> outside;                 // only the declared side:
+            if(d->hasLo) outside << static_cast<qlonglong>(d->lo) - 1000;
+            if(d->hasHi) outside << static_cast<qlonglong>(d->hi) + 1000;
+            // a row without hi has no upper violation to probe
+            for(const qlonglong bad : std::as_const(outside)) {
+                probe.setValue(d->key, QVariant(bad));
+                probe.sync();
+                if(it.get() != static_cast<double>(d->defI))
+                    wrong << QStringLiteral("%1 stored=%2 accessor gave %3, row default is %4")
+                                 .arg(QString::fromUtf8(d->key)).arg(bad)
+                                 .arg(it.get()).arg(d->defI);
+            }
+        }
+        QVERIFY2(wrong.isEmpty(),
+                 qPrintable(QStringLiteral("reset-policy settings did not serve their default:\n  ")
+                            + wrong.join(QStringLiteral("\n  "))));
     }
 
     void settingsEnumGettersClampJunkConfigValues() {
