@@ -15,6 +15,10 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <QSignalSpy>
+#include <QThread>
+#include <QElapsedTimer>
+#include <atomic>
+#include <chrono>
 #include <QTemporaryDir>
 #include <QImage>
 #include <QDir>
@@ -177,6 +181,25 @@ void proxyOutlivesItsContainer() {
     delete container;                 // the tree frees the overlay right here
     proxy.reset();                    // the proxy destructor must not touch it now
 }
+
+// The settings bus's pool wait, measured rather than asserted as a duration:
+// the job releases itself at a deadline, so the narrow (owner-scoped) wait
+// returns long before it and the old global wait could only return after it.
+// A bound test, not a hang test.
+class DeadlineJob : public PoolJob {
+public:
+    DeadlineJob(std::atomic_bool *_gate, std::atomic_int *_holds) : gate(_gate), holds(_holds) {}
+    void run() override {
+        holds->store(1);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(5000);
+        while(!gate->load() && std::chrono::steady_clock::now() < deadline)
+            QThread::msleep(1);
+        holds->store(0);
+    }
+private:
+    std::atomic_bool *gate;
+    std::atomic_int *holds;
+};
 
 class TestCoreNav : public QObject {
     Q_OBJECT
@@ -1986,6 +2009,33 @@ private slots:
         QMetaObject::invokeMethod(model.get(), "dirAdded", Q_ARG(QString, d0));
         QCOMPARE(view.removed, QList<int>({dirCount, 0}));
         QCOMPARE(view.inserted, QList<int>({dirCount + 1, 0}));
+    }
+
+    // The settings bus drains a pool on the UI thread, and the scope of that
+    // drain is what a Save press costs. With a Loader job provably running, a
+    // bus that waits for every owner cannot return before the job's deadline;
+    // a bus scoped to the owner its settings actually feed returns at once.
+    // The held job is observed still-held afterwards, so the pass is not just
+    // "it was fast" — it is "it returned while the work was in there".
+    void settingsBusWaitsOnlyForThePipelineItsSettingsActuallyFeed() {
+        Core core;
+        std::atomic_bool gate{false};
+        std::atomic_int holds{0};
+        core.pool_.submit(PoolOwner::Loader, 0, std::make_unique<DeadlineJob>(&gate, &holds));
+        QTRY_COMPARE_WITH_TIMEOUT(holds.load(), 1, 10000);
+
+        QElapsedTimer t;
+        t.start();
+        settings->sendChangeNotification();   // what the settings dialog's Save does
+        const qint64 elapsed = t.elapsed();
+
+        QCOMPARE(holds.load(), 1);            // the Loader job was still running when it returned
+        QVERIFY2(elapsed < 1000,
+                 qPrintable(QStringLiteral("the settings bus waited %1 ms — a pool drain that is not "
+                                            "owner-scoped waits for work none of its settings feed")
+                            .arg(elapsed)));
+        gate = true;
+        QTRY_COMPARE_WITH_TIMEOUT(holds.load(), 0, 10000);
     }
 
     void editingInDocumentModeEditsInMemoryWithoutConfirmation() {

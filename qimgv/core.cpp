@@ -73,10 +73,18 @@ Core::~Core() {
 }
 
 void Core::readSettings() {
-    // what the settings dialog's dead globalInstance() wait aspired to: the
-    // new settings take effect only once nothing scheduled under the old ones
-    // is still in flight
-    pool_.waitForAll();
+    // What this method re-reads is five navigation settings; the only one that
+    // reaches an executor is folderViewMode, whose setShowDirs() repopulates
+    // the view and makes it request thumbnails again. So the wait is scoped to
+    // the Thumbnailer: Loader and Scaler jobs carry their own policy inside
+    // them (LoadPolicy, ScalerRequest — the rule R4 exists to enforce), so
+    // none of these five settings could change what an in-flight decode or
+    // scale produces, and waiting for them was pure UI-thread cost bounded by
+    // the whole queue. Queued thumbnail work is not even awaited in the steady
+    // path: the regenerated batch starts with Thumbnailer::clearTasks(), which
+    // drains it. What remains here is the running job, so a thumbnail callback
+    // cannot land mid-repopulation.
+    pool_.waitForOwner(PoolOwner::Thumbnailer);
     loopSlideshow = settings->loopSlideshow();
     folderEndAction = settings->folderEndAction();
     slideshowTimer.setInterval(settings->slideshowInterval());

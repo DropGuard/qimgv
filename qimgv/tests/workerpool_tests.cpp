@@ -174,7 +174,11 @@ void TestWorkerPool::waitForAllWaitsForEveryOwner() {
         gate = true;
         waiter.join();                 // it was waiting: opening the gate releases it
         QVERIFY(returned.load());
-        QCOMPARE(deaths.load(), 2);
+        // the pool destroys completed jobs on its worker thread, so the death
+        // count catches up asynchronously — asserting it as an instant value is
+        // a race this test authored, and it was the one red that arrived
+        // unnamed in the ASan sweep
+        QTRY_COMPARE_WITH_TIMEOUT(deaths.load(), 2, 10000);
     }
 
 int runWorkerPoolTests(int argc, char **argv) {
