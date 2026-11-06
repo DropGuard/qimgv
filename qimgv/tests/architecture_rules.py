@@ -258,6 +258,23 @@ elif os.path.exists(settings_path):
                 failures.append(f"R8 table key read raw: settings.cpp:{lineno} uses \"{key}\" "
                                 "through QSettings directly — go through load/store and its row")
 
+# Rule 9: the Thumbnailer has exactly one owner — Core. The grid and the strip
+# each constructing their own made every broadcast EngineBridge::thumbNext run
+# the same decode twice (the engine dedups requests, but the event fans out to
+# every listener with no ownership guard), hand two mpv writers one frame file,
+# and double every report path. Ownership is the value member: a reference
+# member (`Thumbnailer &name;`) is the shared form and stays legal anywhere.
+THUMB_VALUE_OWNER = re.compile(r'\bThumbnailer\s+\w+\s*(?:;|=)')
+for path, rel in sources():
+    if rel.startswith('tests'):
+        continue
+    scanned['R9'] = scanned.get('R9', 0) + 1
+    for lineno, line in enumerate(text_of(path).splitlines(), 1):
+        if THUMB_VALUE_OWNER.search(line) and rel != 'core.h':
+            failures.append(f"R9 second Thumbnailer owner: {rel}:{lineno} declares a Thumbnailer "
+                            "value member — the process has exactly one, owned by Core; "
+                            "take it by reference")
+
 if failures:
     print("architecture violations:")
     for f in failures:

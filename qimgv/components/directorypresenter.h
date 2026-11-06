@@ -16,7 +16,7 @@
 class DirectoryPresenter : public QObject {
     Q_OBJECT
 public:
-    explicit DirectoryPresenter(WorkerPool &pool, QObject *parent = nullptr);
+    explicit DirectoryPresenter(Thumbnailer &_thumbnailer, QObject *parent = nullptr);
 
     // The view is an IDirectoryView, which is not a QObject, so a
     // pointer-to-member connect cannot be written against the interface (measured:
@@ -98,10 +98,6 @@ private slots:
 
     void onDroppedInto(const QMimeData *data, QObject *source, int targetIndex);
 private:
-    // injected from Core; declared before the thumbnailer that runs on it so
-    // the destruction order keeps the pool alive through the thumbnailer's
-    // drain
-    WorkerPool &pool;
     // observes; the Qt parent tree owns the view widget
     IDirectoryView *view = nullptr;
     // the same widget, seen as the QObject it also is: the teardown needs to
@@ -109,6 +105,10 @@ private:
     QPointer<QObject> viewSender;
     std::function<void()> viewTeardown;
     std::shared_ptr<DirectoryModel> model = nullptr;
-    Thumbnailer thumbnailer;
+    // shared with every other presenter, owned by Core (architecture rule R9):
+    // one executor per engine event. Two presenters each holding their own
+    // made the broadcast ThumbNext run the same decode twice and hand two mpv
+    // writers one frame file
+    Thumbnailer &thumbnailer;
     bool mShowDirs;
 };

@@ -13,6 +13,7 @@
 #include "components/workerpool/workerpool.h"
 #include "gui/iuserinteractions.h"
 #include "components/directorymodel.h"
+#include "components/thumbnailer/thumbnailer.h"
 #include "components/directorypresenter.h"
 #include "components/scriptmanager/scriptmanager.h"
 #include "gui/mainwindow.h"
@@ -96,6 +97,11 @@ private:
     // decision lives in loadFileIndex() and is only observable through the
     // model's cache, which is deliberately not part of Core's public API.
     friend class TestCoreNav;
+
+    // the one Thumbnailer in the process, shared by both presenters (rule R9).
+    // Declared after pool_ and before the presenters, so destruction runs
+    // presenters → thumbnailer → pool_ and the pool outlives its drain
+    Thumbnailer thumbnailer;
 
     DirectoryPresenter thumbPanelPresenter, folderViewPresenter;
 

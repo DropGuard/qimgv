@@ -56,6 +56,10 @@ void Thumbnailer::clearTasks() {
     // engine's count stay balanced without anything here knowing which jobs
     // were marked.
     pool.cancel(PoolOwner::Thumbnailer);
+    // the force flags belong to requests this clear just killed: with the
+    // batch gone, a stale true here would force a decode into a later batch
+    // that never asked for one (and both presenters submit into this one map)
+    mPendingForce.clear();
     mBatchStart = true;
 }
 

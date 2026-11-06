@@ -31,8 +31,9 @@ Core::Core()
       loopSlideshow(false),
       slideshow(false),
       shuffle(false),
-      thumbPanelPresenter(pool_),
-      folderViewPresenter(pool_)
+      thumbnailer(pool_, EngineBridge::instance()),
+      thumbPanelPresenter(thumbnailer),
+      folderViewPresenter(thumbnailer)
 {
     loadTranslation();
     initGui();

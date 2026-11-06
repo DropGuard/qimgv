@@ -1185,7 +1185,8 @@ private slots:
     // delivers.
     void disconnectViewAfterTheViewDiedIsSafe() {
         WorkerPool pool(2);
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         {
             auto *proxy = new ThumbnailStripProxy();
             presenter.setView(proxy);
@@ -1750,7 +1751,8 @@ private slots:
         QVERIFY(model->setDirectory(alpha));
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
         ThumbnailStripProxy proxy;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
 
         presenter.setView(&proxy);
         presenter.setModel(model);
@@ -1765,7 +1767,8 @@ private slots:
         QVERIFY(model->setDirectory(alpha));
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
         ThumbnailStripProxy first, second;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
 
         presenter.setView(&first);
         first.show();
@@ -1782,7 +1785,8 @@ private slots:
         QVERIFY(model->setDirectory(alpha));
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
         ThumbnailStripProxy proxy;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         presenter.setView(&proxy);
         proxy.show(); // materialize the strip so the forwarding path is the real one
         presenter.setModel(model);
@@ -1801,7 +1805,8 @@ private slots:
         QVERIFY(model->setDirectory(alpha));
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
         ThumbnailStripProxy first, second;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         presenter.setView(&first);
         presenter.setModel(model);
         QSignalSpy activated(&presenter, &DirectoryPresenter::fileActivated);
@@ -1828,7 +1833,8 @@ private slots:
         QVERIFY(model->setDirectory(alpha));
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
         ThumbnailStripProxy proxy;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         presenter.setView(&proxy);
         proxy.show();
         presenter.setModel(model);
@@ -1917,7 +1923,8 @@ private slots:
         QVERIFY(model->setDirectory(alpha));
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
         CountingStripProxy view;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         presenter.setView(&view);
         view.show(); // materialize so the forwarding path is the real one
         presenter.setModel(model);
@@ -1971,7 +1978,8 @@ private slots:
         QVERIFY(model->setDirectory(alpha));
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
         ThumbnailStripProxy proxy;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         presenter.setView(&proxy);
         proxy.show(); // materialize so the forwarding path is the real one
         presenter.setModel(model);
@@ -2020,7 +2028,8 @@ private slots:
         QVERIFY2(dirCount > 0, "precondition broken: no directories to offset by");
 
         CountingStripProxy view;
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         presenter.setView(&view);
         presenter.setModel(model);
 
@@ -2157,7 +2166,8 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 3, 10000);
 
         CountingStripProxy view;               // never shown: the buffer is all there is
-        DirectoryPresenter presenter(pool);
+        Thumbnailer thumbnailer(pool, EngineBridge::instance());
+        DirectoryPresenter presenter(thumbnailer);
         presenter.setView(&view);
         presenter.setModel(model);             // populate + select(0)
         QCOMPARE(view.selection(), QList<int>({0}));
