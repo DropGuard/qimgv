@@ -58,6 +58,19 @@ MpvWidget::MpvWidget(QWidget *parent, Qt::WindowFlags f)
 }
 
 MpvWidget::~MpvWidget() {
+    // Two callbacks were registered with a raw `this` as their void* ctx, and
+    // neither is revoked by the Qt parent tree or by a QObject destructor:
+    //   mpv_set_wakeup_callback(...)            — MpvWidget's constructor
+    //   mpv_render_context_set_update_callback(...) — MpvWidget::initializeGL()
+    // mpv_render_context_free() guarantees no further update callback, and
+    // mpv_terminate_destroy() wakes and joins the mpv core so wakeup cannot be
+    // in progress after it returns. The render context must therefore go first
+    // and both must go before this object's Qt half dies — reorder them, or
+    // delete either call, and libmpv is left holding a pointer to a freed
+    // widget on a thread nothing in this process synchronizes with.
+    // This ordering is not covered by any instrument the repo has: the plugin
+    // is a MODULE loaded at runtime and no test target links it, so neither
+    // sanitizer tree ever constructs an MpvWidget.
     makeCurrent();
     if (mpv_gl)
         mpv_render_context_free(mpv_gl);
