@@ -46,10 +46,12 @@ MainPanel::MainPanel(FloatingWidgetContainer *parent) : SlidePanel(parent) {
     // subscribes DocumentWidget::readSettings to Settings::settingsChanged,
     // documentwidget.cpp:50 calls mainPanel->readSettings(), and this method
     // calls thumbnailStrip->readSettings() below. A subscription here would run
-    // the same refresh twice per settings change. Read-verified, not runtime-
-    // pinned: pinning the chain needs a DocumentWidget, which needs a
-    // ViewerWidget and an InfoBarProxy (documentwidget.h:14) — no fixture in
-    // the suites builds that graph yet.
+    // the same refresh twice per settings change. The chain is now pinned at
+    // runtime by core_nav_tests:
+    // settingsBusReachesTheThumbnailStripThroughThePanelChain, which reaches
+    // the strip through MainWindow's own graph (mainwindow.cpp:71-73 builds
+    // ViewerWidget, InfoBarProxy and DocumentWidget at startup), so no fixture
+    // had to be built to prove it.
 }
 
 void MainPanel::onPinClicked() {

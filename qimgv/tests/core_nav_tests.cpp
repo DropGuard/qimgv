@@ -2038,6 +2038,43 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(holds.load(), 0, 10000);
     }
 
+    // The chain is not a fixture project: MainWindow builds the whole graph at
+    // startup (mainwindow.cpp:71-73 — ViewerWidget, InfoBarProxy,
+    // DocumentWidget), so every Core in this suite already owns it and the test
+    // only has to reach it. This is the runtime half of the claim that
+    // MainPanel deliberately stays off the bus: the refresh arrives through
+    // DocumentWidget::readSettings -> MainPanel::readSettings ->
+    // ThumbnailStrip::readSettings, and a subscription of MainPanel's own would
+    // run it twice per change.
+    void settingsBusReachesTheThumbnailStripThroughThePanelChain() {
+        Core core;
+        const int original = settings->panelPreviewsSize();   // singleton: snapshot and restore
+        auto *strip = core.mw->findChild<ThumbnailStripProxy*>();
+        QVERIFY2(strip, "no ThumbnailStripProxy under MW — the chain is not what this claims");
+        // init(), not show(): the proxy is a child here, and a child's show()
+        // fires no showEvent while its ancestors are hidden, which is what made
+        // the first version of this test fail 5 times out of 5 rather than
+        // sometimes. init() is the public entry showEvent itself calls.
+        strip->init();
+        QVERIFY2(strip->isInitialized(), "the strip did not materialize under init()");
+
+        settings->setPanelPreviewsSize(30);
+        settings->sendChangeNotification();
+        const QSize small = strip->itemSize();
+        settings->setPanelPreviewsSize(200);
+        settings->sendChangeNotification();
+        const QSize big = strip->itemSize();
+
+        settings->setPanelPreviewsSize(original);
+        settings->sendChangeNotification();
+
+        QVERIFY2(big.height() > small.height() || big.width() > small.width(),
+                 qPrintable(QStringLiteral("the settings bus does not reach ThumbnailStrip::readSettings "
+                                            "(30 -> %1x%2, 200 -> %3x%4)")
+                            .arg(small.width()).arg(small.height())
+                            .arg(big.width()).arg(big.height())));
+    }
+
     void editingInDocumentModeEditsInMemoryWithoutConfirmation() {
         Core core;
         FakeInteractions fake;
