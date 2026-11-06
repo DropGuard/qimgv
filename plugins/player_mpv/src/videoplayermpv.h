@@ -48,9 +48,6 @@ protected:
 // &VideoPlayer::playbackFinished (viewerwidget.cpp:53). A re-declaration is
 // silent: the base-pointer connection receives nothing. Rule R6.
 
-private slots:
-    void readSettings();
-
 private:
     MpvWidget *m_mpv;
 

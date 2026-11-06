@@ -19,8 +19,6 @@ VideoPlayerMpv::VideoPlayerMpv(QWidget *parent) : VideoPlayer(parent) {
     setFocusPolicy(Qt::NoFocus);
     m_mpv->setFocusPolicy(Qt::NoFocus);
 
-    readSettings();
-    //connect(settings, SIGNAL(settingsChanged()), this, SLOT(readSettings()));
     connect(m_mpv, &MpvWidget::durationChanged, this, &VideoPlayer::durationChanged);
     connect(m_mpv, &MpvWidget::positionChanged, this, &VideoPlayer::positionChanged);
     connect(m_mpv, &MpvWidget::videoPaused,     this, &VideoPlayer::videoPaused);
@@ -99,11 +97,6 @@ void VideoPlayerMpv::setVideoUnscaled(bool mode) {
 
 void VideoPlayerMpv::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event)
-}
-
-void VideoPlayerMpv::readSettings() {
-    //setMuted(!settings->playVideoSounds());
-    //setVideoUnscaled(!settings->expandImage());
 }
 
 void VideoPlayerMpv::mousePressEvent(QMouseEvent *event) {
