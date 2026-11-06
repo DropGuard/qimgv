@@ -61,6 +61,73 @@ private slots:
                             + oddBackup));
     }
 
+    static QStringList readPaths(const QSignalSpy &spy) {
+        QStringList out;
+        for(const QList<QVariant> &args : spy)
+            out << QFileInfo(args.at(0).toString()).fileName();
+        return out;
+    }
+
+    // The rollback is the path a failed save takes, and until it was one
+    // syscall it was two with a gap between them: remove the destination, then
+    // copy the backup back. The watch saw that as a death and a birth, the
+    // mirror dropped the row and grew it again, and between the two operations
+    // the listing described a file that did not exist. One rename(2) moves the
+    // backup's inode into the destination's name — replacing whatever the failed
+    // write left there, which QFile::rename cannot do, that call being
+    // RENAME_NOREPLACE — and consumes the backup, so the row never leaves.
+    void rolledBackSaveRestoresTheRowInsteadOfRebuildingIt() {
+        resetFixture();
+        DirectoryManager dm{EngineBridge::instance()};
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+
+        const QString dest = fixtureDir + "/img1.jpg";
+        const int row = dm.indexOfFile(dest);
+        QVERIFY2(row >= 0, qPrintable(QStringLiteral("precondition broken: ") + dest
+                                      + " is not in the listing"));
+        const QByteArray original = readBytes(dest);
+        const QString backup = dest + "_" + QString(QCryptographicHash::hash(
+            dest.toUtf8(), QCryptographicHash::Md5).toHex());
+        QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
+        QSignalSpy added(&dm, &DirectoryManager::fileAdded);
+        QVERIFY(removed.isValid() && added.isValid());
+
+        // The write has to fail while the restore still can: the file itself
+        // becomes read-only, and the directory stays writable, which is all
+        // rename(2) needs.
+        QVERIFY(QFile::setPermissions(dest, QFileDevice::ReadOwner));
+        QImage replacement(8, 8, QImage::Format_RGB32);
+        replacement.fill(Qt::red);
+        QVERIFY2(!FileOperations::saveWithBackup(replacement, dest, 95),
+                 "a save into a read-only file reported success");
+        // the backup is consumed by the move, so its absence is what says the
+        // restore's syscall happened
+        QTRY_VERIFY_WITH_TIMEOUT(!QFile::exists(backup), 10000);
+
+        QCOMPARE(readBytes(dest), original);
+        QCOMPARE(dm.indexOfFile(dest), row);
+        // and the row describes the file: the size held is the restored bytes,
+        // not the failed write's
+        QCOMPARE(dm.fileEntryAt(row).size, static_cast<std::uintmax_t>(original.size()));
+
+        // The two zeros below are evidence only once the events the restore
+        // produced have actually been delivered, and agreement with the engine's
+        // export cannot say that — agreement is also the state from before them,
+        // which is what made an earlier version of this test pass while the
+        // remove + copy it meant to reject was still in the binary. So fence on a
+        // mutation that must land: the queue is FIFO, so an event delivered behind
+        // these proves nothing in front of them went missing.
+        makeFile("fence.jpg");
+        QTRY_VERIFY_WITH_TIMEOUT(readPaths(added).contains(QStringLiteral("fence.jpg")), 10000);
+        QCOMPARE(removed.count(), 0);
+        QCOMPARE(readPaths(added), QStringList{QStringLiteral("fence.jpg")});
+        assertMirrorMatchesEngineExport(dm);
+        QCOMPARE(dm.fileCount(), 4UL);
+
+        QVERIFY(QFile::setPermissions(dest, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+    }
+
     void fileOperationsRoundTrip() {
         resetFixture();
         QString destDir = fixtureDir + "/destdir";

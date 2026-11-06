@@ -2,6 +2,8 @@
 
 #include <QImage>
 
+#include <cstdio> // ::rename — see the rollback in saveWithBackup
+
 QString FileOperations::generateHash(const QString &str) {
     return QString(QCryptographicHash::hash(str.toUtf8(), QCryptographicHash::Md5).toHex());
 }
@@ -325,16 +327,21 @@ bool FileOperations::saveWithBackup(const QImage &image, const QString &destPath
     if(backupExists && success)
         QFile::remove(tmpPath);
     else if(backupExists) {
-        // Restore the backup to the path it was taken FROM, which is destPath -
+        // Restore the backup to the path it was taken FROM, which is destPath —
         // not to "the file's current path", which is a different file whenever
-        // this is a Save As. And the backup is only discarded once the restore
-        // actually happened.
-        bool restored = false;
-        if(!QFile::exists(destPath) || QFile::remove(destPath))
-            restored = QFile::copy(tmpPath, destPath);
-        if(restored)
-            QFile::remove(tmpPath);
-        else
+        // this is a Save As. One rename(2) does it: it replaces an existing
+        // destination, which QFile::rename cannot (that call is RENAME_NOREPLACE
+        // and answers EEXIST on the half-written file image.save just left
+        // behind), and it consumes the backup, so there is no third step and no
+        // window in which the destination exists but holds nothing. The remove +
+        // copy this replaces was visible to the watch as a death and a birth, and
+        // the mirror rebuilt a row that only ever needed its bytes put back.
+        // toUtf8 because these are the bytes the listing keys on: EngineBridge
+        // hands the engine UTF-8 paths, so a locale-encoded name here would be a
+        // different file to the mirror than the one the filesystem just got.
+        const QByteArray from = tmpPath.toUtf8();
+        const QByteArray to = destPath.toUtf8();
+        if(::rename(from.constData(), to.constData()) != 0)
             qCritical() << "[FileOperations] save failed AND the backup could not be"
                         << "restored; the previous contents of" << destPath
                         << "are still in" << tmpPath;

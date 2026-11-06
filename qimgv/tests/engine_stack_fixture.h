@@ -13,6 +13,7 @@
 #pragma once
 
 #include <QTest>
+#include <QDeadlineTimer> // the convergence deadline in assertMirrorMatchesEngineExport
 #include <QtEndian>
 #include <QGuiApplication>
 #include <QSignalSpy>
@@ -151,6 +152,76 @@ public:
                 append(full.constData(), int(full.size()));
             }
         return arena;
+    }
+
+    // THE mirror contract, as a predicate: the mirror's vectors are the engine's
+    // export, order included — same entries, same positions. Tells whether they
+    // agree and, when they do not, names the disagreement, because a count that
+    // differs says "the mirror is wrong", which is not actionable, while the two
+    // lists say which entry the mirror never heard about.
+    static bool mirrorMatchesEngineExport(DirectoryManager &dm, QString &diff) {
+        QByteArray arena;
+        quint32 fileCount = 0, dirCount = 0;
+        if(!EngineBridge::instance().exportListing(arena, fileCount, dirCount)) {
+            diff = QStringLiteral("exportListing failed");
+            return false;
+        }
+        std::vector<EngineBridge::EngineEntry> files, dirs;
+        if(!EngineBridge::parseListing(arena, files, dirs)) {
+            diff = QStringLiteral("parseListing rejected a %1-byte arena").arg(arena.size());
+            return false;
+        }
+        auto joinNames = [](const std::vector<EngineBridge::EngineEntry> &entries) {
+            QStringList out;
+            for(const auto &e : entries)
+                out << e.name;
+            return out.join(QLatin1Char(' '));
+        };
+        auto joinMirrorFileNames = [&dm]() {
+            QStringList out;
+            for(unsigned long i = 0; i < dm.fileCount(); ++i)
+                out << dm.fileNameAt(int(i));
+            return out.join(QLatin1Char(' '));
+        };
+        auto fail = [&](const QString &what) {
+            diff = QStringLiteral("%1 — engine: %2 files [%3] / mirror: %4 files [%5]")
+                       .arg(what).arg(int(files.size()))
+                       .arg(joinNames(files)).arg(int(dm.fileCount())).arg(joinMirrorFileNames());
+            return false;
+        };
+        if(files.size() != dm.fileCount())
+            return fail(QStringLiteral("file count"));
+        if(dirs.size() != dm.dirCount())
+            return fail(QStringLiteral("dir count"));
+        for(size_t i = 0; i < files.size(); ++i) {
+            if(dm.filePathAt(static_cast<int>(i)) != files[i].path)
+                return fail(QStringLiteral("file row %1").arg(int(i)));
+        }
+        for(size_t i = 0; i < dirs.size(); ++i) {
+            if(dm.dirPathAt(static_cast<int>(i)) != dirs[i].path)
+                return fail(QStringLiteral("dir row %1").arg(int(i)));
+        }
+        return true;
+    }
+
+    // Convergence is the moment the contract speaks about, so this waits for it.
+    // The pump that moves an event from the engine's queue into the mirror's
+    // vectors runs on the Qt event loop, and isSettled() says nothing about that
+    // queue — it reports the mirrored directory, the applied sort and the absence
+    // of a resync — so a pull taken the instant it turns true compares the
+    // engine's now against the mirror's then. Any check that a mutation *did not*
+    // produce some event needs that wait to mean anything, and a mirror that stops
+    // projecting the engine still fails, after the deadline, with both listings in
+    // the message.
+    void assertMirrorMatchesEngineExport(DirectoryManager &dm) {
+        QString diff;
+        bool agrees = mirrorMatchesEngineExport(dm, diff);
+        QDeadlineTimer deadline(10000);
+        while(!agrees && !deadline.hasExpired()) {
+            QTest::qWait(20);
+            agrees = mirrorMatchesEngineExport(dm, diff);
+        }
+        QVERIFY2(agrees, qPrintable(diff));
     }
 
     void init() {

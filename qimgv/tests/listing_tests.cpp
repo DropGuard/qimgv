@@ -1,6 +1,5 @@
 #include "engine_stack_fixture.h"
 
-#include <QDeadlineTimer> // the convergence deadline below is a wall-clock budget
 #include <cstdio> // std::rename: RENAME_NOREPLACE is QFile::rename, and an
                   // overwrite is exactly what the paired event is for
 
@@ -303,75 +302,6 @@ private slots:
         QVERIFY(QFile::copy(fixtureDir + "/renamed.jpg", fixtureDir + "/copy.jpg"));
         QTRY_VERIFY_WITH_TIMEOUT(model.containsFile(fixtureDir + "/copy.jpg"), 10000);
         QCOMPARE(model.fileCount(), 2UL + 1UL);
-    }
-
-    // the contract check itself: the mirror vectors against the engine's export,
-    // order included — same entries, same positions. Tells whether they agree
-    // and, when they do not, names the disagreement: a count that differs says
-    // "the mirror is wrong", which is not actionable, while the two lists say
-    // which entry the mirror never heard about.
-    static bool mirrorMatchesEngineExport(DirectoryManager &dm, QString &diff) {
-        QByteArray arena;
-        quint32 fileCount = 0, dirCount = 0;
-        if(!EngineBridge::instance().exportListing(arena, fileCount, dirCount)) {
-            diff = QStringLiteral("exportListing failed");
-            return false;
-        }
-        std::vector<EngineBridge::EngineEntry> files, dirs;
-        if(!EngineBridge::parseListing(arena, files, dirs)) {
-            diff = QStringLiteral("parseListing rejected a %1-byte arena").arg(arena.size());
-            return false;
-        }
-        auto joinNames = [](const std::vector<EngineBridge::EngineEntry> &entries) {
-            QStringList out;
-            for(const auto &e : entries)
-                out << e.name;
-            return out.join(QLatin1Char(' '));
-        };
-        auto joinMirrorFileNames = [&dm]() {
-            QStringList out;
-            for(unsigned long i = 0; i < dm.fileCount(); ++i)
-                out << dm.fileNameAt(int(i));
-            return out.join(QLatin1Char(' '));
-        };
-        auto fail = [&](const QString &what) {
-            diff = QStringLiteral("%1 — engine: %2 files [%3] / mirror: %4 files [%5]")
-                       .arg(what).arg(int(files.size()))
-                       .arg(joinNames(files)).arg(int(dm.fileCount())).arg(joinMirrorFileNames());
-            return false;
-        };
-        if(files.size() != dm.fileCount())
-            return fail(QStringLiteral("file count"));
-        if(dirs.size() != dm.dirCount())
-            return fail(QStringLiteral("dir count"));
-        for(size_t i = 0; i < files.size(); ++i) {
-            if(dm.filePathAt(static_cast<int>(i)) != files[i].path)
-                return fail(QStringLiteral("file row %1").arg(int(i)));
-        }
-        for(size_t i = 0; i < dirs.size(); ++i) {
-            if(dm.dirPathAt(static_cast<int>(i)) != dirs[i].path)
-                return fail(QStringLiteral("dir row %1").arg(int(i)));
-        }
-        return true;
-    }
-
-    // Convergence is the moment the contract speaks about. The pump that moves an
-    // event from the engine's queue into these vectors runs on the Qt event loop,
-    // and isSettled() says nothing about that queue — it reports the mirrored
-    // directory, the applied sort and the absence of a resync — so a pull taken
-    // the instant it turns true can compare the engine's now against the mirror's
-    // then. Waiting for agreement is the only way to name the point where the
-    // contract holds; a mirror that never agrees still fails, after the deadline,
-    // with both listings in the message.
-    void assertMirrorMatchesEngineExport(DirectoryManager &dm) {
-        QString diff;
-        bool agrees = mirrorMatchesEngineExport(dm, diff);
-        QDeadlineTimer deadline(10000);
-        while(!agrees && !deadline.hasExpired()) {
-            QTest::qWait(20);
-            agrees = mirrorMatchesEngineExport(dm, diff);
-        }
-        QVERIFY2(agrees, qPrintable(diff));
     }
 
     // THE mirror contract: the engine decides content and order; the mirror is
