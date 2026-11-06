@@ -1,6 +1,7 @@
 #include <QTest>
 #include <QThread>
 #include <atomic>
+#include <thread>
 
 #include "engine_stack_fixture.h"
 #include "components/workerpool/workerpool.h"
@@ -21,6 +22,7 @@ private slots:
     void drainReturnsExactlyTheUnstartedJobs();
     void priorityOrderIsHonoredWithinASharedPool();
     void waitForOwnerWaitsOnlyForItsOwner();
+    void waitForAllWaitsForEveryOwner();
 };
 
 namespace {
@@ -145,6 +147,35 @@ void TestWorkerPool::waitForOwnerWaitsOnlyForItsOwner() {
     pool.waitForOwner(PoolOwner::Loader);
     pool.waitForAll();
 }
+
+    // The settings bus drains the whole pool: Core::readSettings() opens with
+    // waitForAll(), so the price of pressing Save is bounded by every owner's
+    // queue, not by the pipeline the changed setting actually feeds. The
+    // narrow form already has a test above; this pins the width of the wide
+    // one, because that width is the part that runs on the UI thread.
+void TestWorkerPool::waitForAllWaitsForEveryOwner() {
+        std::atomic_bool gate{false};
+        std::atomic_int loaderStarts{0}, thumbRuns{0}, deaths{0};
+        WorkerPool pool(2);
+        pool.submit(PoolOwner::Loader, 0, std::make_unique<GatedJob>(&gate, &loaderStarts, &deaths));
+        QTRY_COMPARE_WITH_TIMEOUT(loaderStarts.load(), 1, 10000);
+        pool.submit(PoolOwner::Thumbnailer, 0, std::make_unique<CountingJob>(&thumbRuns, &deaths));
+        pool.waitForOwner(PoolOwner::Thumbnailer);
+        QCOMPARE(thumbRuns.load(), 1);   // one owner is provably finished with...
+        QVERIFY(loaderStarts.load() == 1); // ...while another is still inside a job
+
+        std::atomic_bool returned{false};
+        std::thread waiter([&pool, &returned]() {
+            pool.waitForAll();
+            returned.store(true);
+        });
+        QThread::msleep(100);
+        QVERIFY2(!returned.load(), "waitForAll() returned while a Loader job was still running");
+        gate = true;
+        waiter.join();                 // it was waiting: opening the gate releases it
+        QVERIFY(returned.load());
+        QCOMPARE(deaths.load(), 2);
+    }
 
 int runWorkerPoolTests(int argc, char **argv) {
     TestWorkerPool t;
