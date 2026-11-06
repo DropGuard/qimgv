@@ -110,7 +110,12 @@ baselines). What remains here is the part needing judgment.
    runs nothing. The ownership probe (3e4c2f37) passed five suites while
    itself never executing — caught by running the new test by name and seeing
    "Function not found". Before trusting a suite, run the new test by name
-   and watch it PASS.
+   and watch it PASS. The mirror also holds: a red suite can be a binary that
+   is not the code you think. Restoring a file with `cp`/`mv` carries its old
+   mtime, ninja sees a fresh-enough object and prints nothing, and the
+   pre-restore behavior gets measured again — this bit a break-probe and then
+   its own revert in the same run. Force it with `touch` and confirm the
+   `Building CXX object …` line before believing any result, green or red.
 8. **One clean instrument run is a sample, not a property.** "Zero CHECKs"
    was declared off a single run and the fourth clockjoin source — QtGui's
    own pooled threads, joined inside QtGui where no in-tree code can
@@ -123,3 +128,12 @@ baselines). What remains here is the part needing judgment.
    SettingsDialog .ui reference and declared a live class dead (caught before
    the deletion landed), and the same trap bit the census constructions. The
    class was renamed SettingsSidebar to bury the trap itself.
+10. **A signal census that reads only .cpp/.h is not a census.** Designer
+    `<connections>` blocks compile into `ui_*.h` under `*_autogen`, never into
+    hand-written code, so a sweep for `&Class::signal` cannot see them: of the
+    six orphan signals one such sweep produced, two
+    (`SettingsSidebar::entrySelected`, `KeySequenceEdit::edited`) are wired
+    from a .ui — and the first drives the settings page stack. Read `*.ui`
+    too and resolve the sender's promoted class before calling anything dead;
+    the same instrument must also count string `SIGNAL()` uses and
+    `invokeMethod`-by-name, or it reports a silence it cannot hear.
