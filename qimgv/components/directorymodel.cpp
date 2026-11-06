@@ -11,11 +11,9 @@ DirectoryModel::DirectoryModel(WorkerPool &pool, QObject *parent) :
 
     connect(&dirManager, &DirectoryManager::fileRemoved,  this, &DirectoryModel::onFileRemoved);
     connect(&dirManager, &DirectoryManager::fileAdded,    this, &DirectoryModel::onFileAdded);
-    connect(&dirManager, &DirectoryManager::fileRenamed,  this, &DirectoryModel::onFileRenamed);
     connect(&dirManager, &DirectoryManager::fileModified, this, &DirectoryModel::onFileModified);
     connect(&dirManager, &DirectoryManager::dirRemoved,  this, &DirectoryModel::dirRemoved);
     connect(&dirManager, &DirectoryManager::dirAdded,    this, &DirectoryModel::dirAdded);
-    connect(&dirManager, &DirectoryManager::dirRenamed,  this, &DirectoryModel::dirRenamed);
 
     connect(&dirManager, &DirectoryManager::loaded, this, &DirectoryModel::loaded);
     connect(&dirManager, &DirectoryManager::sortingChanged, this, &DirectoryModel::onSortingChanged);
@@ -247,11 +245,6 @@ void DirectoryModel::onFileModified(const QString &filePath) {
 void DirectoryModel::onFileRemoved(const QString &filePath, int index) {
     unload(filePath);
     emit fileRemoved(filePath, index);
-}
-
-void DirectoryModel::onFileRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo) {
-    unload(fromPath);
-    emit fileRenamed(fromPath, indexFrom, toPath, indexTo);
 }
 
 bool DirectoryModel::isLoaded(int index) const {

@@ -178,15 +178,23 @@ private slots:
     void onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
 
 signals:
+    // The mutation vocabulary of the engine is Added | Modified | Removed
+    // (watcher/apply.rs::Applied) and these signals mirror exactly that: a
+    // rename arrives as Removed(from) + Added(to), in order. There is
+    // deliberately no *Renamed signal. It used to exist, and its only emitter
+    // was DirectoryManager::renameFileEntry — a mirror writer, called from the
+    // in-app rename; the watcher never paired MOVED_FROM/MOVED_TO even then.
+    // The single-writer commit (64993a68) deleted that writer and with it the
+    // last emitter, leaving four signal declarations, five connects, two
+    // disconnects and four handlers that no event could ever reach. Pin:
+    // listing_tests liveRenameSurfacesAsRemoveAndAdd.
     void loaded(const QString &path);
     void sortingChanged();
     void loadingFailed(const QString &dirPath);
     void fileRemoved(const QString &filePath, int);
     void fileModified(const QString &filePath);
     void fileAdded(const QString &filePath);
-    void fileRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
 
     void dirRemoved(const QString &dirPath, int);
     void dirAdded(const QString &dirPath);
-    void dirRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
 };

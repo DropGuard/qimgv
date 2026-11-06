@@ -36,6 +36,10 @@
 #include "gui/dialogs/resizedialog.h"
 #include "gui/overlays/videocontrols.h"
 #include "gui/overlays/cropoverlay.h"
+#include "gui/panels/croppanel/croppanel.h"
+#include <QSpinBox>
+#include <QDoubleSpinBox>
+#include <QPushButton>
 #include "gui/overlays/clickzoneoverlay.h"
 #include "gui/overlays/zoomindicatoroverlay.h"
 #include "gui/panels/mainpanel/mainpanel.h"
@@ -43,6 +47,10 @@
 #include "gui/folderview/folderview.h"
 #include "gui/folderview/fvoptionspopup.h"
 #include "gui/folderview/bookmarksitem.h"
+#include "gui/folderview/bookmarkswidget.h"
+#include "gui/folderview/foldergridview.h"
+#include "gui/folderview/filesystemmodelcustom.h"
+#include "gui/customwidgets/styledcombobox.h"
 #include "gui/customwidgets/settingsidebar.h"
 #include "gui/customwidgets/entryinfoitem.h"
 #include "gui/customwidgets/iconwidget.h"
@@ -90,6 +98,55 @@ public:
     using FolderGridView::dropEvent;
 };
 
+// The drop handlers are protected Qt overrides; the tests reach them the way
+// the widget hierarchy does — through a using-exposed subclass.
+class TestableBookmarksWidget : public BookmarksWidget {
+public:
+    using BookmarksWidget::dragEnterEvent;
+    using BookmarksWidget::dropEvent;
+};
+
+class TestableBookmarksItem : public BookmarksItem {
+public:
+    using BookmarksItem::BookmarksItem;
+    using BookmarksItem::dragEnterEvent;
+    using BookmarksItem::dropEvent;
+};
+
+// The presenter's remaining two view connections (thumbnailsRequested and
+// draggedOver) end in IDirectoryView *methods* rather than signals, so the
+// observable is the call arriving at the view. This proxy counts them and still
+// forwards, so the real strip path runs underneath.
+class CountingStripProxy : public ThumbnailStripProxy {
+public:
+    using ThumbnailStripProxy::ThumbnailStripProxy;
+    void setThumbnail(int pos, std::shared_ptr<Thumbnail> thumb) override {
+        ++thumbnailCalls;
+        lastThumbnailPos = pos;
+        ThumbnailStripProxy::setThumbnail(pos, thumb);
+    }
+    void setDragHover(int index) override {
+        ++hoverCalls;
+        ThumbnailStripProxy::setDragHover(index);
+    }
+    void removeItem(int index) override {
+        removed << index;
+        ThumbnailStripProxy::removeItem(index);
+    }
+    void insertItem(int index) override {
+        inserted << index;
+        ThumbnailStripProxy::insertItem(index);
+    }
+    void reloadItem(int index) override {
+        reloaded << index;
+        ThumbnailStripProxy::reloadItem(index);
+    }
+    int thumbnailCalls = 0;
+    int hoverCalls = 0;
+    int lastThumbnailPos = -1;
+    QList<int> removed, inserted, reloaded;
+};
+
 QPoint dropPosOverThumbnail(FolderGridView &grid, int index) {
     QList<ThumbnailWidget *> widgets;
     const QList<QGraphicsItem *> sceneItems = grid.items(); // named: no detach
@@ -108,6 +165,18 @@ QPoint dropPosOverThumbnail(FolderGridView &grid, int index) {
     return grid.mapFromScene(center);
 }
 
+
+// The overlay-proxy lifetime helper. A file-scope template rather than a class
+// member: moc refuses a template inside a slots section ("Template function as
+// signal or slot"), and this is a mechanism, not a test case.
+template<typename Proxy>
+void proxyOutlivesItsContainer() {
+    auto *container = new FloatingWidgetContainer();
+    auto proxy = std::make_unique<Proxy>(container);
+    proxy->init();                    // materializes the overlay as the container's child
+    delete container;                 // the tree frees the overlay right here
+    proxy.reset();                    // the proxy destructor must not touch it now
+}
 
 class TestCoreNav : public QObject {
     Q_OBJECT
@@ -388,6 +457,713 @@ private slots:
         // a repeat is the dedup no-op, not a corruption
         controls.setPlaybackPosition(42);
         QCOMPARE(controls.playbackPosition(), 42);
+    }
+
+    // CropPanel makes all 17 of its connections with pointer-to-member syntax,
+    // so the compiler checks every name and signature — but "compiles" is not
+    // "delivers". Each pair is driven at one endpoint and observed at the other.
+    // Measured first: an overlay with no drawn selection writes 0 back into the
+    // width/height boxes, so doCrop()/doCropSave() take their else-branch and
+    // emit cancel — the crop buttons are therefore pinned on "exactly one of
+    // {crop, cropAndSave, cancel} fired", not on a guessed branch.
+    void cropPanelConnectionsDeliver() {
+        FloatingWidgetContainer container;
+        CropOverlay overlay(&container);
+        CropPanel panel(&overlay);
+        panel.setImageRealSize(QSize(100, 100));
+        // the overlay needs a drawn image for its selection to be non-empty:
+        // without it width/height read back 0 and every crop endpoint collapses
+        overlay.setImageRealSize(QSize(100, 100));
+        overlay.setImageDrawRect(QRect(0, 0, 100, 100));
+
+        auto *cancelBtn   = panel.findChild<QPushButton*>("cancelButton");
+        auto *cropBtn     = panel.findChild<QPushButton*>("cropButton");
+        auto *cropSaveBtn = panel.findChild<QPushButton*>("cropSaveButton");
+        auto *posX        = panel.findChild<QSpinBox*>("posX");
+        auto *width       = panel.findChild<QSpinBox*>("width");
+        auto *height      = panel.findChild<QSpinBox*>("height");
+        auto *ary         = panel.findChild<QDoubleSpinBox*>("ARY");
+        QVERIFY(cancelBtn && cropBtn && cropSaveBtn && posX && width && height && ary);
+
+        QSignalSpy cancel(&panel, &CropPanel::cancel);
+        QSignalSpy crop(&panel, &CropPanel::crop);
+        QSignalSpy cropSave(&panel, &CropPanel::cropAndSave);
+        QSignalSpy selection(&panel, &CropPanel::selectionChanged);
+        QSignalSpy ratio(&panel, &CropPanel::aspectRatioChanged);
+        QSignalSpy overlaySelection(&overlay, &CropOverlay::selectionChanged);
+
+        // CropPanel selectAll -> CropOverlay::selectAll, and the overlay's
+        // selection travels back into the geometry boxes (both directions).
+        // This is what gives the rest of the test a real selection to crop.
+        emit panel.selectAll();
+        QCOMPARE(overlaySelection.count(), 1);
+        QCOMPARE(width->value(), 100);
+        QCOMPARE(height->value(), 100);
+
+        // ui->cancelButton clicked -> CropPanel::cancel, nothing else
+        cancelBtn->click();
+        QCOMPARE(cancel.count(), 1);
+        QCOMPARE(crop.count(), 0);
+        QCOMPARE(cropSave.count(), 0);
+
+        // ui->width valueChanged -> onSelectionChange -> selectionChanged
+        selection.clear();
+        width->setValue(50);
+        QCOMPARE(selection.count(), 1);
+
+        // ui->cropButton clicked -> doCrop -> crop(rect); cancel stays put.
+        // doCrop builds its target from the live boxes, so that is what the
+        // expectation is read from; the precondition is asserted separately
+        // because the overlay writes its own selection back into the boxes.
+        const QRect target(posX->value(), panel.findChild<QSpinBox*>("posY")->value(),
+                           width->value(), height->value());
+        QVERIFY2(target.width() > 0 && target.height() > 0 && target.size() != QSize(100, 100),
+                 qPrintable(QStringLiteral("precondition broken: selection is ")
+                            + QStringLiteral("%1x%2, doCrop would emit cancel instead of crop")
+                            .arg(target.width()).arg(target.height())));
+        cropBtn->click();
+        QCOMPARE(crop.count(), 1);
+        QCOMPARE(crop[0][0].toRect(), target);
+        QCOMPARE(cancel.count(), 1);
+        QCOMPARE(cropSave.count(), 0);
+
+        // ui->cropSaveButton clicked -> doCropSave -> cropAndSave(rect)
+        cropSaveBtn->click();
+        QCOMPARE(cropSave.count(), 1);
+        QCOMPARE(cropSave[0][0].toRect(), target);
+        QCOMPARE(cancel.count(), 1);
+
+        // ui->posX valueChanged -> selectionChanged
+        selection.clear();
+        posX->setValue(7);
+        QCOMPARE(selection.count(), 1);
+
+        // ui->ARY valueChanged -> onAspectRatioChange -> aspectRatioChanged
+        ratio.clear();
+        ary->setValue(3.0);
+        QCOMPARE(ratio.count(), 1);
+
+        // overlay escPressed -> cancel only: a connection to either crop
+        // action would move crop/cropSave and leave cancel at zero
+        cancel.clear();
+        emit overlay.escPressed();
+        QCOMPARE(cancel.count(), 1);
+        QCOMPARE(crop.count(), 1);
+        QCOMPARE(cropSave.count(), 1);
+
+        // overlay cropSave -> doCropSave -> cropAndSave, and no cancel
+        cancel.clear();
+        emit overlay.cropSave();
+        QCOMPARE(cropSave.count(), 2);
+        QCOMPARE(cancel.count(), 0);
+
+        // overlay cropDefault -> doCropDefaultAction -> exactly one crop
+        // action (which one is settings-driven, so only the total is pinned)
+        const int actions = crop.count() + cropSave.count();
+        emit overlay.cropDefault();
+        QCOMPARE(crop.count() + cropSave.count(), actions + 1);
+    }
+
+    // gcov reported execution_count == 0 for this whole cluster: no test had
+    // ever entered startSlideshow / stopSlideshow / nextImageSlideshow /
+    // startSlideshowTimer / jumpToFirst / jumpToLast / toggleShuffle /
+    // syncRandomizer. They are driven through the private slots directly
+    // (TestCoreNav is a friend of Core) and asserted on the three things they
+    // actually produce: the file on screen, the timer, and the loop-playback
+    // request Core sends the main window. The listing is a dedicated four-file
+    // directory rather than alpha, whose contents other tests in this class
+    // add to — a slideshow test that counted files in alpha would be counting
+    // whatever the earlier tests left behind.
+    QStringList slideshowFiles(const QString &tag) {
+        const QString dir = QDir(base).filePath(tag);
+        // not QVERIFY: it expands to `return;` and this helper has a value to
+        // hand back — the same reason dropPosOverThumbnail uses qFail
+        if (!QDir().mkpath(dir))
+            QTest::qFail("cannot create the slideshow fixture directory", __FILE__, __LINE__);
+        QStringList files;
+        for (int i = 1; i <= 4; ++i) {
+            const QString f = dir + QStringLiteral("/s%1.png").arg(i);
+            QImage img(8, 8, QImage::Format_RGB32);
+            img.fill(Qt::red);
+            if (!img.save(f, "PNG"))
+                QTest::qFail(qPrintable(QStringLiteral("cannot write ") + f), __FILE__, __LINE__);
+            files << f;
+        }
+        return files;
+    }
+
+    void slideshowLifecycleRequestsLoopPlaybackOffThenOn() {
+        const QStringList files = slideshowFiles("show1");
+        Core core;
+        QVERIFY(core.loadPath(files.at(0)));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QSignalSpy loop(core.mw, &MW::setLoopPlayback);
+        QVERIFY(loop.isValid());
+
+        core.startSlideshow();
+        QVERIFY(core.slideshow);
+        QCOMPARE(loop.count(), 1);
+        QCOMPARE(loop.at(0).at(0).toBool(), false);
+
+        // a second start with the flag already set is the no-op it must be:
+        // re-arming would emit a second request and re-enter enableDocumentView
+        core.startSlideshow();
+        QCOMPARE(loop.count(), 1);
+
+        core.stopSlideshow();
+        QVERIFY(!core.slideshow);
+        QCOMPARE(loop.count(), 2);
+        QCOMPARE(loop.at(1).at(0).toBool(), true);
+
+        core.stopSlideshow();
+        QCOMPARE(loop.count(), 2);
+    }
+
+    void slideshowAdvanceIsSequentialAndArmsTheTimer() {
+        const QStringList files = slideshowFiles("show2");
+        Core core;
+        QVERIFY(core.loadPath(files.at(0)));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.startSlideshow();
+        // startSlideshow arms the timer itself, through startSlideshowTimer,
+        // for a static image — measured, this assertion's first draft claimed
+        // the opposite and failed
+        QVERIFY(core.slideshowTimer.isActive());
+
+        core.nextImageSlideshow();
+        QCOMPARE(core.currentFilePath(), files.at(1));
+        QVERIFY2(core.slideshowTimer.isActive(),
+                 "a static image under slideshow must keep the timer armed");
+
+        core.nextImageSlideshow();
+        QCOMPARE(core.currentFilePath(), files.at(2));
+    }
+
+    void nonLoopingSlideshowStopsAtTheEndOfTheListing() {
+        const QStringList files = slideshowFiles("show3");
+        Core core;
+        QVERIFY(core.loadPath(files.at(0)));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QVERIFY(!core.loopSlideshow);
+
+        core.jumpToLast();
+        QCOMPARE(core.currentFilePath(), files.at(3));
+        // jumpToLast stops the show, so the state below is a fresh arm
+        QVERIFY(!core.slideshow);
+
+        core.jumpToFirst();
+        QCOMPARE(core.currentFilePath(), files.at(0));
+
+        core.startSlideshow();
+        core.jumpToLast();
+        core.startSlideshow();
+        QVERIFY(core.slideshow);
+        const QString atEnd = core.currentFilePath();
+
+        core.nextImageSlideshow();
+        QCOMPARE(core.currentFilePath(), atEnd);
+        QVERIFY2(!core.slideshow,
+                 "a non-looping slideshow must stop itself at the end of the directory");
+        QVERIFY(!core.slideshowTimer.isActive());
+    }
+
+    void shuffleKeepsTheSlideshowCyclingPastTheEnd() {
+        const QStringList files = slideshowFiles("show4");
+        Core core;
+        QVERIFY(core.loadPath(files.at(0)));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QVERIFY(!core.shuffle);
+
+        core.toggleShuffle();
+        QVERIFY(core.shuffle);          // this is what syncRandomizer sized for
+
+        core.startSlideshow();
+        core.jumpToLast();
+        core.startSlideshow();
+        QVERIFY(core.slideshow);
+
+        // the sequential branch would have stopped here (pinned above with the
+        // same setup); the randomizer branch starts a new cycle instead
+        core.nextImageSlideshow();
+        QVERIFY2(core.slideshow, "shuffle mode stopped at the end of the listing");
+        QVERIFY(files.contains(core.currentFilePath()));
+    }
+
+    // Core's file-operation and directory-navigation members: gcov reports
+    // execution_count == 0 for moveCurrentFile, copyCurrentFile, onDropIn,
+    // prevDirectory, nextDirectory, loadParentDir and toggleSlideshow. Each is
+    // asserted on disk state and on currentFilePath, and the collision paths
+    // run through the scripted IUserInteractions seam rather than a dialog.
+    // The directories are created per test: siblingDirectory() below needs a
+    // parent holding exactly two children, and this class's shared alpha/base
+    // accumulate files and directories from every earlier test.
+    QString uniqueDir(const QString &tag) {
+        const QString dir = QDir(base).filePath(tag + QStringLiteral("-%1").arg(QCoreApplication::applicationPid()));
+        QDir().mkpath(dir);
+        return dir;
+    }
+
+    void moveCurrentFileRelandsOnDiskAndCopyKeepsTheOriginal() {
+        const QString src = uniqueDir("mvsrc");
+        const QString copyDst = uniqueDir("mvcopydst");
+        const QString moveDst = uniqueDir("mvmovedst");
+        const QString file = src + QStringLiteral("/moving.png");
+        writeImage(file);
+
+        Core core;
+        FakeInteractions fake;                 // must be installed: see below
+        core.ui_ = &fake;
+        QVERIFY(core.loadPath(file));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.copyCurrentFile(copyDst);
+        QVERIFY2(QFileInfo::exists(copyDst + QStringLiteral("/moving.png")),
+                 "copy did not produce the file at the destination");
+        QVERIFY2(QFileInfo::exists(file), "copy consumed the original");
+
+        // Separate destinations on purpose. Copying into the same directory the
+        // move targets first makes the move a collision, and an un-scripted
+        // collision is worse than a failed assert here: Core asks ui_ for the
+        // overwrite decision, and the production provider (the main window)
+        // blocks on a real modal dialog — the test does not fail, it hangs
+        // until the QTest watchdog kills the process at 300 s.
+        core.moveCurrentFile(moveDst);
+        QTRY_VERIFY2_WITH_TIMEOUT(!QFileInfo::exists(file),
+                                  "move left the original behind", 10000);
+        QVERIFY(QFileInfo::exists(moveDst + QStringLiteral("/moving.png")));
+        QCOMPARE(fake.confirmCalls, 0);        // no collision on this path
+    }
+
+    void declinedCollisionLeavesBothFilesWhereTheyWere() {
+        const QString src = uniqueDir("colsrc");
+        const QString dst = uniqueDir("coldst");
+        const QString file = src + QStringLiteral("/same.png");
+        const QString clash = dst + QStringLiteral("/same.png");
+        writeImage(file);
+        writeImage(clash);
+        const QByteArray clashBytes = contentOf(clash);
+
+        Core core;
+        FakeInteractions fake;
+        fake.confirmAnswer = false;                   // the overwrite question is answered NO
+        core.ui_ = &fake;
+        QVERIFY(core.loadPath(file));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.moveCurrentFile(dst);
+
+        QCOMPARE(fake.confirmCalls, 1);
+        QVERIFY2(QFileInfo::exists(file), "a declined overwrite still moved the file");
+        QVERIFY(QFileInfo::exists(clash));
+
+        core.copyCurrentFile(dst);
+        QCOMPARE(fake.confirmCalls, 2);
+        // the destination kept its own bytes: the declined copy never wrote
+        QCOMPARE(contentOf(clash), clashBytes);
+        QVERIFY(QFileInfo::exists(file));
+    }
+
+    void dropIntoTheAppOpensTheDroppedFileAndIgnoresItself() {
+        const QString dir = uniqueDir("dropin");
+        const QString target = dir + QStringLiteral("/dropped.png");
+        writeImage(target);
+
+        Core core;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        const QString before = core.currentFilePath();
+
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile(target)});
+
+        // the self-drop guard: a drag that started in this app must not re-open
+        core.onDropIn(&mime, &core);
+        QCOMPARE(core.currentFilePath(), before);
+
+        core.onDropIn(&mime, nullptr);
+        QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), target, 10000);
+    }
+
+    void adjacentDirectoryNavigationMovesBetweenSiblingFolders() {
+        const QString parent = uniqueDir("adjparent");
+        const QString dirA = parent + QStringLiteral("/aaa");
+        const QString dirB = parent + QStringLiteral("/bbb");
+        QDir().mkpath(dirA);
+        QDir().mkpath(dirB);
+        writeImage(dirA + QStringLiteral("/one.png"));
+        writeImage(dirB + QStringLiteral("/two.png"));
+
+        Core core;
+        QVERIFY(core.loadPath(dirB + QStringLiteral("/two.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QCOMPARE(core.model->directoryPath(), dirB);
+
+        core.prevDirectory(false);
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QCOMPARE(core.currentFilePath(), dirA + QStringLiteral("/one.png"));
+        QCOMPARE(core.model->directoryPath(), dirA);
+
+        core.nextDirectory();
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QCOMPARE(core.currentFilePath(), dirB + QStringLiteral("/two.png"));
+
+        // selectLast is the folder-view contract: arriving from the end of a
+        // folder must land on the last file, not the first
+        core.prevDirectory(true);
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QCOMPARE(core.currentFilePath(), dirA + QStringLiteral("/one.png"));
+    }
+
+    void toggleSlideshowStartsThenStops() {
+        const QStringList files = slideshowFiles("show5");
+        Core core;
+        QVERIFY(core.loadPath(files.at(0)));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QVERIFY(!core.slideshow);
+
+        core.toggleSlideshow();
+        QVERIFY(core.slideshow);
+        QVERIFY(core.slideshowTimer.isActive());
+
+        core.toggleSlideshow();
+        QVERIFY2(!core.slideshow, "the second toggle did not stop the slideshow");
+        QVERIFY(!core.slideshowTimer.isActive());
+    }
+
+    // Core::openFromClipboard is 84 lines that gcov had never entered. The URL
+    // branch is the whole of it that needs no dialog (the image branch stops at
+    // MW::getSaveFileName), and the offscreen platform does provide a working
+    // clipboard. Each of the three ways in is pinned: a local file url opens it,
+    // a non-local url is refused with the current file untouched, and a
+    // text-only clipboard does nothing at all.
+    void clipboardUrlOpensThatFileAndOtherFormsAreRefused() {
+        const QString dir = uniqueDir("clip");
+        const QString target = dir + QStringLiteral("/clip-target.png");
+        writeImage(target);
+
+        Core core;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        const QString before = core.currentFilePath();
+
+        // 1. a local file url is opened
+        QMimeData *local = new QMimeData();
+        local->setUrls({QUrl::fromLocalFile(target)});
+        QApplication::clipboard()->setMimeData(local);
+        core.openFromClipboard();
+        QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), target, 10000);
+
+        // 2. a remote url: toLocalFile() is empty, so nothing is opened and the
+        // screen keeps showing what it showed
+        QMimeData *remote = new QMimeData();
+        remote->setUrls({QUrl(QStringLiteral("https://example.com/notlocal.png"))});
+        QApplication::clipboard()->setMimeData(remote);
+        core.openFromClipboard();
+        QTest::qWait(200);
+        QCOMPARE(core.currentFilePath(), target);
+
+        // 3. text only: no urls, no image, no action
+        QMimeData *textOnly = new QMimeData();
+        textOnly->setText(QStringLiteral("just a sentence"));
+        QApplication::clipboard()->setMimeData(textOnly);
+        core.openFromClipboard();
+        QTest::qWait(200);
+        QCOMPARE(core.currentFilePath(), target);
+        QVERIFY(!before.isEmpty());
+    }
+
+    // The no-extra-arguments instantiation of Core::edit_template is the one
+    // flipH and flipV use, and gcov showed it had never been entered: the two
+    // flips were the only image operations with no test at all. What is pinned
+    // here is the `save` flag's contract, because that flag decides whether the
+    // user's file gets written: from the folder view an edit saves immediately,
+    // so it has to ask first; in document mode the edit stays in memory, asks
+    // nothing and must leave the file untouched. The fixture is 16x8 with the
+    // right half blue, so a horizontal flip is visible in pixels while the
+    // size stays the same.
+    void flipsFollowTheConditionalSaveContract() {
+        const QString dir = uniqueDir("flips");
+        const QString img = dir + QStringLiteral("/half.png");
+        writeRectImage(img);
+
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(img), 10000);
+        const QByteArray diskBefore = contentOf(img);
+
+        core.flipH();
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QCOMPARE(fake.confirmCalls, 0);
+        QCOMPARE(contentOf(img), diskBefore);
+
+        auto edited = std::dynamic_pointer_cast<ImageStatic>(core.model->getImage(img));
+        QVERIFY2(edited && edited->isEdited(),
+                 "flipH left no edited image in memory");
+        const QImage shown = edited->getPixmap()->toImage();
+        QCOMPARE(shown.size(), QSize(16, 8));
+        QCOMPARE(shown.pixelColor(0, 0), QColor(Qt::blue));      // mirrored: blue moved left
+        QCOMPARE(shown.pixelColor(15, 0), QColor(Qt::red));
+
+        core.flipV();
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QCOMPARE(fake.confirmCalls, 0);
+        QCOMPARE(contentOf(img), diskBefore);
+
+        // the folder view is where an edit hits the disk, so the question has
+        // to come first — and a declined question must mean nothing was written
+        core.enableFolderView();
+        QCOMPARE(core.mw->currentViewMode(), MODE_FOLDERVIEW);
+        fake.confirmAnswer = false;
+        core.flipH();
+        QCOMPARE(fake.confirmCalls, 1);
+        QCOMPARE(contentOf(img), diskBefore);
+    }
+
+    // Core::onUpdate: the version-migration path, run from the constructor when
+    // firstRun is off and appVersion is ahead of the stored version. Never
+    // entered by any test before this. It is the one place that decides what a
+    // user who upgraded from 0.9.x keeps, and it reads its own version back
+    // through the K_LastVer* rows, so this also pins that those rows serve a
+    // written value. ActionManager is a process-wide singleton, so its shortcut
+    // map is snapshotted and put back: leaving it swapped would silently hand
+    // the next test the post-migration bindings.
+    void versionMigrationRewritesPre101BindingsAndRecordsTheVersion() {
+        FreshSettings fresh;
+        const QMap<QString, QString> snapshot = actionManager->allShortcuts();
+
+        settings->setFirstRun(false);
+        QVersionNumber old(0, 9, 1);
+        settings->setLastVersion(old);
+        QCOMPARE(settings->lastVersion(), old);        // the rows serve what was written
+
+        // a custom binding on an action the migration resets
+        actionManager->addShortcut(QStringLiteral("Ctrl+J"), QStringLiteral("print"));
+        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("Ctrl+J")), QStringLiteral("print"));
+        // the current (post-1.0.1) wheel convention
+        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("WheelDown")), QStringLiteral("nextImage"));
+
+        {
+            Core core;   // the constructor is what decides to migrate
+        }
+
+        QCOMPARE(settings->lastVersion(), appVersion);
+        // Ctrl+J was dropped and print is back on its default
+        QVERIFY2(actionManager->actionForShortcut(QStringLiteral("Ctrl+J")).isEmpty(),
+                 "the migration left a stale custom binding in place");
+        QCOMPARE(actionManager->shortcutForAction(QStringLiteral("print")),
+                 InputMap::keyNameCtrl() + QStringLiteral("+P"));
+        // the wheel convention was swapped for a pre-1.0.1 config
+        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("WheelUp")), QStringLiteral("nextImage"));
+        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("WheelDown")), QStringLiteral("prevImage"));
+
+        // put the singleton back the way the rest of the suite expects it
+        actionManager->removeAllShortcuts();
+        for (auto it = snapshot.constBegin(); it != snapshot.constEnd(); ++it)
+            actionManager->addShortcut(it.key(), it.value());
+    }
+
+    // ActionManager dispatches by name: an action lives in the Actions registry
+    // and is fired as a metaobject method on ActionManager itself. Two lists
+    // that have to agree, and the disagreement is silent — invokeMethod on a
+    // missing method warns and returns, so the only symptom a user gets is
+    // "this button does nothing". Walk every registered name and require a
+    // matching method on the manager, which covers all of them at once instead
+    // of one button per test.
+    void everyRegisteredActionIsInvokableOnActionManager() {
+        const QList<QString> names = appActions->getList();
+        QVERIFY2(!names.isEmpty(), "the action registry came back empty, the sweep proves nothing");
+        // the size is printed even on success: a sweep over an empty or
+        // accidentally tiny registry is green for the wrong reason
+        qDebug() << "[action sweep] checking" << names.size() << "registered actions against"
+                 << actionManager->metaObject()->methodCount() << "methods";
+
+        QStringList missing;
+        for(const QString &name : names) {
+            const QByteArray signature = (name + QStringLiteral("()")).toLatin1();
+            if(actionManager->metaObject()->indexOfMethod(
+                   QMetaObject::normalizedSignature(signature.constData())) < 0)
+                missing << name;
+        }
+        QVERIFY2(missing.isEmpty(),
+                 qPrintable(QStringLiteral("registered with no method to invoke (")
+                            + QString::number(names.size()) + QStringLiteral(" actions checked):\n  ")
+                            + missing.join(QStringLiteral("\n  "))));
+    }
+
+    // invokeAction itself: it had never been entered despite eight production
+    // call sites (context menu, action buttons, folder grid, viewer, exit).
+    // A registered name has to report success AND reach its signal; an unknown
+    // name has to report failure; a "s:" name with no script behind it has to
+    // report failure rather than pretend.
+    void invokeActionReportsAndReachesForEveryKindOfName() {
+        QSignalSpy nextImage(actionManager, &ActionManager::nextImage);
+        QSignalSpy runScript(actionManager, &ActionManager::runScript);
+        QVERIFY(nextImage.isValid() && runScript.isValid());
+
+        QVERIFY(actionManager->invokeAction(QStringLiteral("nextImage")));
+        QCOMPARE(nextImage.count(), 1);
+
+        QVERIFY(!actionManager->invokeAction(QStringLiteral("noSuchActionAnywhere")));
+        QCOMPARE(nextImage.count(), 1);
+        QCOMPARE(runScript.count(), 0);
+
+        // a script action that does not exist must not claim success
+        QVERIFY(!actionManager->invokeAction(QStringLiteral("s:definitely-not-a-script")));
+        QCOMPARE(runScript.count(), 0);
+
+        // and one that does exist emits runScript with the prefix stripped
+        scriptManager->addScript(QStringLiteral("qtest-ping"),
+                                 Script(QStringLiteral("/bin/true"), false));
+        QVERIFY(scriptManager->scriptExists(QStringLiteral("qtest-ping")));
+        QVERIFY(actionManager->invokeAction(QStringLiteral("s:qtest-ping")));
+        QCOMPARE(runScript.count(), 1);
+        QCOMPARE(runScript.at(0).at(0).toString(), QStringLiteral("qtest-ping"));
+        scriptManager->removeScript(QStringLiteral("qtest-ping"));
+    }
+
+    // The other half of the conditional-save contract. With the folder view
+    // asking and the user saying yes, the edit has to land on disk: neither the
+    // document-mode run nor the declined run reaches the file loop, so this is
+    // the only path where a folder-view edit rewrites the user's file.
+    void folderViewEditWithConsentRewritesTheFile() {
+        const QString dir = uniqueDir("consent");
+        const QString img = dir + QStringLiteral("/half.png");
+        writeRectImage(img);
+        const QByteArray diskBefore = contentOf(img);
+
+        Core core;
+        FakeInteractions fake;
+        core.ui_ = &fake;
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.enableFolderView();
+        core.folderViewPresenter.selectAndFocus(img);
+        QTRY_VERIFY2_WITH_TIMEOUT(!core.currentSelection().isEmpty(),
+                                  "precondition broken: the folder view holds no selection", 10000);
+
+        fake.confirmAnswer = true;
+        core.flipH();
+
+        QCOMPARE(fake.confirmCalls, 1);
+        QTRY_VERIFY2_WITH_TIMEOUT(contentOf(img) != diskBefore,
+                                  "a consented folder-view edit never reached the disk", 10000);
+    }
+
+    // copyFileClipboard builds the GNOME/KDE companion formats out of
+    // mimeData->text(), while getMimeDataForImage only ever sets urls. Whether
+    // text() sees the url list at all is a Qt behaviour, so this test decides it
+    // by measurement rather than by reading the comment that claims it. If the
+    // companion format ends up carrying no url, a file manager is handed the
+    // bare word "copy" and cannot paste the file.
+    // The edited-image branch is pinned in the same run because it is the one
+    // that writes: the temp file is a single fixed name under the cache dir,
+    // which is what keeps repeated copies bounded.
+    void clipboardFileCopyAdvertisesTheFileInEveryFormat() {
+        const QString dir = uniqueDir("clipcopy");
+        const QString img = dir + QStringLiteral("/one.png");
+        writeImage(img);
+
+        Core core;
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+
+        core.copyFileClipboard();
+        const QMimeData *cb = QApplication::clipboard()->mimeData();
+        QVERIFY2(cb->hasUrls(), "a copied file offered no urls");
+        QCOMPARE(cb->urls().constFirst(), QUrl::fromLocalFile(img));
+        qDebug() << "[clipcopy] text() =" << cb->text()
+                 << "gnome-copied-files =" << cb->data("x-special/gnome-copied-files");
+        QVERIFY2(cb->data("x-special/gnome-copied-files").contains("file://"),
+                 qPrintable(QStringLiteral("the gnome companion format carries no file url, so a "
+                                            "file manager cannot paste it; payload was \"")
+                            + QString::fromUtf8(cb->data("x-special/gnome-copied-files")) + '\"'));
+        QCOMPARE(cb->data("application/x-kde-cutselection"), QByteArray("0"));
+
+        // an edited image is written to one fixed temp name and the url points
+        // at what was written
+        core.flipH();
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        core.copyFileClipboard();
+        const QUrl editedUrl = QApplication::clipboard()->mimeData()->urls().constFirst();
+        QCOMPARE(editedUrl, QUrl::fromLocalFile(settings->tmpDir() + QStringLiteral("image.png")));
+        QVERIFY2(QFileInfo::exists(editedUrl.toLocalFile()),
+                 qPrintable(QStringLiteral("the edited copy advertised a temp file that was never "
+                                            "written: ") + editedUrl.toLocalFile()));
+        const qint64 firstSize = QFileInfo(editedUrl.toLocalFile()).size();
+        QVERIFY2(firstSize > 0, "the edited temp image was written empty");
+
+        // copying again reuses the same name rather than accumulating one file
+        // per copy: the cache dir holds exactly one image.png
+        core.flipV();
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        core.copyFileClipboard();
+        QCOMPARE(QFileInfo(editedUrl.toLocalFile()).size() > 0, true);
+        // named local: a range loop over a container returned by value is the
+        // detach clazy warns about, and only the names are wanted here
+        const QStringList names = QDir(settings->tmpDir()).entryList({"image.png"});
+        QCOMPARE(names, QStringList{ QStringLiteral("image.png") });
+    }
+
+    // Every overlay proxy creates its overlay as a child of the container and
+    // used to delete that child from its own destructor. A proxy destroyed after
+    // its container therefore read a handle whose object ~QWidget had already
+    // freed. Measured, and the two halves separate cleanly: with the raw handle
+    // plus deleteLater restored on FloatingMessageProxy, ASan names
+    // floatingmessageproxy.cpp:13; with the handle as a QPointer the same
+    // deleteLater is harmless because the pointer nulls itself when the overlay
+    // dies. So the QPointer is what closes the use-after-free, and dropping the
+    // deleteLater restores the ownership rule - the tree owns widgets, a proxy
+    // only observes. Invariant deliberately left as-is: init() hands the raw
+    // container to the new overlay, so a proxy must not be *used* after its
+    // container is gone; nothing in the app does that, and this test exercises
+    // destruction only, not that assumption.
+    void proxyDestroyedAfterItsContainerDoesNotTouchTheOverlay() {
+        const int baseline = QApplication::allWidgets().size();
+        proxyOutlivesItsContainer<ZoomIndicatorOverlayProxy>();
+        proxyOutlivesItsContainer<ImageInfoOverlayProxy>();
+        proxyOutlivesItsContainer<FullscreenInfoOverlayProxy>();
+        proxyOutlivesItsContainer<FloatingMessageProxy>();
+        proxyOutlivesItsContainer<VideoControlsProxyWrapper>();
+        QTest::qWait(100);                   // any deferred deletion must have landed
+        // nothing outlives the container it was made in: the tree reclaimed all
+        // five overlays with their containers, and no proxy stashed a widget
+        QCOMPARE(QApplication::allWidgets().size(), baseline);
+    }
+
+    // The presenter outliving its view. The teardown checks a QPointer first,
+    // and the honest accounting of that guard: ASan did NOT flag the unguarded
+    // version on this path (removing it changed nothing here), because Qt has
+    // already dropped the connections when the sender dies. The guard is
+    // contract-based rather than a crash fix - handing a freed sender to
+    // disconnect() is undefined by Qt's own rules even when one build happens
+    // not to read it - so this test pins the supported order, not a detected
+    // use-after-free. What is measured here is that rebinding afterwards still
+    // delivers.
+    void disconnectViewAfterTheViewDiedIsSafe() {
+        WorkerPool pool(2);
+        DirectoryPresenter presenter(pool);
+        {
+            auto *proxy = new ThumbnailStripProxy();
+            presenter.setView(proxy);
+            delete proxy;                       // the view dies while the presenter lives
+        }
+        presenter.disconnectView();             // must not reach the freed sender
+        // and rebinding to a fresh view still works afterwards
+        ThumbnailStripProxy second;
+        presenter.setView(&second);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        presenter.setModel(model);
+        QSignalSpy activated(&presenter, &DirectoryPresenter::fileActivated);
+        QVERIFY(activated.isValid());
+        QMetaObject::invokeMethod(&second, "itemActivated", Q_ARG(int, 0));
+        QCOMPARE(activated.count(), 1);
     }
 
     void cropOverlayImageScaleFollowsTheArgument() {
@@ -770,7 +1546,7 @@ private slots:
 
         QVERIFY2(mime->hasUrls(),
                  "dragging an undecoded entry produced a mime without urls");
-        QCOMPARE(mime->urls().first(), QUrl::fromLocalFile(far));
+        QCOMPARE(mime->urls().constFirst(), QUrl::fromLocalFile(far));
     }
 
     // An image whose decoded size exceeds the allocation limit: the Image
@@ -794,8 +1570,55 @@ private slots:
         std::unique_ptr<QMimeData> mime(core.mimeDataForPaths({huge}));
 
         QVERIFY2(mime->hasUrls(), "an over-limit entry produced a mime without urls");
-        QCOMPARE(mime->urls().first(), QUrl::fromLocalFile(huge));
+        QCOMPARE(mime->urls().constFirst(), QUrl::fromLocalFile(huge));
         QVERIFY(QFileInfo::exists(huge)); // the offered payload is the real file
+    }
+
+    // A drag is an OPERATION, not a session object: QDrag::exec() blocks until
+    // the gesture ends, so nothing it carries may outlive the call that started
+    // it. The old shape (mDrag = new QDrag(this)) overwrote the member on every
+    // gesture and left the previous QDrag — plus the QMimeData it owns, which
+    // for image drags can carry pixels — parented to Core for the whole session.
+    // Pin: repeated drag-outs retain nothing on Core.
+    void repeatedDragOutsRetainNothing() {
+        Core core;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        const QString file = QDir(alpha).filePath("a.png");
+        const int before = core.children().size();
+
+        for (int i = 0; i < 8; ++i)
+            core.onDraggedOut({file});
+
+        int drags = 0;
+        for (QObject *child : core.children())
+            if (child->metaObject()->className() == QLatin1String("QDrag"))
+                ++drags;
+        QVERIFY2(drags == 0, qPrintable(QStringLiteral("QDrag objects retained by Core after 8 drag-outs")));
+        QCOMPARE(core.children().size(), before);
+    }
+
+    // A connect() with no context object binds the connection to the SENDER.
+    // When the sender is the app-lifetime `settings` global and the lambda
+    // captures `this`, the connection outlives the widget and every later
+    // settingsChanged() runs against a dead object — production keeps these
+    // widgets alive for the whole session, so the only way to reach the window
+    // is to destroy one here and emit into it. That makes this test the probe:
+    // in the sanitizer tree a context-free connect is a heap-use-after-free
+    // naming the lambda, and in any tree the emission still has to reach its
+    // legitimate receivers.
+    void connectsToTheAppLifetimeSenderDieWithTheWidget() {
+        QSignalSpy survivor(settings, &Settings::settingsChanged);
+
+        {
+            StyledComboBox box;
+            FileSystemModelCustom model;
+            FolderGridView grid;
+        }
+
+        emit settings->settingsChanged();
+
+        QCOMPARE(survivor.count(), 1);
     }
 
     void renameCurrentSelectionForcesAfterScriptedConfirmation() {
@@ -817,6 +1640,40 @@ private slots:
         // exactly what the old name held
         QCOMPARE(contentOf(colliding), original);
         QCOMPARE(fake.confirmCalls, 1); // the overwrite question was asked and scripted yes
+    }
+
+    // Renaming has no event of its own: the engine's mutation vocabulary is
+    // Added|Modified|Removed, so a rename reaches the mirror as Removed(from)
+    // then Added(to). The *Renamed signal chain that assumed otherwise was
+    // dead on arrival — its only historical emitter was the C++ mirror writer
+    // the single-writer commit deleted (note on DirectoryManager's signals).
+    // Following the renamed file is therefore the app's job: the call that
+    // issues the rename knows the destination, and the Added half is the
+    // first moment that destination is a listing member. This pins both halves
+    // of the result — the listing converges losslessly, and the view ends up
+    // on the new name instead of wherever the Removed hop left it.
+    void renamingTheCurrentFileConvergesTheListingAndLandsOnTheNewName() {
+        const QString dir = uniqueDir("renamelanding");
+        const QString from = QDir(dir).filePath("aardvark.png");
+        const QString to = QDir(dir).filePath("renamed.png");
+        writeImage(from);
+        writeImage(QDir(dir).filePath("zzz.png"));
+        Core core;
+        QVERIFY(core.loadPath(from));
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->containsFile(from), 10000);
+        QCOMPARE(core.model->fileCount(), 2);
+
+        core.renameCurrentSelection("renamed.png");
+
+        // isSettled() cannot wait for this: it asks about pending model work,
+        // not about whether the watch events arrived, and it is already true
+        // the moment the rename returns. Wait on the facts themselves.
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->containsFile(to), 10000);
+        QVERIFY(!core.model->containsFile(from));
+        QCOMPARE(core.model->fileCount(), 2);   // lossless: nothing dropped
+        QTRY_VERIFY_WITH_TIMEOUT(core.currentFilePath() == to, 10000);
+        QVERIFY(core.model->isLoaded(to));      // landed on it, not merely listed
+        QVERIFY(!core.model->isLoaded(from));   // and the old name is gone from memory
     }
 
     // ---- DirectoryPresenter lifecycle: the view is an injected observer, the
@@ -940,6 +1797,195 @@ private slots:
             return {};
         }
         return path;
+    }
+
+    // The presenter's five view connections are compiled against the concrete
+    // proxy type (setView is a template: see directorypresenter.h), so a signal
+    // or slot that changed shape fails the build instead of silently disconnect
+    // at runtime — which is what the SIGNAL()/SLOT() strings this replaced used
+    // to allow. What a compiler cannot check is delivery: whether a signal the
+    // view really emits reaches the handler and produces the effect. The tests
+    // in this cluster pin delivery per endpoint — itemActivated both ways,
+    // draggedOut and droppedInto below.
+    // A widget must not accept a drop it is going to throw away. BookmarksWidget
+    // turned on acceptDrops and accepted every url drag in dragEnterEvent, while
+    // its dropEvent was an empty override — so dropping onto the panel's empty
+    // area advertised "copy here" and did nothing. Each BookmarksItem already
+    // handles its own drops (acceptDrops + an emitting dropEvent), so the panel
+    // never needed to accept anything itself.
+    void bookmarksPanelDoesNotAcceptDropsItDiscards() {
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile("/tmp/somefile.png")});
+
+        // the live path: a bookmark row takes the drop and emits droppedIn
+        TestableBookmarksItem item("some dir", "/tmp");
+        QSignalSpy droppedIn(&item, &BookmarksItem::droppedIn);
+        QVERIFY(droppedIn.isValid());
+        QDragEnterEvent itemEnter(QPoint(5, 5), Qt::CopyAction, &mime,
+                                  Qt::LeftButton, Qt::NoModifier);
+        item.dragEnterEvent(&itemEnter);
+        QVERIFY2(itemEnter.isAccepted(),
+                 "a bookmark row stopped accepting the drop it handles");
+        QDropEvent itemDrop(QPoint(5, 5), Qt::CopyAction, &mime,
+                            Qt::LeftButton, Qt::NoModifier);
+        item.dropEvent(&itemDrop);
+        QCOMPARE(droppedIn.count(), 1);
+
+        // the dead path: the panel itself must not advertise acceptance
+        TestableBookmarksWidget panel;
+        QVERIFY2(!panel.acceptDrops(),
+                 "the panel still accepts drops that its own dropEvent discards");
+        QDragEnterEvent panelEnter(QPoint(5, 5), Qt::CopyAction, &mime,
+                                   Qt::LeftButton, Qt::NoModifier);
+        panel.dragEnterEvent(&panelEnter);
+        QVERIFY2(!panelEnter.isAccepted(),
+                 "the panel accepted a drop it cannot deliver anywhere");
+    }
+
+    // The presenter's two remaining string-based view connections. Neither has
+    // a signal at the far end — thumbnailsRequested drives the thumbnailer and
+    // the result comes back as a view *method call*, draggedOver reaches the
+    // view only while directories are listed — so both are pinned by following
+    // the call back into the view rather than by spying on a signal.
+    void presenterRoutesThumbnailsAndDragHoverToTheView() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        CountingStripProxy view;
+        DirectoryPresenter presenter(pool);
+        presenter.setView(&view);
+        view.show(); // materialize so the forwarding path is the real one
+        presenter.setModel(model);
+
+        // the strip requests thumbnails for itself once it materializes; wait
+        // that out, then clear the counter so the number below is attributable
+        // only to the invoke that drives the presenter's connection
+        QTRY_VERIFY_WITH_TIMEOUT(view.thumbnailCalls > 0, 10000);
+        view.thumbnailCalls = 0;
+        view.lastThumbnailPos = -1;
+
+        QMetaObject::invokeMethod(&view, "thumbnailsRequested",
+                                  Q_ARG(QList<int>, {0}),
+                                  Q_ARG(int, 128),
+                                  Q_ARG(bool, true),
+                                  Q_ARG(bool, false));
+        QTRY_COMPARE_WITH_TIMEOUT(view.thumbnailCalls, 1, 10000);
+        QCOMPARE(view.lastThumbnailPos, 0);
+
+        // the draggedOver branch needs a directory index while dirs are shown,
+        // and onDraggedOver skips anything already selected — populate selects
+        // index 0, so the hover target is the second directory
+        QVERIFY(QDir(alpha).mkpath("subdir"));
+        QVERIFY(QDir(alpha).mkpath("subdir2"));
+        presenter.setShowDirs(true);
+        presenter.reloadModel();
+        QTRY_COMPARE_WITH_TIMEOUT(model->dirCount(), 2, 10000);
+        // onDraggedOver has three guards (model, selection, dirs-visible) and
+        // a hover index that must name a directory: each is asserted right
+        // before the invoke so a lost delivery names the guard it hit instead
+        // of reporting a bare zero.
+        QVERIFY2(presenter.showDirs(), "precondition broken: the presenter is in files-only mode");
+        QVERIFY2(model->dirCount() > 1,
+                 qPrintable(QStringLiteral("precondition broken: only %1 directories listed")
+                            .arg(model->dirCount())));
+        QVERIFY2(!view.selection().contains(1),
+                 "precondition broken: index 1 is selected, onDraggedOver returns early");
+
+        QMetaObject::invokeMethod(&view, "draggedOver", Q_ARG(int, 1));
+        QVERIFY2(view.hoverCalls == 1,
+                 qPrintable(QStringLiteral("setDragHover never reached the view (dirCount=%1, "
+                                            "showDirs=%2, selection=%3)")
+                            .arg(model->dirCount()).arg(presenter.showDirs())
+                            .arg(view.selection().isEmpty() ? QStringLiteral("empty")
+                                                            : QStringLiteral("%1").arg(view.selection().at(0)))));
+    }
+
+    void presenterForwardsDragFromTheView() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        QVERIFY(model->setDirectory(alpha));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 1, 10000);
+        ThumbnailStripProxy proxy;
+        DirectoryPresenter presenter(pool);
+        presenter.setView(&proxy);
+        proxy.show(); // materialize so the forwarding path is the real one
+        presenter.setModel(model);
+
+        QSignalSpy out(&presenter, &DirectoryPresenter::draggedOut);
+        QSignalSpy into(&presenter, &DirectoryPresenter::droppedInto);
+        QVERIFY(out.isValid() && into.isValid());
+
+        // view draggedOut() -> presenter onDraggedOut -> presenter draggedOut(paths)
+        QMetaObject::invokeMethod(&proxy, "draggedOut");
+        QCOMPARE(out.count(), 1);
+
+        // view droppedInto(mime, source, index) -> presenter droppedInto(paths, dir)
+        QMimeData data;
+        data.setUrls({QUrl::fromLocalFile(QDir(alpha).filePath("a.png"))});
+        QMetaObject::invokeMethod(&proxy, "droppedInto",
+                                  Q_ARG(const QMimeData*, &data),
+                                  Q_ARG(QObject*, nullptr),
+                                  Q_ARG(int, 0));
+        QCOMPARE(into.count(), 1);
+    }
+
+    // The presenter is the only place that turns an engine-side index — files
+    // and directories counted in separate lists, dirs first — into the view's
+    // single flat grid index. Nothing else checks that arithmetic, and a wrong
+    // offset is silent: the grid still splices, just one row away from the
+    // entry the event named. The events are emitted by hand because the
+    // contract under test is the translation, not the arrival — arrival and
+    // index provenance are pinned by the mirror-contract test.
+    void presenterTranslatesEngineIndicesIntoGridIndices() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        const QString dir = uniqueDir("splice");
+        QVERIFY(QDir(dir).mkpath("d1"));
+        QVERIFY(QDir(dir).mkpath("d2"));
+        writeImage(QDir(dir).filePath("f1.png"));
+        writeImage(QDir(dir).filePath("f2.png"));
+        QVERIFY(model->setDirectory(dir));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(model->dirCount(), 2, 10000);
+        const QString f0 = model->filePathAt(0);
+        const QString f1 = model->filePathAt(1);
+        const QString d0 = model->dirPathAt(0);
+        const int dirCount = model->dirCount();
+        QVERIFY2(dirCount > 0, "precondition broken: no directories to offset by");
+
+        CountingStripProxy view;
+        DirectoryPresenter presenter(pool);
+        presenter.setView(&view);
+        presenter.setModel(model);
+
+        // files-only: the engine index goes to the grid untranslated, and the
+        // directory handlers refuse the event outright
+        QMetaObject::invokeMethod(model.get(), "fileModified", Q_ARG(QString, f0));
+        QCOMPARE(view.reloaded, QList<int>({0}));
+        QMetaObject::invokeMethod(model.get(), "fileAdded", Q_ARG(QString, f1));
+        QCOMPARE(view.inserted, QList<int>({1}));
+        QMetaObject::invokeMethod(model.get(), "fileRemoved", Q_ARG(QString, f0), Q_ARG(int, 0));
+        QCOMPARE(view.removed, QList<int>({0}));
+        QMetaObject::invokeMethod(model.get(), "dirRemoved", Q_ARG(QString, d0), Q_ARG(int, 0));
+        QMetaObject::invokeMethod(model.get(), "dirAdded", Q_ARG(QString, d0));
+        QCOMPARE(view.removed.count(), 1);   // dirs are not in the grid: no splice
+        QCOMPARE(view.inserted.count(), 1);
+
+        view.removed.clear(); view.inserted.clear(); view.reloaded.clear();
+
+        // dirs shown: every file index shifts by dirCount, dir indices do not
+        presenter.setShowDirs(true);
+        QMetaObject::invokeMethod(model.get(), "fileModified", Q_ARG(QString, f0));
+        QCOMPARE(view.reloaded, QList<int>({dirCount}));
+        QMetaObject::invokeMethod(model.get(), "fileAdded", Q_ARG(QString, f1));
+        QCOMPARE(view.inserted, QList<int>({dirCount + 1}));
+        QMetaObject::invokeMethod(model.get(), "fileRemoved", Q_ARG(QString, f0), Q_ARG(int, 0));
+        QCOMPARE(view.removed, QList<int>({dirCount}));
+        QMetaObject::invokeMethod(model.get(), "dirRemoved", Q_ARG(QString, d0), Q_ARG(int, 0));
+        QMetaObject::invokeMethod(model.get(), "dirAdded", Q_ARG(QString, d0));
+        QCOMPARE(view.removed, QList<int>({dirCount, 0}));
+        QCOMPARE(view.inserted, QList<int>({dirCount + 1, 0}));
     }
 
     void editingInDocumentModeEditsInMemoryWithoutConfirmation() {

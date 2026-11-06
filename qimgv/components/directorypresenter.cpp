@@ -13,31 +13,11 @@ DirectoryPresenter::DirectoryPresenter(WorkerPool &_pool, QObject *parent) :
 void DirectoryPresenter::unsetModel() {
     disconnect(model.get(), &DirectoryModel::fileRemoved,  this, &DirectoryPresenter::onFileRemoved);
     disconnect(model.get(), &DirectoryModel::fileAdded,    this, &DirectoryPresenter::onFileAdded);
-    disconnect(model.get(), &DirectoryModel::fileRenamed,  this, &DirectoryPresenter::onFileRenamed);
     disconnect(model.get(), &DirectoryModel::fileModified, this, &DirectoryPresenter::onFileModified);
     disconnect(model.get(), &DirectoryModel::dirRemoved,   this, &DirectoryPresenter::onDirRemoved);
     disconnect(model.get(), &DirectoryModel::dirAdded,     this, &DirectoryPresenter::onDirAdded);
-    disconnect(model.get(), &DirectoryModel::dirRenamed,   this, &DirectoryPresenter::onDirRenamed);
     model = nullptr;
     // also empty view?
-}
-
-void DirectoryPresenter::setView(IDirectoryView *_view) {
-    if(view)
-        return;
-    view = _view;
-    if(model)
-        view->populate(mShowDirs ? model->totalCount() : model->fileCount());
-    connect(dynamic_cast<QObject *>(view), SIGNAL(itemActivated(int)),
-            this, SLOT(onItemActivated(int)));
-    connect(dynamic_cast<QObject *>(view), SIGNAL(thumbnailsRequested(QList<int>, int, bool, bool)),
-            this, SLOT(generateThumbnails(QList<int>, int, bool, bool)));
-    connect(dynamic_cast<QObject *>(view), SIGNAL(draggedOut()),
-            this, SLOT(onDraggedOut()));
-    connect(dynamic_cast<QObject *>(view), SIGNAL(draggedOver(int)),
-            this, SLOT(onDraggedOver(int)));
-    connect(dynamic_cast<QObject *>(view), SIGNAL(droppedInto(const QMimeData*,QObject*,int)),
-            this, SLOT(onDroppedInto(const QMimeData*,QObject*,int)));
 }
 
 void DirectoryPresenter::setModel(std::shared_ptr<DirectoryModel> newModel) {
@@ -51,11 +31,9 @@ void DirectoryPresenter::setModel(std::shared_ptr<DirectoryModel> newModel) {
     // filesystem changes
     connect(model.get(), &DirectoryModel::fileRemoved,  this, &DirectoryPresenter::onFileRemoved);
     connect(model.get(), &DirectoryModel::fileAdded,    this, &DirectoryPresenter::onFileAdded);
-    connect(model.get(), &DirectoryModel::fileRenamed,  this, &DirectoryPresenter::onFileRenamed);
     connect(model.get(), &DirectoryModel::fileModified, this, &DirectoryPresenter::onFileModified);
     connect(model.get(), &DirectoryModel::dirRemoved,   this, &DirectoryPresenter::onDirRemoved);
     connect(model.get(), &DirectoryModel::dirAdded,     this, &DirectoryPresenter::onDirAdded);
-    connect(model.get(), &DirectoryModel::dirRenamed,   this, &DirectoryPresenter::onDirRenamed);
 }
 
 void DirectoryPresenter::reloadModel() {
@@ -72,18 +50,11 @@ void DirectoryPresenter::populateView() {
 void DirectoryPresenter::disconnectView() {
     if(!view)
         return;
-    // mirrors setView's five string-based connects exactly — a string-based
-    // disconnect must name the same SIGNAL/SLOT signatures
-    disconnect(dynamic_cast<QObject *>(view), SIGNAL(itemActivated(int)),
-               this, SLOT(onItemActivated(int)));
-    disconnect(dynamic_cast<QObject *>(view), SIGNAL(thumbnailsRequested(QList<int>, int, bool, bool)),
-               this, SLOT(generateThumbnails(QList<int>, int, bool, bool)));
-    disconnect(dynamic_cast<QObject *>(view), SIGNAL(draggedOut()),
-               this, SLOT(onDraggedOut()));
-    disconnect(dynamic_cast<QObject *>(view), SIGNAL(draggedOver(int)),
-               this, SLOT(onDraggedOver(int)));
-    disconnect(dynamic_cast<QObject *>(view), SIGNAL(droppedInto(const QMimeData*,QObject*,int)),
-               this, SLOT(onDroppedInto(const QMimeData*,QObject*,int)));
+    // the pairs come from setView's own list, so this cannot drift from it
+    if(viewTeardown)
+        viewTeardown();
+    viewTeardown = nullptr;
+    viewSender = nullptr;
     view = nullptr;
 }
 
@@ -94,29 +65,6 @@ void DirectoryPresenter::onFileRemoved(const QString &filePath, int index) {
     if(!view)
         return;
     view->removeItem(mShowDirs ? index + model->dirCount() : index);
-}
-
-void DirectoryPresenter::onFileRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo) {
-    Q_UNUSED(fromPath)
-    Q_UNUSED(toPath)
-    if(!view)
-        return;
-    if(mShowDirs) {
-        indexFrom += model->dirCount();
-        indexTo += model->dirCount();
-    }
-    auto oldSelection = view->selection();
-    view->removeItem(indexFrom);
-    view->insertItem(indexTo);
-    // re-select if needed
-    if(oldSelection.contains(indexFrom)) {
-        if(oldSelection.count() == 1) {
-            view->select(indexTo);
-            view->focusOn(indexTo);
-        } else if(oldSelection.count() > 1) {
-            view->select(view->selection() << indexTo);
-        }
-    }
 }
 
 void DirectoryPresenter::onFileAdded(const QString &filePath) {
@@ -138,25 +86,6 @@ void DirectoryPresenter::onDirRemoved(const QString &dirPath, int index) {
     if(!view || !mShowDirs)
         return;
     view->removeItem(index);
-}
-
-void DirectoryPresenter::onDirRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo) {
-    Q_UNUSED(fromPath)
-    Q_UNUSED(toPath)
-    if(!view || !mShowDirs)
-        return;
-    auto oldSelection = view->selection();
-    view->removeItem(indexFrom);
-    view->insertItem(indexTo);
-    // re-select if needed
-    if(oldSelection.contains(indexFrom)) {
-        if(oldSelection.count() == 1) {
-            view->select(indexTo);
-            view->focusOn(indexTo);
-        } else if(oldSelection.count() > 1) {
-            view->select(view->selection() << indexTo);
-        }
-    }
 }
 
 void DirectoryPresenter::onDirAdded(const QString &dirPath) {

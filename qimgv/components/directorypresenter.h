@@ -1,6 +1,8 @@
 #pragma once
 
 #include <QObject>
+#include <QPointer>
+#include <functional>
 #include <memory>
 #include "gui/idirectoryview.h"
 #include "components/thumbnailer/thumbnailer.h"
@@ -16,7 +18,45 @@ class DirectoryPresenter : public QObject {
 public:
     explicit DirectoryPresenter(WorkerPool &pool, QObject *parent = nullptr);
 
-    void setView(IDirectoryView *view);
+    // The view is an IDirectoryView, which is not a QObject, so a
+    // pointer-to-member connect cannot be written against the interface (measured:
+    // &IDirectoryView::itemActivated does not compile). It is written against the
+    // concrete type instead, which every caller already has: MW hands out
+    // FolderViewProxy* and ThumbnailStripProxy*, and both declare these five
+    // signals itself. That makes the compiler check every signal/slot pair, and
+    // it retires the SIGNAL()/SLOT() strings this used to be - strings that also
+    // forced disconnectView to mirror all five signatures by hand.
+    template<typename View>
+    void setView(View *newView) {
+        if(view)
+            return;                        // the binding is already live
+        view = newView;
+        viewSender = newView;              // a QPointer: it goes null with the widget
+        if(model)
+            view->populate(mShowDirs ? model->totalCount() : model->fileCount());
+
+        connect(newView, &View::itemActivated, this, &DirectoryPresenter::onItemActivated);
+        connect(newView, &View::thumbnailsRequested, this, &DirectoryPresenter::generateThumbnails);
+        connect(newView, &View::draggedOut, this, &DirectoryPresenter::onDraggedOut);
+        connect(newView, &View::draggedOver, this, &DirectoryPresenter::onDraggedOver);
+        connect(newView, &View::droppedInto, this, &DirectoryPresenter::onDroppedInto);
+
+        // The teardown names the same five member pointers the connects above
+        // used, so there is no second list of signatures that can drift out of
+        // agreement with the first. The QPointer test keeps a dead view from
+        // being handed to disconnect() at all: Qt has already dropped the
+        // connections by then, so this is the contract made explicit rather
+        // than a crash observed (ASan flagged nothing without it).
+        viewTeardown = [this, newView]() {
+            if(!viewSender)
+                return;
+            disconnect(newView, &View::itemActivated, this, &DirectoryPresenter::onItemActivated);
+            disconnect(newView, &View::thumbnailsRequested, this, &DirectoryPresenter::generateThumbnails);
+            disconnect(newView, &View::draggedOut, this, &DirectoryPresenter::onDraggedOut);
+            disconnect(newView, &View::draggedOver, this, &DirectoryPresenter::onDraggedOver);
+            disconnect(newView, &View::droppedInto, this, &DirectoryPresenter::onDroppedInto);
+        };
+    }
     void setModel(std::shared_ptr<DirectoryModel> newModel);
     void unsetModel();
 
@@ -24,12 +64,10 @@ public:
     void selectAndFocus(const QString &path);
 
     void onFileRemoved(const QString &filePath, int index);
-    void onFileRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
     void onFileAdded(const QString &filePath);
     void onFileModified(const QString &filePath);
 
     void onDirRemoved(const QString &dirPath, int index);
-    void onDirRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
     void onDirAdded(const QString &dirPath);
 
     bool showDirs();
@@ -64,6 +102,10 @@ private:
     WorkerPool &pool;
     // observes; the Qt parent tree owns the view widget
     IDirectoryView *view = nullptr;
+    // the same widget, seen as the QObject it also is: the teardown needs to
+    // ask whether it is still there, and QPointer answers that truthfully
+    QPointer<QObject> viewSender;
+    std::function<void()> viewTeardown;
     std::shared_ptr<DirectoryModel> model = nullptr;
     Thumbnailer thumbnailer;
     bool mShowDirs;

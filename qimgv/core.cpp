@@ -10,6 +10,7 @@
 #include "utils/folderend.h"
 
 #include <QThread>
+#include <QDrag>
 
 #ifdef __WIN32
 #include <tchar.h>
@@ -28,7 +29,6 @@ Core::Core()
       pool_(workerPoolThreadCount()),
       folderEndAction(FOLDER_END_NO_ACTION),
       loopSlideshow(false),
-      mDrag(nullptr),
       slideshow(false),
       shuffle(false),
       thumbPanelPresenter(pool_),
@@ -162,7 +162,6 @@ void Core::connectComponents() {
 
     connect(model.get(), &DirectoryModel::fileAdded,      this, &Core::onFileAdded);
     connect(model.get(), &DirectoryModel::fileRemoved,    this, &Core::onFileRemoved);
-    connect(model.get(), &DirectoryModel::fileRenamed,    this, &Core::onFileRenamed);
     connect(model.get(), &DirectoryModel::fileModified,   this, &Core::onFileModified);
     connect(model.get(), &DirectoryModel::loaded,         this, &Core::onModelLoaded);
     connect(model.get(), &DirectoryModel::imageReady,     this, &Core::onModelItemReady);
@@ -278,12 +277,10 @@ void Core::loadTranslation() {
 void Core::onUpdate() {
     QVersionNumber lastVer = settings->lastVersion();
 
-
-    if(lastVer < QVersionNumber(0,9,2)) {
-        actionManager->resetDefaults("print");
-        actionManager->resetDefaults("openSettings");
-    }
-
+    // the 0.9.2 print/openSettings reset is NOT repeated here: adjustFromVersion
+    // starts with exactly that pair. The copy above ran it twice per migration
+    // for as long as both existed; resetDefaults(action) is idempotent, so the
+    // double run was invisible - which is how a duplicate survives review.
 #ifdef USE_OPENCV
     if(lastVer < QVersionNumber(0,9,0))
         settings->setScalingFilter(QI_FILTER_CV_CUBIC);
@@ -520,12 +517,6 @@ void Core::openFromClipboard() {
     auto mimeData = cb->mimeData();
     if(!mimeData)
         return;
-    qDebug() << "=====================================";
-    qDebug() << "hasUrls:" << mimeData->hasUrls();
-    qDebug() << "hasImage:" << mimeData->hasImage();
-    qDebug() << "hasText:" << mimeData->hasText();
-
-    qDebug() << "TEXT:" << cb->text();
 
     // try opening url
     if(mimeData->hasUrls()) {
@@ -538,64 +529,21 @@ void Core::openFromClipboard() {
             return;
         }
     }
-    // try to save buffer image then open
+
+    // try to save the image buffer, then open what was written
     if(mimeData->hasImage()) {
-        auto image = cb->image();
+        const QImage image = cb->image();
         if(image.isNull())
             return;
-        QString destPath;
-        if(!model->isEmpty())
-            destPath = model->directoryPath() + "/";
-        else
-            destPath = QDir::homePath() + "/";
-        destPath.append("clipboard.png");
+        QString destPath = (!model->isEmpty() ? model->directoryPath() : QDir::homePath());
+        destPath.append("/clipboard.png");
         destPath = mw->getSaveFileName(destPath);
         if(destPath.isEmpty())
             return;
-
-
-        // ------- temporarily copypasted from ImageStatic (needs refactoring)
-
-        QString tmpPath = destPath + "_" + QString(QCryptographicHash::hash(destPath.toUtf8(), QCryptographicHash::Md5).toHex());
-        QFileInfo fi(destPath);
-        QString ext = fi.suffix();
-        int quality = 95;
-        if(ext.compare("png", Qt::CaseInsensitive) == 0)
-            quality = 30;
-        else if(ext.compare("jpg", Qt::CaseInsensitive) == 0 || ext.compare("jpeg", Qt::CaseInsensitive) == 0)
-            quality = settings->JPEGSaveQuality();
-
-        bool backupExists = false, success = false, originalExists = false;
-
-        if(QFile::exists(destPath))
-            originalExists = true;
-
-        // backup the original file if possible
-        if(originalExists) {
-            QFile::remove(tmpPath);
-            if(!QFile::copy(destPath, tmpPath)) {
-                qDebug() << "Could not create file backup.";
-                return;
-            }
-            backupExists = true;
-        }
-        // save file
-        success = image.save(destPath, ext.toStdString().c_str(), quality);
-
-        if(backupExists) {
-            if(success) {
-                // everything ok - remove the backup
-                QFile file(tmpPath);
-                file.remove();
-            } else if(originalExists) {
-                // revert on fail
-                QFile::remove(destPath);
-                QFile::copy(tmpPath, destPath);
-                QFile::remove(tmpPath);
-            }
-        }
-        // ------------------------------------------
-        if(success)
+        // the same save-with-rollback the on-disk editors use; this used to be
+        // a copy of it, and the copy kept the rollback path that discarded the
+        // backup even when restoring it had failed
+        if(FileOperations::saveWithBackup(image, destPath, settings->JPEGSaveQuality()))
             loadPath(destPath);
     }
 }
@@ -647,10 +595,13 @@ void Core::onDraggedOut(const QList<QString> &paths) {
     if(paths.isEmpty())
         return;
     //auto thumb = Thumbnailer::getThumbnail(paths.last(), 100);
-    mDrag = new QDrag(this);
-    mDrag->setMimeData(mimeDataForPaths(paths));
-    //mDrag->setPixmap(*thumb->pixmap().get());
-    mDrag->exec(Qt::CopyAction | Qt::MoveAction | Qt::LinkAction, Qt::CopyAction);
+    // exec() blocks for the whole gesture, so the drag handle is scoped to this
+    // call: the QMimeData it owns goes with it. A member here would leave every
+    // past drag's payload parented to Core for the life of the session.
+    QDrag drag(this);
+    drag.setMimeData(mimeDataForPaths(paths));
+    //drag.setPixmap(*thumb->pixmap().get());
+    drag.exec(Qt::CopyAction | Qt::MoveAction | Qt::LinkAction, Qt::CopyAction);
 }
 
 QMimeData *Core::getMimeDataForImage(std::shared_ptr<Image> img, MimeDataTarget target) {
@@ -687,20 +638,29 @@ void Core::setFoldersDisplay(bool mode) {
 }
 
 void Core::renameCurrentSelection(const QString &newName) {
-    if(!model->fileCount() || newName.isEmpty() || selectedPath().isEmpty())
+    // A rename reaches the mirror as Removed(old) + Added(new): the engine
+    // pairs nothing, and the Removed half bounces the view by itself. The app
+    // is the one party that knows both halves of its own rename, so this is
+    // where the destination gets armed and onFileAdded lands on it. An
+    // external rename has no arm here and still does not follow the file —
+    // pairing that needs the inotify cookie, which is an engine-side change.
+    const QString oldPath = selectedPath();
+    if(!model->fileCount() || newName.isEmpty() || oldPath.isEmpty())
         return;
     FileOpResult result;
-    model->renameEntry(selectedPath(), newName, false, result);
+    model->renameEntry(oldPath, newName, false, result);
     if(result == FileOpResult::DESTINATION_DIR_EXISTS) {
         mw->toggleRenameOverlay(newName);
     } else if(result == FileOpResult::DESTINATION_FILE_EXISTS) {
         if(ui_->showConfirmation(tr("File exists"), tr("Overwrite file?"))) {
-            model->renameEntry(selectedPath(), newName, true, result);
+            model->renameEntry(oldPath, newName, true, result);
         } else {
             // show rename dialog again
             mw->toggleRenameOverlay(newName);
         }
     }
+    if(result == FileOpResult::SUCCESS && oldPath == state.currentFilePath)
+        state.pendingRenameTarget = QFileInfo(oldPath).absolutePath() + QLatin1Char('/') + newName;
     outputError(result);
 }
 
@@ -744,16 +704,15 @@ void Core::onFileRemoved(const QString &filePath, int index) {
     updateInfoString();
 }
 
-void Core::onFileRenamed(const QString &fromPath, int /*indexFrom*/, const QString &/*toPath*/, int indexTo) {
-    if(state.currentFilePath == fromPath) {
-        loadFileIndex(indexTo, true, settings->usePreloader());
-    }
-}
-
 void Core::onFileAdded(const QString &filePath) {
-    Q_UNUSED(filePath)
     // update file count
     updateInfoString();
+    // the Added half of a rename the app issued; see renameCurrentSelection
+    if(filePath == state.pendingRenameTarget) {
+        state.pendingRenameTarget.clear();
+        loadPath(filePath);
+        return;
+    }
     if(model->fileCount() == 1 && state.currentFilePath == "")
         loadFileIndex(0, false, settings->usePreloader());
 }
@@ -1288,6 +1247,7 @@ void Core::onScalingFinished(QPixmap scaled, const ScalerRequest &req) {
 void Core::reset() {
     state.hasActiveImage = false;
     state.currentFilePath = "";
+    state.pendingRenameTarget.clear();
     if(state.pendingListedToken) {
         model->cancelListed(state.pendingListedToken);
         state.pendingListedToken = 0;

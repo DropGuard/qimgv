@@ -79,16 +79,13 @@ public:
     bool containsDir(const QString &dirPath) const;
 signals:
     void fileRemoved(const QString &filePath, int index);
-    void fileRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
     void fileAdded(const QString &filePath);
     void fileModified(const QString &filePath);
     void dirRemoved(const QString &dirPath, int index);
-    void dirRenamed(const QString &dirPath, int indexFrom, const QString &toPath, int indexTo);
     void dirAdded(const QString &dirPath);
     void loaded(const QString &filePath);
     void loadFailed(const QString &path);
     void sortingChanged(SortingMode);
-    void indexChanged(int oldIndex, int index);
     void imageReady(std::shared_ptr<Image> img, const QString&, bool scaled);
     void imageUpdated(const QString &filePath);
 
@@ -103,6 +100,5 @@ private slots:
     void onSortingChanged();
     void onFileAdded(const QString &filePath);
     void onFileRemoved(const QString &filePath, int index);
-    void onFileRenamed(const QString &fromPath, int indexFrom, const QString &toPath, int indexTo);
     void onFileModified(const QString &filePath);
 };
