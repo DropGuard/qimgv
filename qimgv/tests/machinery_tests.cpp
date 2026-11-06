@@ -4,14 +4,38 @@
 #include "shortcutbuilder.h"
 #include "components/thumbnailer/thumbnailerrunnable.h"
 #include "components/cache/thumbnailcache.h"
+#include "components/workerpool/workerpool.h"
+#include "components/loader/loader.h"
 
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QImage>
+#include <QProcess>
 
+#include <atomic>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <time.h>
+
+namespace {
+
+// occupies its worker until released, so a test decides what stays queued
+class HoldJob : public PoolJob {
+public:
+    HoldJob(std::atomic_bool *_gate, std::atomic_int *_starts)
+        : gate(_gate), starts(_starts) {}
+    void run() override {
+        starts->fetch_add(1);
+        while(!gate->load())
+            QThread::msleep(1);
+    }
+private:
+    std::atomic_bool *gate;
+    std::atomic_int *starts;
+};
+
+} // namespace
 
 // the machinery that degrades quietly instead of crashing: randomizer, cache,
 // DocumentInfo, thumbnailer accounting
@@ -424,6 +448,84 @@ private slots:
         QStringList cmd = { "tool", "%file%" };
         ScriptManager::processArguments(cmd, img);
         QCOMPARE(cmd.at(1), fixtureDir + "/tagged.png");
+    }
+
+    // Loader::clearTasks() is the user leaving a folder: the queued half comes
+    // back from drain() and must never be seen again — and a job that stops at
+    // its entry checkpoint reports nothing, so no loadFinished/loadFailed can
+    // outlive the leaving and turn "no longer wanted" into "this file is
+    // broken". The pool's single worker is held by a Scaler-owner job, which
+    // keeps the Loader job queued deterministically AND lets clearTasks()'s
+    // own waitForOwner(Loader) return immediately, since nothing of Loader's
+    // is running.
+    void loaderClearTasksDropsQueuedJobsWithoutAReport() {
+        resetFixture();
+        std::atomic_bool gate{false};
+        std::atomic_int holds{0}, finished{0}, failed{0};
+        WorkerPool pool(1);
+        pool.submit(PoolOwner::Scaler, 0, std::make_unique<HoldJob>(&gate, &holds));
+        QTRY_COMPARE_WITH_TIMEOUT(holds.load(), 1, 10000);
+        Loader loader(pool);
+        QObject::connect(&loader, &Loader::loadFinished, &loader,
+                         [&](std::shared_ptr<Image>, const QString &, bool) { finished.fetch_add(1); });
+        QObject::connect(&loader, &Loader::loadFailed, &loader,
+                         [&](const QString &) { failed.fetch_add(1); });
+        const QString path = fixtureDir + "/never-decoded.png";
+        loader.loadAsync(path, loadPolicy());
+        QCOMPARE(loader.isBusy(), true);
+        QCOMPARE(loader.isLoading(path), true);
+
+        loader.clearTasks();
+        QCOMPARE(loader.isBusy(), false);
+        QCOMPARE(loader.isLoading(path), false);
+
+        gate.store(true);
+        pool.waitForAll();
+        QCOMPARE(finished.load(), 0);
+        QCOMPARE(failed.load(), 0);
+    }
+
+    // The checkpoint contract's other half: a thumbnail job canceled before
+    // its decode still produces the report object taskEnd dereferences — an
+    // empty QImage becomes the error thumbnail, never a null Thumbnail, and a
+    // canceled decode never arrives dressed up as a real decode result.
+    void canceledThumbnailJobStillProducesAWellFormedReport() {
+        resetFixture();
+        QVERIFY(writeBigImage(fixtureDir + "/canceled.png", "png", QSize(4, 4)));
+        LoadPolicy policy = loadPolicy();
+        CancelToken token;
+        token.request();
+        auto thumbnail = ThumbnailerRunnable::generate(
+            nullptr, fixtureDir + "/canceled.png", 64, /*crop=*/false, /*force=*/true, policy, &token);
+        QVERIFY(thumbnail != nullptr);
+        QCOMPARE(thumbnail->size(), 64);
+        QVERIFY2(thumbnail->info() == QStringLiteral("error"),
+                 "a canceled decode must arrive as the error thumbnail, not as a decode result");
+    }
+
+    // waitForProcess is the seam that turns a canceled frame extraction into a
+    // free worker: slice-polled, kill + reap on the mark, instead of one
+    // waitForFinished call that would hold the worker for the whole timeout.
+    // Pinned against real processes, the way the header promises.
+    void waitForProcessKillsARealProcessOnTheMark() {
+        CancelToken token;
+        token.request();
+        QProcess process;
+        process.start("sleep", {"30"});
+        QVERIFY(process.waitForStarted(2000));
+        QElapsedTimer t;
+        t.start();
+        ThumbnailerRunnable::waitForProcess(process, &token, 8000);
+        QVERIFY2(t.elapsed() < 4000, "a marked wait held the worker for the full timeout");
+        QCOMPARE(process.state(), QProcess::NotRunning);
+    }
+
+    void waitForProcessWithoutATokenWaitsInTheOneCall() {
+        QProcess process;
+        process.start("true");
+        QVERIFY(process.waitForStarted(2000));
+        ThumbnailerRunnable::waitForProcess(process, nullptr, 8000);
+        QCOMPARE(process.state(), QProcess::NotRunning);
     }
 
     // ShortcutBuilder had no coverage at all; these pin the event-to-sequence

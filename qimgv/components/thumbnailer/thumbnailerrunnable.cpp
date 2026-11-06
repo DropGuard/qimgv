@@ -2,6 +2,7 @@
 
 #include "qimgv_engine.h"
 
+#include <QDeadlineTimer>
 #include <QFileInfo>
 #include <utility>
 
@@ -17,8 +18,15 @@ ThumbnailerRunnable::ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, 
 }
 
 void ThumbnailerRunnable::run() {
+    // Before taskStart there is nothing to settle: runningTasks, dispatched and
+    // the engine's in-flight count all key off the reports, so a job that stops
+    // here makes none of them and leaves no entry behind. After taskStart the
+    // rules reverse — the job has announced itself, so it reports taskEnd like
+    // any other, and the only thing cancellation can still save is the work.
+    if(cancelRequested())
+        return;
     emit taskStart(path, size);
-    std::shared_ptr<Thumbnail> thumbnail = generate(cache, path, size, crop, force, policy);
+    std::shared_ptr<Thumbnail> thumbnail = generate(cache, path, size, crop, force, policy, &cancelToken());
     emit taskEnd(thumbnail, path, crop);
 }
 
@@ -40,7 +48,7 @@ QString ThumbnailerRunnable::generateIdString(const QString& path, int size, boo
 }
 
 std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, const QString& path, int size, bool crop, bool force,
-                                                         const LoadPolicy &policy) {
+                                                         const LoadPolicy &policy, const CancelToken *cancel) {
     // Fast path: ONE file open (header probe) for format/animation/orientation.
     // DocumentInfo (mime sniff + per-format probes, 3-5 opens) is only used for
     // videos and formats the header parser doesn't know.
@@ -90,9 +98,9 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
         }
         std::pair<std::unique_ptr<QImage>, QSize> pair;
         if(type == VIDEO)
-            pair = createVideoThumbnail(path, size, crop, policy.tmpDir, policy.mpvBinary);
+            pair = createVideoThumbnail(path, size, crop, policy.tmpDir, policy.mpvBinary, cancel);
         else
-            pair = createThumbnail(fileInfo.absoluteFilePath(), format.toStdString().c_str(), size, crop);
+            pair = createThumbnail(fileInfo.absoluteFilePath(), format.toStdString().c_str(), size, crop, cancel);
         image = std::move(pair.first);
         QSize originalSize = pair.second;
 
@@ -137,7 +145,14 @@ std::shared_ptr<Thumbnail> ThumbnailerRunnable::generate(ThumbnailCache* cache, 
 ThumbnailerRunnable::~ThumbnailerRunnable() {
 }
 
-std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(const QString& path, const char *format, int size, bool squared) {
+std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(const QString& path, const char *format, int size, bool squared,
+                                                                              const CancelToken *cancel) {
+    // The decode itself is one call inside QImageReader, so the checkpoint can
+    // only sit in front of it. Empty means "no picture", not "no image": the
+    // caller writes info into it and builds the error thumbnail from it, and a
+    // null here would be dereferenced two statements later.
+    if(cancel && cancel->requested())
+        return std::make_pair(std::make_unique<QImage>(), QSize());
     QImageReader *reader = new QImageReader(path, format);
     Qt::AspectRatioMode ARMode = squared?
                 (Qt::KeepAspectRatioByExpanding):(Qt::KeepAspectRatio);
@@ -196,8 +211,34 @@ std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createThumbnail(c
     return std::make_pair(std::move(result), originalSize);
 }
 
+void ThumbnailerRunnable::waitForProcess(QProcess &process, const CancelToken *cancel, int timeoutMs) {
+    if(!cancel) {
+        process.waitForFinished(timeoutMs);
+        return;
+    }
+    // 200 ms is the latency a canceled job pays before its worker is free again,
+    // against the 8000 ms the wait is allowed to last: polling the flag is what
+    // turns a blocked worker into a free one, and the slice only decides how fast.
+    QDeadlineTimer deadline(timeoutMs);
+    constexpr int slice = 200;
+    while(!process.waitForFinished(slice)) {
+        if(cancel->requested()) {
+            // Killing is the point, and the reap after it is what makes the kill
+            // final: after this returns the process is gone either way.
+            process.kill();
+            process.waitForFinished(slice);
+            return;
+        }
+        // NotRunning covers both a failure to start and a finish that raced the
+        // wait; either way there is nothing left to wait for.
+        if(process.state() == QProcess::NotRunning || deadline.hasExpired())
+            return;
+    }
+}
+
 std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbnail(const QString& path, int size, bool squared,
-                                                                                    const QString &tmpDir, const QString &mpvBinary) {
+                                                                                    const QString &tmpDir, const QString &mpvBinary,
+                                                                                    const CancelToken *cancel) {
     QImageReader reader;
     const QString tmpFilePath = videoFrameTempPath(tmpDir, path);
     QString tmpFilePathEsc = tmpFilePath;
@@ -215,7 +256,7 @@ std::pair<std::unique_ptr<QImage>, QSize> ThumbnailerRunnable::createVideoThumbn
                                 << "--o=" + tmpFilePathEsc
                                 << path
                   );
-    process.waitForFinished(8000);
+    waitForProcess(process, cancel, 8000);
     process.close();
 
     reader.setFileName(tmpFilePath);

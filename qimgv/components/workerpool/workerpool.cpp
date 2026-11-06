@@ -44,6 +44,18 @@ std::vector<std::unique_ptr<PoolJob>> WorkerPool::drain(PoolOwner owner) {
     return taken;
 }
 
+void WorkerPool::cancel(PoolOwner owner) {
+    std::lock_guard<std::mutex> lock(mutex);
+    for(const Entry &e : queue)
+        if(e.owner == owner)
+            e.job->requestCancel();
+    for(const Running &r : running)
+        if(r.owner == owner)
+            r.job->requestCancel();
+    // no notify: cancel() changes no state any waiter is waiting on. A caller
+    // that wants to know the marked jobs are gone calls waitForOwner().
+}
+
 void WorkerPool::waitForOwner(PoolOwner owner) {
     std::unique_lock<std::mutex> lock(mutex);
     // the wait releases the lock while blocked — no state lock spans a wait
@@ -69,19 +81,32 @@ void WorkerPool::workerLoop() {
                 best = it;
         Entry entry = std::move(*best);
         queue.erase(best);
-        ++active[static_cast<int>(entry.owner)];
+        PoolJob *job = entry.job.get();
+        running.push_back(Running{entry.owner, job});
         lock.unlock();       // the lock never spans run()
-        entry.job->run();    // queued signal delivery needs nothing from us
+        job->run();          // queued signal delivery needs nothing from us
+        // Retire the record and the job in that order, with the record going
+        // under the lock: cancel() reaches a job only through a record and only
+        // while it holds this mutex, so a live record always names a live job
+        // and a job that is about to die has nothing left that can mark it.
+        lock.lock();
+        for(auto it = running.begin(); it != running.end(); ++it) {
+            if(it->job == job) {
+                running.erase(it);
+                break;
+            }
+        }
+        idle.notify_all();
+        lock.unlock();
         entry.job.reset();   // the pool is the single deleter
         lock.lock();
-        --active[static_cast<int>(entry.owner)];
-        idle.notify_all();
     }
 }
 
 bool WorkerPool::ownerIdle(PoolOwner owner) {
-    if(active[static_cast<int>(owner)] != 0)
-        return false;
+    for(const Running &r : running)
+        if(r.owner == owner)
+            return false;
     for(const Entry &e : queue)
         if(e.owner == owner)
             return false;
@@ -89,8 +114,5 @@ bool WorkerPool::ownerIdle(PoolOwner owner) {
 }
 
 bool WorkerPool::allIdle() {
-    for(int count : active)
-        if(count != 0)
-            return false;
-    return queue.empty();
+    return running.empty() && queue.empty();
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <QtGlobal>
-#include <array>
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <iterator>
@@ -37,12 +37,51 @@
 
 enum class PoolOwner : quint8 { Loader, Scaler, Thumbnailer };
 
+// One job's cancellation state, held by the job and readable by the static
+// helpers its run() delegates into. Passing the handle is not passing ownership:
+// whoever holds one can read it, and only WorkerPool::cancel() can set it.
+class CancelToken {
+public:
+    bool requested() const {
+        return mValue.load(std::memory_order_relaxed);
+    }
+    void request() {
+        mValue.store(true, std::memory_order_relaxed);
+    }
+
+private:
+    std::atomic_bool mValue{false};
+};
+
 class PoolJob {
 public:
     virtual ~PoolJob() = default;
     // runs on a worker thread; never dereferences the settings global —
     // per-request state travels inside the job (LoadPolicy, ScalerRequest)
     virtual void run() = 0;
+
+    // Only WorkerPool::cancel() calls this. It is public because the pool is not
+    // a friend of every job type; nothing outside the pool should mark a job,
+    // because a job that was never asked to stop has no reason to check.
+    void requestCancel() {
+        mCancel.request();
+    }
+
+protected:
+    // The cooperative half: a job decides for itself where it can still be
+    // dropped, and the answer is only ever "not yet started" or "not yet at the
+    // seam". Nothing here unwinds a call that is already inside a library.
+    bool cancelRequested() const {
+        return mCancel.requested();
+    }
+    // for the static helpers a run() body hands its work to, which cannot reach
+    // a member of an object they were never given
+    const CancelToken &cancelToken() const {
+        return mCancel;
+    }
+
+private:
+    CancelToken mCancel;
 };
 
 class WorkerPool {
@@ -56,6 +95,23 @@ public:
     // returns everything of `owner` that is queued but not started; running
     // jobs are not interrupted and complete normally
     std::vector<std::unique_ptr<PoolJob>> drain(PoolOwner owner);
+    // Marks every job of `owner` — queued or inside run() — so each one can drop
+    // its work at the last point where dropping is still free. It is a request,
+    // not a stop: it never waits, never touches a job's result and cannot unwind
+    // a call already inside a library, and a job that has passed its last
+    // checkpoint runs to completion exactly as it would have. What it guarantees
+    // is only that no job of this owner is still marked-unfinished when
+    // waitForOwner() returns.
+    //
+    // Which of the two reporting rules a marked job follows is the owner's
+    // business, not the pool's, and the two are not interchangeable: a
+    // Thumbnailer job that got as far as taskStart still reports taskEnd, because
+    // the engine's in-flight count and Thumbnailer::runningTasks are keyed on
+    // that report; a Loader job that never started its decode reports nothing and
+    // Loader::clearTasks() drops the task entry itself, because reporting a
+    // failure for a file the user already left would turn "no longer wanted" into
+    // "this file is broken".
+    void cancel(PoolOwner owner);
     // blocks until `owner` has nothing queued and nothing inside run()
     void waitForOwner(PoolOwner owner);
     void waitForAll();
@@ -67,6 +123,15 @@ private:
         unsigned long seq; // FIFO within one priority
         std::unique_ptr<PoolJob> job;
     };
+    // A running job's owner and address, for the duration of run(). The record is
+    // installed and removed under `mutex`, in the same sections that publish and
+    // retire the job itself, so cancel() marking a record can never reach a job
+    // the worker has already destroyed — which is the only way this could be a
+    // use-after-free rather than a race.
+    struct Running {
+        PoolOwner owner;
+        PoolJob *job;
+    };
 
     void workerLoop();
     bool ownerIdle(PoolOwner owner); // mutex held
@@ -77,7 +142,7 @@ private:
     std::condition_variable workAvailable; // workers wait for submissions
     std::condition_variable idle;          // waitForOwner/waitForAll wait here
     std::deque<Entry> queue;
-    std::array<int, 3> active = {{0, 0, 0}}; // jobs inside run(), per owner
+    std::deque<Running> running;           // one record per job inside run()
     unsigned long nextSeq = 0;
     bool stopping = false;
 };

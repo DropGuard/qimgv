@@ -23,6 +23,10 @@ private slots:
     void priorityOrderIsHonoredWithinASharedPool();
     void waitForOwnerWaitsOnlyForItsOwner();
     void waitForAllWaitsForEveryOwner();
+    void cancelReachesQueuedJobs();
+    void cancelReachesAJobInsideRun();
+    void cancelSparesOtherOwners();
+    void cancelDoesNotSatisfyWaiters();
 };
 
 namespace {
@@ -64,6 +68,40 @@ private:
     int marker;
     std::atomic_int *next;
     int *order;
+};
+
+// records whether the cancel mark was already set when run() began: the
+// queued half of cancel()'s contract — the mark travels with the job, so the
+// entry checkpoint a consumer keeps sees it whenever the job eventually starts
+class MarkedJob : public PoolJob {
+public:
+    MarkedJob(std::atomic_int *_sawMark, std::atomic_int *_deaths)
+        : sawMark(_sawMark), deaths(_deaths) {}
+    ~MarkedJob() override { deaths->fetch_add(1); }
+    void run() override {
+        if(cancelRequested())
+            sawMark->fetch_add(1);
+    }
+private:
+    std::atomic_int *sawMark;
+    std::atomic_int *deaths;
+};
+
+// spins inside run() until the cancel mark arrives — the deterministic
+// stand-in for "cancel() fired while this job was running"
+class CancelGatedJob : public PoolJob {
+public:
+    CancelGatedJob(std::atomic_bool *_sawMark, std::atomic_int *_deaths)
+        : sawMark(_sawMark), deaths(_deaths) {}
+    ~CancelGatedJob() override { deaths->fetch_add(1); }
+    void run() override {
+        while(!cancelRequested())
+            QThread::msleep(1);
+        sawMark->store(true);
+    }
+private:
+    std::atomic_bool *sawMark;
+    std::atomic_int *deaths;
 };
 
 } // namespace
@@ -180,6 +218,80 @@ void TestWorkerPool::waitForAllWaitsForEveryOwner() {
         // unnamed in the ASan sweep
         QTRY_COMPARE_WITH_TIMEOUT(deaths.load(), 2, 10000);
     }
+
+// cancel() marks; it never stops anything by itself. What the pool owes its
+// callers is exactly three facts: the mark reaches queued jobs and jobs
+// inside run(), it reaches nothing outside the owner it was given, and it
+// satisfies no waiter — only a retire does. Everything on top (the entry
+// checkpoint, the silent drop, the still-reports rule) is the consumer's
+// half, pinned where the consumers live.
+void TestWorkerPool::cancelReachesQueuedJobs() {
+    std::atomic_bool gate{false};
+    std::atomic_int starts{0}, marked{0}, deaths{0};
+    WorkerPool pool(1);
+    pool.submit(PoolOwner::Loader, 0, std::make_unique<GatedJob>(&gate, &starts, &deaths));
+    QTRY_COMPARE_WITH_TIMEOUT(starts.load(), 1, 10000);
+    pool.submit(PoolOwner::Loader, 0, std::make_unique<MarkedJob>(&marked, &deaths));
+    pool.cancel(PoolOwner::Loader);
+    gate = true;
+    pool.waitForOwner(PoolOwner::Loader);
+    QCOMPARE(marked.load(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(deaths.load(), 2, 10000);
+}
+
+void TestWorkerPool::cancelReachesAJobInsideRun() {
+    std::atomic_bool sawMark{false};
+    std::atomic_int deaths{0};
+    WorkerPool pool(1);
+    pool.submit(PoolOwner::Loader, 0, std::make_unique<CancelGatedJob>(&sawMark, &deaths));
+    QThread::msleep(50); // it is inside run(), spinning on the mark
+    pool.cancel(PoolOwner::Loader);
+    // this is the waitForOwner the consumers' clearTasks/dtor pair leans on:
+    // it can only return once the running record was retired, so a record
+    // that leaked would hang here rather than pass
+    pool.waitForOwner(PoolOwner::Loader);
+    QCOMPARE(sawMark.load(), true);
+    QTRY_COMPARE_WITH_TIMEOUT(deaths.load(), 1, 10000);
+}
+
+void TestWorkerPool::cancelSparesOtherOwners() {
+    std::atomic_bool loaderMark{false}, scalerMark{false};
+    std::atomic_int deaths{0};
+    WorkerPool pool(2);
+    pool.submit(PoolOwner::Loader, 0, std::make_unique<CancelGatedJob>(&loaderMark, &deaths));
+    pool.submit(PoolOwner::Scaler, 0, std::make_unique<CancelGatedJob>(&scalerMark, &deaths));
+    QThread::msleep(50);
+    pool.cancel(PoolOwner::Loader);
+    QTRY_COMPARE_WITH_TIMEOUT(loaderMark.load(), true, 10000);
+    QThread::msleep(100);
+    QVERIFY2(!scalerMark.load(), "cancel(Loader) marked a job that belongs to Scaler");
+    pool.cancel(PoolOwner::Scaler);
+    pool.waitForAll();
+    QCOMPARE(scalerMark.load(), true);
+    QTRY_COMPARE_WITH_TIMEOUT(deaths.load(), 2, 10000);
+}
+
+void TestWorkerPool::cancelDoesNotSatisfyWaiters() {
+    std::atomic_bool gate{false};
+    std::atomic_int starts{0}, deaths{0};
+    WorkerPool pool(1);
+    pool.submit(PoolOwner::Loader, 0, std::make_unique<GatedJob>(&gate, &starts, &deaths));
+    QTRY_COMPARE_WITH_TIMEOUT(starts.load(), 1, 10000);
+    std::atomic_bool returned{false};
+    std::thread waiter([&pool, &returned]() {
+        pool.waitForOwner(PoolOwner::Loader);
+        returned.store(true);
+    });
+    QThread::msleep(100);
+    QVERIFY(!returned.load()); // blocked on the running job, as designed
+    pool.cancel(PoolOwner::Loader);
+    QThread::msleep(100);
+    QVERIFY2(!returned.load(), "cancel() satisfied a waiter without a retire");
+    gate = true;
+    waiter.join(); // the retire, not the cancel, is what released it
+    QVERIFY(returned.load());
+    QTRY_COMPARE_WITH_TIMEOUT(deaths.load(), 1, 10000);
+}
 
 int runWorkerPoolTests(int argc, char **argv) {
     TestWorkerPool t;

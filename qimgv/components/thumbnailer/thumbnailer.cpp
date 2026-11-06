@@ -23,6 +23,11 @@ Thumbnailer::Thumbnailer(WorkerPool &_pool, EngineBridge &bridge)
 
 Thumbnailer::~Thumbnailer() {
     auto dropped = pool.drain(PoolOwner::Thumbnailer);
+    // A frame extraction in progress would otherwise be waited out for its whole
+    // 8 s timeout while the app sits in a destructor. A job stopped by that mark
+    // leaves its request in the engine's in-flight set, which is moot here: the
+    // bridge that holds it belongs to a process that is already going away.
+    pool.cancel(PoolOwner::Thumbnailer);
     pool.waitForOwner(PoolOwner::Thumbnailer);
     // a parentless QObject: nothing else in the graph owns it, and the jobs
     // that were handed its pointer are gone with the drain and the wait above
@@ -43,6 +48,14 @@ void Thumbnailer::clearTasks() {
     dispatched.clear();
     bridge.thumbClear();
     auto dropped = pool.drain(PoolOwner::Thumbnailer);
+    // The queued half is gone with the drain; the running half is a frame
+    // extraction that will otherwise occupy a worker for up to its 8 s timeout
+    // and then report a picture nobody asked for any more. Marking it costs one
+    // store and frees the worker within a poll slice, and a job that had already
+    // announced itself still reports, so dispatched, runningTasks and the
+    // engine's count stay balanced without anything here knowing which jobs
+    // were marked.
+    pool.cancel(PoolOwner::Thumbnailer);
     mBatchStart = true;
 }
 

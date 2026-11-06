@@ -8,13 +8,21 @@ Loader::~Loader() {
     // thread when run() returns. The task table is bookkeeping — an entry for
     // a finished-but-undelivered job points at memory the pool already freed.
     auto dropped = pool.drain(PoolOwner::Loader);
+    pool.cancel(PoolOwner::Loader);
     pool.waitForOwner(PoolOwner::Loader);
     tasks.clear();
 }
 
 void Loader::clearTasks() {
     clearPool();
+    // A decode that already started cannot be taken back, but it can still be
+    // told to stop at its entry checkpoint — and a job that stops there reports
+    // nothing, so the entries it was tracked by are dropped here instead of by
+    // the onLoadFinished that will not arrive. The wait is what makes this safe:
+    // after it, no Loader job is left that could still be holding an entry.
+    pool.cancel(PoolOwner::Loader);
     pool.waitForOwner(PoolOwner::Loader);
+    tasks.clear();
 }
 
 bool Loader::isBusy() const {
