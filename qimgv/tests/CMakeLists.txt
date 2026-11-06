@@ -16,9 +16,6 @@ endif()
 add_executable(engine_contract_tests test_engine_contract.cpp)
 target_link_libraries(engine_contract_tests PRIVATE qimgv_engine_ffi qimgv_sanitizers)
 target_include_directories(engine_contract_tests PRIVATE ${CMAKE_SOURCE_DIR}/engine/qimgv-engine-ffi/include)
-add_test(NAME ENGINE_CONTRACT COMMAND engine_contract_tests)
-set_tests_properties(ENGINE_CONTRACT PROPERTIES ENVIRONMENT "${TSAN_ENV}")
-
 # The TSan tree's named noise baseline, wired where the tests are registered so
 # it is machine-absorbed rather than read by a human each run: the mixed binary
 # reports only the uninstrumented side (qimgv_engine / Rust std — see
@@ -26,7 +23,14 @@ set_tests_properties(ENGINE_CONTRACT PROPERTIES ENVIRONMENT "${TSAN_ENV}")
 # "thread leak" reports are joins TSan never recorded (pthread_clockjoin_np —
 # the same upstream gap behind the QThreadPool CHECK). A no-op in every other
 # tree: TSAN_OPTIONS is only read by the TSan runtime.
+# Defined BEFORE the first set_tests_properties that uses it: it once sat below
+# ENGINE_CONTRACT's, so that suite's property expanded to an empty string and
+# the whole baseline silently never applied there — 32 engine-boundary reports
+# a run, looking exactly like the residue the baseline exists to absorb.
 set(TSAN_ENV "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan-noise.supp:report_thread_leaks=0")
+
+add_test(NAME ENGINE_CONTRACT COMMAND engine_contract_tests)
+set_tests_properties(ENGINE_CONTRACT PROPERTIES ENVIRONMENT "${TSAN_ENV}")
 
 # Engine stack integration: EngineBridge pump + DirectoryManager async wiring.
 # Links qimgv_nongui — the same objects the executable is built from — so a test

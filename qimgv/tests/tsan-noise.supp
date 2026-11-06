@@ -30,3 +30,14 @@ race:tzset_internal
 # (called_from_lib would hide every real app race through Qt). Reproduced
 # without any qimgv code in ~/tsan-qthreadpool-check/qtimagepool.cpp — 30
 # lines, QImage save + scaled read, same shape. Upstream's.
+#
+# Measured 2026-11-07, verified present at 0a9559ea as well (inherited, not
+# introduced by the cancel / frame-name / shared-thumbnailer arcs): the same
+# class reached through OUR WorkerPool threads — the memmove of a queued
+# connection's arguments inside emit finished (LoaderRunnable::run) and
+# taskStart delivery (Thumbnailer::onTaskStart), QArrayData::reallocateUnaligned,
+# and cleanOrphanedConnectionsImpl during widget teardown. Qt's own container
+# and connection internals race by TSan's lights; our frames are only the
+# callers. Same verdict: no in-tree fix, no honest name-match (these template
+# names are the machinery every real race through Qt also travels), so they
+# keep ENGINE_STACK and CORE_NAV red until triaged in their own arc.

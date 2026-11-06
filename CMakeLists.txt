@@ -145,16 +145,32 @@ endif()
 # CHECKs. The CHECK is therefore not "eliminated" — it is made unreachable by
 # construction wherever we own the process layout, and its one remaining
 # in-process source belongs to QtGui.
-# What still keeps the tree red is enumerated, third-party, and not ours: the
-# QArrayData-region races between QtGui's own 'Thread (pooled)' threads around
-# image save/read — reproduced without any qimgv code in
-# ~/tsan-qthreadpool-check/qtimagepool.cpp — plus stripped libQt6Gui/libtbb
-# offsets that cannot be name-matched, plus the exit-time OpenBLAS teardown
-# race (blas_thread_shutdown_ frees thread buffers while Core::~Core frees the
-# window tree; libopenblas arrives through OpenCV); blanket-called_from_lib would hide every
+# What still keeps the tree red is enumerated, and the enumeration is what a
+# reader should trust instead of re-deriving it: the QArrayData-region races
+# between QtGui's own 'Thread (pooled)' threads around image save/read —
+# reproduced without any qimgv code in ~/tsan-qthreadpool-check/qtimagepool.cpp
+# — plus stripped libQt6Gui/libtbb offsets that cannot be name-matched, plus
+# the exit-time OpenBLAS teardown race (blas_thread_shutdown_ frees thread
+# buffers while Core::~Core frees the window tree; libopenblas arrives through
+# OpenCV); blanket-called_from_lib would hide every
 # real app race through Qt, so the residue stays visible and the tree stays
 # out of the gate until upstream grows a clockjoin interceptor (filed: LLVM
 # #239326) or Qt's image paths stop racing themselves.
+# Measured 2026-11-07, and verified present at 0a9559ea (the session-start
+# commit, same three suites red — none of it introduced by the cancel /
+# frame-name / shared-thumbnailer arcs): ENGINE_STACK and CORE_NAV stay red on
+# queued-connection argument copies between two of OUR OWN WorkerPool threads
+# (the memmove inside emit finished / taskStart delivery into
+# LoaderRunnable::run and Thumbnailer::onTaskStart) landing on QArrayData
+# blocks, QArrayData::reallocateUnaligned, and cleanOrphanedConnectionsImpl
+# during widget teardown. The racing access is inside Qt's own container and
+# connection machinery; our frames are only the callers, so the "any frame of
+# ours fails the run" rule fires on them, and the honest state is: named
+# above, triage deferred to its own arc, tree still out of the gate. The
+# engine-boundary face of the noise is suppressed for real — a set ordering
+# bug left ENGINE_CONTRACT's suppression property expanding to an empty env
+# and 32 reports a run that looked like residue and were just a missing
+# baseline (qimgv/tests/CMakeLists.txt, TSAN_ENV).
 # The Rust half is measured by Miri over the semantics layer, on the seam the
 # watcher split made explicit (watcher/apply is libc-free semantics; watcher/fd
 # is real syscalls by design):
