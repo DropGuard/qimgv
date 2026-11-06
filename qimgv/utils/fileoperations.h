@@ -9,6 +9,8 @@
 #include <QStandardPaths>
 #include <QtGlobal>
 
+class QImage;
+
 #ifdef Q_OS_WIN32
 #include "windows.h"
 #endif
@@ -36,6 +38,14 @@ public:
     static void moveToTrash(const QString &filePath, FileOpResult &result);
 
     static QString decodeResult(const FileOpResult &result);
+
+    // The one implementation of "overwrite a file from memory, and put the old
+    // contents back if the write fails". Both ImageStatic::save() and the
+    // clipboard import carried their own copy; the copies had already diverged,
+    // and the clipboard one still held the rollback bug the other fixed - it
+    // deleted the original, then deleted the backup even when the restore
+    // itself failed, turning "save failed" into "your file is gone".
+    static bool saveWithBackup(const QImage &image, const QString &destPath, int jpegQuality);
 
 private:
     static bool moveToTrashImpl(const QString &path);

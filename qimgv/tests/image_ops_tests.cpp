@@ -9,6 +9,58 @@ public:
 private slots:
     void initTestCase() { init(); }
 
+    // The single save-with-rollback implementation ImageStatic and the
+    // clipboard import now share. Both cases matter: a successful overwrite
+    // must not leave its backup lying next to the file, and a write that fails
+    // must put the previous contents back — the shape the copied version got
+    // wrong by discarding the backup even when the restore had failed.
+    // reading bytes in a test has to fail the test when the read does not
+    // happen: QFile::open is nodiscard, and ignoring that would let an empty
+    // QByteArray compare equal to another empty one and pass
+    static QByteArray readBytes(const QString &path) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly))
+            QTest::qFail(qPrintable(QStringLiteral("cannot open ") + path), __FILE__, __LINE__);
+        return f.readAll();
+    }
+
+    void saveWithBackupOverwritesAndRestores() {
+        resetFixture();
+        const QString dest = fixtureDir + "/saved.png";
+        const QString backupName = dest + "_" + QString(QCryptographicHash::hash(
+            dest.toUtf8(), QCryptographicHash::Md5).toHex());
+
+        QImage first(8, 8, QImage::Format_RGB32);
+        first.fill(Qt::blue);
+        QVERIFY(first.save(dest, "PNG"));
+        const QByteArray firstBytes = readBytes(dest);
+
+        // a successful overwrite: new content, no leftover backup
+        QImage second(8, 8, QImage::Format_RGB32);
+        second.fill(Qt::green);
+        QVERIFY(FileOperations::saveWithBackup(second, dest, 95));
+        QVERIFY2(readBytes(dest) != firstBytes, "the overwrite did not change the file");
+        QVERIFY2(!QFile::exists(backupName),
+                 qPrintable(QStringLiteral("the backup survived a successful save: ") + backupName));
+
+        // a write that cannot happen at all (no encoder for this suffix) must
+        // leave the original exactly as it was, backup included
+        QImage third(8, 8, QImage::Format_RGB32);
+        third.fill(Qt::red);
+        const QString odd = fixtureDir + "/saved.unknownsuffix";
+        QVERIFY(QFile::copy(dest, odd));
+        const QString oddBackup = odd + "_" + QString(QCryptographicHash::hash(
+            odd.toUtf8(), QCryptographicHash::Md5).toHex());
+        const QByteArray oddBytesBefore = readBytes(odd);
+
+        QVERIFY2(!FileOperations::saveWithBackup(third, odd, 95),
+                 "an unsupported format reported success");
+        QCOMPARE(readBytes(odd), oddBytesBefore);
+        QVERIFY2(!QFile::exists(oddBackup),
+                 qPrintable(QStringLiteral("the backup was left behind after a restored rollback: ")
+                            + oddBackup));
+    }
+
     void fileOperationsRoundTrip() {
         resetFixture();
         QString destDir = fixtureDir + "/destdir";

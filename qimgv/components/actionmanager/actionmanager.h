@@ -44,9 +44,8 @@ private:
     explicit ActionManager(QObject *parent = nullptr);
     QMap<QString, QString> defaults, shortcuts; // <shortcut, action>
 
-    static void initDefaults();
-    static void initActions();
-    static void initShortcuts();
+    void initDefaults();
+    void initShortcuts();
     QString modifierKeys(QEvent *event);
     bool invokeActionForShortcut(const QString &action);
     void validateShortcuts();

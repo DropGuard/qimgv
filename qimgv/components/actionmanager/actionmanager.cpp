@@ -10,111 +10,113 @@ ActionManager::~ActionManager() = default;
 ActionManager *ActionManager::getInstance() {
     if(!actionManager) {
         actionManager = new ActionManager();
-        initDefaults();
-        initShortcuts();
+        // the two initializers are instance members now: they fill this
+        // object's own maps instead of reaching for the global that names it
+        actionManager->initDefaults();
+        actionManager->initShortcuts();
     }
     return actionManager;
 }
 //------------------------------------------------------------------------------
 void ActionManager::initDefaults() {
-    actionManager->defaults.insert("Right", "nextImage");
-    actionManager->defaults.insert("Left", "prevImage");
-    actionManager->defaults.insert("XButton2", "nextImage");
-    actionManager->defaults.insert("XButton1", "prevImage");
-    actionManager->defaults.insert("WheelDown", "nextImage");
-    actionManager->defaults.insert("WheelUp", "prevImage");
-    actionManager->defaults.insert("F", "toggleFullscreen");
-    actionManager->defaults.insert("F11", "toggleFullscreen");
-    actionManager->defaults.insert("LMB_DoubleClick", "toggleFullscreen");
-    actionManager->defaults.insert("MiddleButton", "exit");
-    actionManager->defaults.insert("Space", "toggleFitMode");
-    actionManager->defaults.insert(InputMap::keyNameShift() + "+Space", "nextFitMode");
-    actionManager->defaults.insert("1", "fitWindow");
-    actionManager->defaults.insert("2", "fitWidth");
-    actionManager->defaults.insert("3", "fitNormal");
-    actionManager->defaults.insert("4", "fitWindowStretch");
-    actionManager->defaults.insert("R", "resize");
-    actionManager->defaults.insert("H", "flipH");
-    actionManager->defaults.insert("V", "flipV");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+R", "rotateRight");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+L", "rotateLeft");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+WheelUp", "zoomInCursor");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+WheelDown", "zoomOutCursor");
-    actionManager->defaults.insert("=", "zoomIn"); // [=+] key on the number row
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+=", "zoomIn");
-    actionManager->defaults.insert("+", "zoomIn");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "++", "zoomIn");
-    actionManager->defaults.insert("-", "zoomOut");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+-", "zoomOut");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+Down", "zoomOut");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+Up", "zoomIn");
-    actionManager->defaults.insert("Up", "scrollUp");
-    actionManager->defaults.insert("Down", "scrollDown");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+O", "open");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+S", "save");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+" + InputMap::keyNameShift() + "+S", "saveAs");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+W", "setWallpaper");
-    actionManager->defaults.insert("X", "crop");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+P", "print");
-    actionManager->defaults.insert(InputMap::keyNameAlt() + "+X", "exit");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+Q", "exit");
-    actionManager->defaults.insert("Esc", "closeFullScreenOrExit");
-    actionManager->defaults.insert("Del", "moveToTrash");
-    actionManager->defaults.insert(InputMap::keyNameShift() + "+Del", "removeFile");
-    actionManager->defaults.insert("C", "copyFile");
-    actionManager->defaults.insert("M", "moveFile");
-    actionManager->defaults.insert("Home", "jumpToFirst");
-    actionManager->defaults.insert("End", "jumpToLast");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+Right", "seekVideoForward");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+Left", "seekVideoBackward");
-    actionManager->defaults.insert(",", "frameStepBack");
-    actionManager->defaults.insert(".", "frameStep");
-    actionManager->defaults.insert("Enter", "folderView");
-    actionManager->defaults.insert("Backspace", "folderView");
-    actionManager->defaults.insert("F5", "reloadImage");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+C", "copyFileClipboard");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+" + InputMap::keyNameShift() + "+C", "copyPathClipboard");
-    actionManager->defaults.insert("F2", "renameFile");
-    actionManager->defaults.insert("RMB", "contextMenu");
-    actionManager->defaults.insert("Menu", "contextMenu");
-    actionManager->defaults.insert("I", "toggleImageInfo");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+`", "toggleShuffle");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+D", "showInDirectory");
-    actionManager->defaults.insert("`", "toggleSlideshow");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+Z", "discardEdits");
-    actionManager->defaults.insert(InputMap::keyNameShift() + "+Right", "nextDirectory");
-    actionManager->defaults.insert(InputMap::keyNameShift() + "+Left", "prevDirectory");
-    actionManager->defaults.insert(InputMap::keyNameShift() + "+F", "toggleFullscreenInfoBar");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+V", "pasteFile");
+    defaults.insert("Right", "nextImage");
+    defaults.insert("Left", "prevImage");
+    defaults.insert("XButton2", "nextImage");
+    defaults.insert("XButton1", "prevImage");
+    defaults.insert("WheelDown", "nextImage");
+    defaults.insert("WheelUp", "prevImage");
+    defaults.insert("F", "toggleFullscreen");
+    defaults.insert("F11", "toggleFullscreen");
+    defaults.insert("LMB_DoubleClick", "toggleFullscreen");
+    defaults.insert("MiddleButton", "exit");
+    defaults.insert("Space", "toggleFitMode");
+    defaults.insert(InputMap::keyNameShift() + "+Space", "nextFitMode");
+    defaults.insert("1", "fitWindow");
+    defaults.insert("2", "fitWidth");
+    defaults.insert("3", "fitNormal");
+    defaults.insert("4", "fitWindowStretch");
+    defaults.insert("R", "resize");
+    defaults.insert("H", "flipH");
+    defaults.insert("V", "flipV");
+    defaults.insert(InputMap::keyNameCtrl() + "+R", "rotateRight");
+    defaults.insert(InputMap::keyNameCtrl() + "+L", "rotateLeft");
+    defaults.insert(InputMap::keyNameCtrl() + "+WheelUp", "zoomInCursor");
+    defaults.insert(InputMap::keyNameCtrl() + "+WheelDown", "zoomOutCursor");
+    defaults.insert("=", "zoomIn"); // [=+] key on the number row
+    defaults.insert(InputMap::keyNameCtrl() + "+=", "zoomIn");
+    defaults.insert("+", "zoomIn");
+    defaults.insert(InputMap::keyNameCtrl() + "++", "zoomIn");
+    defaults.insert("-", "zoomOut");
+    defaults.insert(InputMap::keyNameCtrl() + "+-", "zoomOut");
+    defaults.insert(InputMap::keyNameCtrl() + "+Down", "zoomOut");
+    defaults.insert(InputMap::keyNameCtrl() + "+Up", "zoomIn");
+    defaults.insert("Up", "scrollUp");
+    defaults.insert("Down", "scrollDown");
+    defaults.insert(InputMap::keyNameCtrl() + "+O", "open");
+    defaults.insert(InputMap::keyNameCtrl() + "+S", "save");
+    defaults.insert(InputMap::keyNameCtrl() + "+" + InputMap::keyNameShift() + "+S", "saveAs");
+    defaults.insert(InputMap::keyNameCtrl() + "+W", "setWallpaper");
+    defaults.insert("X", "crop");
+    defaults.insert(InputMap::keyNameCtrl() + "+P", "print");
+    defaults.insert(InputMap::keyNameAlt() + "+X", "exit");
+    defaults.insert(InputMap::keyNameCtrl() + "+Q", "exit");
+    defaults.insert("Esc", "closeFullScreenOrExit");
+    defaults.insert("Del", "moveToTrash");
+    defaults.insert(InputMap::keyNameShift() + "+Del", "removeFile");
+    defaults.insert("C", "copyFile");
+    defaults.insert("M", "moveFile");
+    defaults.insert("Home", "jumpToFirst");
+    defaults.insert("End", "jumpToLast");
+    defaults.insert(InputMap::keyNameCtrl() + "+Right", "seekVideoForward");
+    defaults.insert(InputMap::keyNameCtrl() + "+Left", "seekVideoBackward");
+    defaults.insert(",", "frameStepBack");
+    defaults.insert(".", "frameStep");
+    defaults.insert("Enter", "folderView");
+    defaults.insert("Backspace", "folderView");
+    defaults.insert("F5", "reloadImage");
+    defaults.insert(InputMap::keyNameCtrl() + "+C", "copyFileClipboard");
+    defaults.insert(InputMap::keyNameCtrl() + "+" + InputMap::keyNameShift() + "+C", "copyPathClipboard");
+    defaults.insert("F2", "renameFile");
+    defaults.insert("RMB", "contextMenu");
+    defaults.insert("Menu", "contextMenu");
+    defaults.insert("I", "toggleImageInfo");
+    defaults.insert(InputMap::keyNameCtrl() + "+`", "toggleShuffle");
+    defaults.insert(InputMap::keyNameCtrl() + "+D", "showInDirectory");
+    defaults.insert("`", "toggleSlideshow");
+    defaults.insert(InputMap::keyNameCtrl() + "+Z", "discardEdits");
+    defaults.insert(InputMap::keyNameShift() + "+Right", "nextDirectory");
+    defaults.insert(InputMap::keyNameShift() + "+Left", "prevDirectory");
+    defaults.insert(InputMap::keyNameShift() + "+F", "toggleFullscreenInfoBar");
+    defaults.insert(InputMap::keyNameCtrl() + "+V", "pasteFile");
 
 #ifdef __APPLE__
-    actionManager->defaults.insert(InputMap::keyNameAlt() + "+Up", "zoomIn");
-    actionManager->defaults.insert(InputMap::keyNameAlt() + "+Down", "zoomOut");
-    actionManager->defaults.insert(InputMap::keyNameCtrl() + "+Comma", "openSettings");
+    defaults.insert(InputMap::keyNameAlt() + "+Up", "zoomIn");
+    defaults.insert(InputMap::keyNameAlt() + "+Down", "zoomOut");
+    defaults.insert(InputMap::keyNameCtrl() + "+Comma", "openSettings");
 #else
-    actionManager->defaults.insert("P", "openSettings");
+    defaults.insert("P", "openSettings");
 #endif
 
-    //actionManager->defaults.insert("Backspace", "goUp"); // todo: shortcut scopes?
+    //defaults.insert("Backspace", "goUp"); // todo: shortcut scopes?
 }
 
 //------------------------------------------------------------------------------
 void ActionManager::initShortcuts() {
-    actionManager->readShortcuts();
-    if(actionManager->shortcuts.isEmpty()) {
-        actionManager->resetDefaults();
+    readShortcuts();
+    if(shortcuts.isEmpty()) {
+        resetDefaults();
     }
 }
 //------------------------------------------------------------------------------
 void ActionManager::addShortcut(const QString &keys, const QString &action) {
     ActionType type = validateAction(action);
     if(type != ActionType::ACTION_INVALID) {
-        actionManager->shortcuts.insert(keys, action);
+        shortcuts.insert(keys, action);
     }
 }
 //------------------------------------------------------------------------------
 void ActionManager::removeShortcut(const QString &keys) {
-    actionManager->shortcuts.remove(keys);
+    shortcuts.remove(keys);
 }
 //------------------------------------------------------------------------------
 QStringList ActionManager::actionList() {
@@ -122,7 +124,7 @@ QStringList ActionManager::actionList() {
 }
 //------------------------------------------------------------------------------
 const QMap<QString, QString> &ActionManager::allShortcuts() {
-    return actionManager->shortcuts;
+    return shortcuts;
 }
 //------------------------------------------------------------------------------
 void ActionManager::removeAllShortcuts() {
@@ -150,11 +152,11 @@ QString ActionManager::keyForNativeScancode(quint32 scanCode) {
 }
 //------------------------------------------------------------------------------
 void ActionManager::resetDefaults() {
-    actionManager->shortcuts = actionManager->defaults;
+    shortcuts = defaults;
 }
 //------------------------------------------------------------------------------
 void ActionManager::resetDefaults(const QString& action) {
-    actionManager->removeAllShortcuts(action);
+    removeAllShortcuts(action);
     QMapIterator<QString, QString> i(defaults);
     while(i.hasNext()) {
         i.next();
@@ -166,10 +168,13 @@ void ActionManager::resetDefaults(const QString& action) {
 }
 //------------------------------------------------------------------------------
 void ActionManager::adjustFromVersion(const QVersionNumber& lastVer) {
+    // this member used to reach for the global actionManager pointer instead of
+    // its own object; it has exactly one caller (Core::onUpdate) and operating
+    // on `this` is what makes that call mean anything
     // swap Ctrl-P & P
     if(lastVer < QVersionNumber(0,9,2)) {
-        actionManager->resetDefaults("print");
-        actionManager->resetDefaults("openSettings");
+        resetDefaults("print");
+        resetDefaults("openSettings");
     }
     // swap WheelUp/WheelDown. derp
     if(lastVer < QVersionNumber(1,0,1)) {
@@ -205,11 +210,11 @@ void ActionManager::adjustFromVersion(const QVersionNumber& lastVer) {
 }
 //------------------------------------------------------------------------------
 void ActionManager::saveShortcuts() {
-    settings->saveShortcuts(actionManager->shortcuts);
+    settings->saveShortcuts(shortcuts);
 }
 //------------------------------------------------------------------------------
 QString ActionManager::actionForShortcut(const QString &keys) {
-    return actionManager->shortcuts[keys];
+    return shortcuts[keys];
 }
 
 // returns first shortcut that is found
@@ -238,7 +243,7 @@ bool ActionManager::invokeAction(const QString &actionName) {
 //------------------------------------------------------------------------------
 bool ActionManager::invokeActionForShortcut(const QString &shortcut) {
     if(!shortcut.isEmpty() && shortcuts.contains(shortcut)) {
-        return invokeAction(actionManager->shortcuts[shortcut]);
+        return invokeAction(shortcuts[shortcut]);
     }
     return false;
 }
@@ -267,10 +272,10 @@ ActionType ActionManager::validateAction(const QString &actionName) {
 //------------------------------------------------------------------------------
 void ActionManager::readShortcuts() {
     settings->readShortcuts(shortcuts);
-    actionManager->validateShortcuts();
+    validateShortcuts();
 }
 //------------------------------------------------------------------------------
 bool ActionManager::processEvent(QInputEvent *event) {
-    return actionManager->invokeActionForShortcut(ShortcutBuilder::fromEvent(event));
+    return invokeActionForShortcut(ShortcutBuilder::fromEvent(event));
 }
 //------------------------------------------------------------------------------

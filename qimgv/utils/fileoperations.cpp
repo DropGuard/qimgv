@@ -1,5 +1,7 @@
 #include "fileoperations.h"
 
+#include <QImage>
+
 QString FileOperations::generateHash(const QString &str) {
     return QString(QCryptographicHash::hash(str.toUtf8(), QCryptographicHash::Md5).toHex());
 }
@@ -294,4 +296,48 @@ void FileOperations::moveToTrash(const QString &filePath, FileOpResult &result) 
 
 bool FileOperations::moveToTrashImpl(const QString &filePath) {
     return QFile::moveToTrash(filePath);
+}
+
+bool FileOperations::saveWithBackup(const QImage &image, const QString &destPath, int jpegQuality) {
+    const QString tmpPath = destPath + "_" + generateHash(destPath);
+    const QString ext = QFileInfo(destPath).suffix();
+    // png compression note from libpng: levels 3-6 usually perform as well as
+    // level 9 for PNG images and do considerably fewer calculations
+    int quality = 95;
+    if(ext.compare("png", Qt::CaseInsensitive) == 0)
+        quality = 30;
+    else if(ext.compare("jpg", Qt::CaseInsensitive) == 0 || ext.compare("jpeg", Qt::CaseInsensitive) == 0)
+        quality = jpegQuality;
+
+    const bool originalExists = QFile::exists(destPath);
+    bool backupExists = false;
+    if(originalExists) {
+        QFile::remove(tmpPath);
+        if(!QFile::copy(destPath, tmpPath)) {
+            qDebug() << "[FileOperations] could not create a backup before overwriting" << destPath;
+            return false;
+        }
+        backupExists = true;
+    }
+
+    const bool success = image.save(destPath, ext.toStdString().c_str(), quality);
+
+    if(backupExists && success)
+        QFile::remove(tmpPath);
+    else if(backupExists) {
+        // Restore the backup to the path it was taken FROM, which is destPath -
+        // not to "the file's current path", which is a different file whenever
+        // this is a Save As. And the backup is only discarded once the restore
+        // actually happened.
+        bool restored = false;
+        if(!QFile::exists(destPath) || QFile::remove(destPath))
+            restored = QFile::copy(tmpPath, destPath);
+        if(restored)
+            QFile::remove(tmpPath);
+        else
+            qCritical() << "[FileOperations] save failed AND the backup could not be"
+                        << "restored; the previous contents of" << destPath
+                        << "are still in" << tmpPath;
+    }
+    return success;
 }

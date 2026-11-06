@@ -496,6 +496,29 @@ private slots:
         QCOMPARE(result.size(), QSize(32, 32));
     }
 
+    // The equality relation Scaler::startRequest guards its buffer with, pinned
+    // field by field: both requests differ only in the setting the worker reads
+    // to choose NEAREST-versus-filter scaling, so they are different work and
+    // must not be interchangeable. path is deliberately on the "does not change
+    // the result" side — it identifies the file the result is for.
+    void scalerRequestEqualityCoversEverythingThatChangesTheResult() {
+        resetFixture();
+        const QSize orig(64, 64);
+        QVERIFY(writeBigImage(fixtureDir + "/real.png", "png", orig));
+        auto image = *ImageFactory::createImage(fixtureDir + "/real.png", false, loadPolicy());
+        const QString p = fixtureDir + "/real.png";
+
+        ScalerRequest base(image, QSize(32, 32), p, QI_FILTER_BILINEAR, true);
+        QVERIFY2(!(base == ScalerRequest(image, QSize(32, 32), p, QI_FILTER_BILINEAR, false)),
+                 "requests that scale differently compare equal: the buffered one would be dropped");
+        QVERIFY(!(base == ScalerRequest(image, QSize(40, 32), p, QI_FILTER_BILINEAR, true)));  // size
+        QVERIFY(!(base == ScalerRequest(image, QSize(32, 32), p, QI_FILTER_NEAREST, true)));   // filter
+        auto other = *ImageFactory::createImage(fixtureDir + "/real.png", false, loadPolicy());
+        QVERIFY(!(base == ScalerRequest(other, QSize(32, 32), p, QI_FILTER_BILINEAR, true)));   // image
+        QVERIFY(base == ScalerRequest(image, QSize(32, 32), fixtureDir + "/other.png",
+                                      QI_FILTER_BILINEAR, true));                               // path only
+    }
+
     void threeSynchronousRequestsHandOffExactlyTwice() {
         // The Scaler decides "a task is in flight" at the moment it hands the
         // request to the pool. It used to learn it from the pool instead, through

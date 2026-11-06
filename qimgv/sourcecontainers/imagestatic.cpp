@@ -1,5 +1,7 @@
 #include "imagestatic.h"
 
+#include "utils/fileoperations.h"
+
 #include <QScreen>
 #include <time.h>
 
@@ -83,71 +85,19 @@ void ImageStatic::loadICO() {
     mLoadAttempted = true;
 }
 
-QString ImageStatic::generateHash(const QString& str) {
-    return QString(QCryptographicHash::hash(str.toUtf8(), QCryptographicHash::Md5).toHex());
-}
-
-// TODO: move saving to directorymodel
 bool ImageStatic::save(QString destPath, int jpegQuality) {
-    QString tmpPath = destPath + "_" + generateHash(destPath);
-    QFileInfo fi(destPath);
-    QString ext = fi.suffix();
-    // png compression note from libpng
-    // Note that tests have shown that zlib compression levels 3-6 usually perform as well
-    // as level 9 for PNG images, and do considerably fewer caclulations
-    int quality = 95;
-    if(ext.compare("png", Qt::CaseInsensitive) == 0)
-        quality = 30;
-    else if(ext.compare("jpg", Qt::CaseInsensitive) == 0 || ext.compare("jpeg", Qt::CaseInsensitive) == 0)
-        quality = jpegQuality;
-
-    bool backupExists = false, success = false, originalExists = false;
-
-    if(QFile::exists(destPath))
-        originalExists = true;
-
-    // backup the original file if possible
-    if(originalExists) {
-        QFile::remove(tmpPath);
-        if(!QFile::copy(destPath, tmpPath)) {
-            qDebug() << "ImageStatic::save() - Could not create file backup.";
-            return false;
-        }
-        backupExists = true;
-    }
-    // save file
+    // The backup, the extension/quality decision and the rollback live in
+    // FileOperations::saveWithBackup now, shared with the clipboard import:
+    // two copies of that sequence had already diverged once.
     const bool wasEdited = isEdited();
-    if(wasEdited)
-        success = imageEdited->save(destPath, ext.toStdString().c_str(), quality);
-    else
-        success = image->save(destPath, ext.toStdString().c_str(), quality);
+    const bool success = FileOperations::saveWithBackup(*(wasEdited ? imageEdited : image),
+                                                        destPath, jpegQuality);
     // An edit is consumed by a write that actually happened. Swapping and
     // discarding before consulting `success` threw the user's unsaved edit away
     // on every failed save, and left the in-memory image claiming it was saved.
     if(success && wasEdited) {
         image.swap(imageEdited);
         discardEditedImage();
-    }
-    if(backupExists) {
-        if(success) {
-            QFile::remove(tmpPath);
-        } else {
-            // Restore the backup to the path it was taken FROM, which is
-            // destPath. This used to delete mDocInfo->filePath() and copy the
-            // backup there — a different file whenever this was a Save As, so the
-            // rollback destroyed the original while undoing a write to something
-            // else. And if the restore itself failed, the backup was deleted
-            // anyway, which turns "save failed" into "your file is gone".
-            bool restored = false;
-            if(!QFile::exists(destPath) || QFile::remove(destPath))
-                restored = QFile::copy(tmpPath, destPath);
-            if(restored)
-                QFile::remove(tmpPath);
-            else
-                qCritical() << "[ImageStatic] save failed AND the backup could not be"
-                            << "restored; the previous contents of" << destPath
-                            << "are still in" << tmpPath;
-        }
     }
     if(destPath == mPath && success)
         mDocInfo->refresh();

@@ -19,5 +19,4 @@ private:
     LoadPolicy policy;
 signals:
     void finished(std::optional<std::shared_ptr<Image>>, QString, bool scaled);
-    void failed(QString);
 };

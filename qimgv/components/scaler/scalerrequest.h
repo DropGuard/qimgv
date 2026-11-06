@@ -23,10 +23,17 @@ public:
     // moment the request was made.
     bool smoothUpscaling = true;
 
+    // Equality means "the same scaled result", because Scaler::startRequest
+    // uses it as the guard before clearing its buffer: a buffered request that
+    // compares equal to the one just started is treated as already done. So
+    // every field the worker reads has to be covered - smoothUpscaling decides
+    // NEAREST-versus-filter scaling, and leaving it out made two differently-
+    // scaling requests interchangeable. `path` is deliberately not part of it:
+    // it identifies the file the result is for (Core checks that on delivery),
+    // not what the result is.
     bool operator==(const ScalerRequest &another) const {
-        if(another.image == image && another.size == size && another.filter == filter)
-            return true;
-        return false;
+        return another.image == image && another.size == size
+            && another.filter == filter && another.smoothUpscaling == smoothUpscaling;
     }
 };
 
