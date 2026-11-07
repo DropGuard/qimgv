@@ -58,7 +58,9 @@ cmake -S . -B build
 cmake --build build -j$(nproc)
 ```
 
-The binary is `build/qimgv/impulse`.
+The binary is `build/qimgv/impulse`. For desktop integration (menu entry,
+icons, portal registration) run `scripts/install-user.sh` after the build — it
+installs into `$HOME/.local` and needs no root.
 
 | Option | Default | Effect |
 | --- | --- | --- |
@@ -68,6 +70,7 @@ The binary is `build/qimgv/impulse`.
 | `KDE_SUPPORT` | OFF | Blur behind windows on KDE (needs KF6WindowSystem) |
 | `QIMGV_SANITIZERS` | empty | `address,undefined` or `thread`; use a separate build dir |
 | `LINT_TESTS` | OFF | Add the static-analysis sweep to ctest (needs Python 3) |
+| `MIRI_TESTS` | OFF | Add the Rust pure-layer Miri run to ctest (needs nightly + miri) |
 
 Warnings are contractual: the build runs `-Wall -Wextra -Wpedantic`, and zero is
 the normal result.
