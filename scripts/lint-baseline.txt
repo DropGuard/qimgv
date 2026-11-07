@@ -33,13 +33,22 @@ clazy qcolor-from-literal 50
 # moved: compile_commands.json regenerates as CMake flag/entry state evolves, and a
 # fresh-configure scan of the SAME content reads 13-14. The four sites were an
 # artifact of the older flag set, recorded here twice-verified gone.
-instrument 13c13a73392739c9
+instrument cf9533c3642678cd
 
-# The fingerprint is the scanned (file, command) set from compile_commands.json:
-# the baseline counts are only meaningful for the instrument that measured them.
-# A local act run re-configures the build dir in its container and moves the
-# instrument — the gate then names it instead of letting count drift ride in
-# silently. Re-record deliberately after re-verifying the counts.
+# The fingerprint is the scanned (file, command) set from compile_commands.json
+# PLUS the --version output of every tool that judged it (the compilers named in
+# the commands, clazy-standalone, cppcheck): the baseline counts are only
+# meaningful for the instrument that measured them. A local act run re-configures
+# the build dir in its container and moves the set; a tool upgrade moves the
+# verdicts under an unchanged set, which the gate would otherwise misread as the
+# source having changed. Either way the gate names INSTRUMENT instead of letting
+# count drift ride in silently. Re-record deliberately after re-verifying the
+# counts. The version half was proved by a shim that changed only cppcheck's
+# --version string and forwarded everything else: same 133 TUs, same counts,
+# fingerprint moved and the gate failed. clazy prints its own version on the
+# third line, after LLVM's, so the whole output is hashed, not the first line.
+# Re-recorded 2026-11-07 from 13c13a73392739c9 with every count re-verified
+# identical (range-loop-detach 14, qcolor-from-literal 50, cppcheck 10/1/1).
 clazy range-loop-detach 14
 #   connect-3arg-lambda — retired at zero on 2026-11-06: every lambda
 #   connect now names a context object, so the connection dies with the

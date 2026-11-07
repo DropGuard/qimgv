@@ -39,3 +39,9 @@ install_manifest.txt
 build-clazy/
 # a ctest run from the source dir drops this next to the sources
 Testing/
+# importing a script regenerates its bytecode: tracked, that is a diff that
+# looks like a script change and is not one (scripts/lint.py's .pyc was tracked
+# and churned the first time anything imported it)
+__pycache__/
+*.pyc
+*.pyo
