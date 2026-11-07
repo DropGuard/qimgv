@@ -159,6 +159,12 @@ public:
     // single source of truth for the cache location, usable before any
     // Settings instance exists (main installs the file log handler with it)
     static QString resolveCacheDir();
+    // The 2026.11 identity rename: carry a legacy identity's conf files and
+    // cache to the new one, once, and only when the new side has nothing yet.
+    // Explicit paths so the carry itself is testable without QSettings' shared
+    // per-file state poisoning the assertions.
+    static void carryIdentityFiles(const QString &legacyConfDir, const QString &newConfDir,
+                                   const QString &legacyCacheDir, const QString &newCacheDir);
     int thumbnailerThreadCount();
     void setThumbnailerThreadCount(int count);
     bool smoothUpscaling();

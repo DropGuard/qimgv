@@ -178,29 +178,30 @@ elseif(NOT UNIX)
 endif()
 
 ## INSTALLATION
+set_target_properties(qimgv PROPERTIES OUTPUT_NAME impulse)
 install(TARGETS qimgv DESTINATION bin)
 
 # .desktop
-install(FILES distrib/qimgv.desktop
+install(FILES distrib/impulse.desktop
     DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/applications)
 
 # icons
 foreach(icon IN ITEMS 16x16 22x22 24x24 32x32 36x36 48x48 64x64 128x128 256x256)
-    install(FILES distrib/hicolor/${icon}/apps/qimgv.png DESTINATION
+    install(FILES distrib/hicolor/${icon}/apps/impulse.png DESTINATION
         ${CMAKE_INSTALL_FULL_DATAROOTDIR}/icons/hicolor/${icon}/apps)
 endforeach()
-install(FILES distrib/hicolor/scalable/apps/qimgv.svg
+install(FILES distrib/hicolor/scalable/apps/impulse.svg
     DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/icons/hicolor/scalable/apps)
 
 # AppData manifest
-install(FILES distrib/qimgv.appdata.xml DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/metainfo)
+install(FILES distrib/impulse.appdata.xml DESTINATION ${CMAKE_INSTALL_FULL_DATAROOTDIR}/metainfo)
 
 # Install internationalization language files
 if(WIN32)
     install(DIRECTORY "${PROJECT_BINARY_DIR}/qimgv/translations" DESTINATION "${CMAKE_INSTALL_BINDIR}")
 else()
-    ADD_DEFINITIONS(-DTRANSLATIONS_PATH="${CMAKE_INSTALL_FULL_DATAROOTDIR}/qimgv/translations")
-    install(DIRECTORY "${PROJECT_BINARY_DIR}/qimgv/translations" DESTINATION "${CMAKE_INSTALL_FULL_DATAROOTDIR}/qimgv")
+    ADD_DEFINITIONS(-DTRANSLATIONS_PATH="${CMAKE_INSTALL_FULL_DATAROOTDIR}/impulse/translations")
+    install(DIRECTORY "${PROJECT_BINARY_DIR}/qimgv/translations" DESTINATION "${CMAKE_INSTALL_FULL_DATAROOTDIR}/impulse")
 endif()
 
 # uninstall target

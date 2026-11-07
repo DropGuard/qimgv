@@ -1,12 +1,12 @@
 [Desktop Entry]
 Version=1.0
-Name=qimgv
+Name=ImPulse
 GenericName=Image Viewer
 Comment=Qt image viewer
-Exec=qimgv %f
-Icon=qimgv
+Exec=impulse %f
+Icon=impulse
 Terminal=false
 Type=Application
 Categories=Qt;Graphics;Viewer;
 MimeType=inode/directory;video/webm;image/jpeg;image/gif;image/png;image/bmp;image/webp;image/jxl;image/avif;image/heif;image/heic;image/x-ico;image/tiff;image/x-exr;
-Keywords=image;view;qimgv;picture;gif;jpeg;webm;png;jpg;gallery;
+Keywords=image;view;impulse;qimgv;picture;gif;jpeg;webm;png;jpg;gallery;

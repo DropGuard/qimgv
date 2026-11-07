@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Copyright 2019 Artem Polishchuk <ego.cordatus@gmail.com> -->
 <component type="desktop">
-  <id>qimgv</id>
+  <id>impulse</id>
   <metadata_license>CC0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <name>qimgv</name>
-  <summary>Image viewer. Fast, easy to use. Optional video support.</summary>
+  <name>ImPulse</name>
+  <summary>Image viewer. Fast, easy to use. Engine-driven listing and decode. Optional video support.</summary>
   <description>
     <p>Image viewer. Fast, easy to use. Optional video support.
 
@@ -23,7 +23,7 @@
         - Ability to run shell scripts</p>
   </description>
   <provides>
-    <binary>qimgv</binary>
+    <binary>impulse</binary>
   </provides>
   <screenshots>
     <screenshot type="default">

@@ -29,7 +29,7 @@ MW::MW(QWidget *parent)
 
     this->setLayout(&layout);
 
-    setWindowTitle(QCoreApplication::applicationName() + " " +
+    setWindowTitle(QGuiApplication::applicationDisplayName() + " " +
                    QCoreApplication::applicationVersion());
 
     this->setMouseTracking(true);

@@ -1,8 +1,8 @@
 # qimgv root
 cmake_minimum_required(VERSION 3.16)  # Qt 6.6 requires CMake 3.16
-project(qimgv
-    VERSION 1.0.2
-    HOMEPAGE_URL "https://github.com/easymodo/qimgv"
+project(impulse
+    VERSION 2026.11.0
+    HOMEPAGE_URL "https://github.com/DropGuard/qimgv"
     LANGUAGES CXX)
 
 message(STATUS "Build configuration: " ${CMAKE_BUILD_TYPE})
@@ -43,10 +43,10 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # FIND PACKAGES
-# Qt6 only, and 6.6 is the floor: the fork has already stopped being buildable
+# Qt6 only, and 6.9 is the floor: the fork has long stopped being buildable
 # against Qt5 (the test suites hard-required Qt6, and OpenGLWidgets is linked
 # unconditionally), so the selection dance only made both builds half-broken.
-find_package(Qt6 6.6 REQUIRED COMPONENTS Core Widgets Svg PrintSupport OpenGLWidgets)
+find_package(Qt6 6.9 REQUIRED COMPONENTS Core Widgets Svg PrintSupport OpenGLWidgets)
 message(STATUS "Qt Version: " ${Qt6_VERSION})
 
 if(EXIV2)

@@ -45,8 +45,8 @@ public:
         dir.setAutoRemove(true);
         Q_ASSERT(dir.isValid());
         qputenv("HOME", dir.path().toUtf8());
-        QCoreApplication::setOrganizationName("qimgv");
-        QCoreApplication::setApplicationName("qimgv");
+        QCoreApplication::setOrganizationName("ImPulse");
+        QCoreApplication::setApplicationName("impulse");
     }
 
     QString path() const { return dir.path(); }

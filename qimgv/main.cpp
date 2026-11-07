@@ -68,15 +68,16 @@ int main(int argc, char *argv[]) {
     a.setStyle(new ProxyStyle);
 #endif
 
-    QCoreApplication::setOrganizationName("qimgv");
+    QCoreApplication::setOrganizationName("ImPulse");
     QCoreApplication::setOrganizationDomain("github.com/easymodo/qimgv");
-    QCoreApplication::setApplicationName("qimgv");
+    QCoreApplication::setApplicationName("impulse");
     QCoreApplication::setApplicationVersion(appVersion.toString());
     QApplication::setEffectEnabled(Qt::UI_AnimateCombo, false);
 
     // no ".desktop" suffix — Qt6 rejects it; the name is matched against the
     // icon theme and the session desktop either way
     QGuiApplication::setDesktopFileName(QCoreApplication::applicationName());
+    QGuiApplication::setApplicationDisplayName("ImPulse");
 
     qDebug() << "[rustcore] qimgv-engine version:" << qimgv_engine_version();
 

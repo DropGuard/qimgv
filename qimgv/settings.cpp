@@ -4,6 +4,8 @@
 #include <QJsonObject>
 #include "settings.h"
 
+#include <QStandardPaths>
+
 Settings *settings = nullptr;
 
 namespace {
@@ -99,6 +101,25 @@ void Settings::store(const SettingDesc &d, const T &v) {
     settingsConf->setValue(d.key, v);
 }
 
+// The fork answered to "qimgv" until 2026.11, and the user's config and cache
+// belong to them, not to the old name. Once, and only when the new identity has
+// nothing yet: the three conf files move to the new config dir and the cache
+// (thumbnails included) renames in place. An IsolatedHome test has no legacy
+// identity under its redirected HOME, so this is a no-op there.
+void Settings::carryIdentityFiles(const QString &legacyConfDir, const QString &newConfDir,
+                                  const QString &legacyCacheDir, const QString &newCacheDir) {
+    const QDir legacyConf(legacyConfDir);
+    const QDir currentConf(newConfDir);
+    if (legacyConf.exists() && !currentConf.exists()) {
+        QDir().mkpath(currentConf.absolutePath());
+        for (const QString &name : {QStringLiteral("theme.conf"), QStringLiteral("savedState.conf")})
+            QFile::rename(legacyConf.filePath(name), currentConf.filePath(name));
+        QFile::rename(legacyConf.filePath("qimgv.conf"), currentConf.filePath("impulse.conf"));
+    }
+    if (QDir(legacyCacheDir).exists() && !QDir(newCacheDir).exists())
+        QDir().rename(legacyCacheDir, newCacheDir);
+}
+
 Settings::Settings(QObject *parent) : QObject(parent) {
 #if defined(__linux__) || defined(__FreeBSD__)
     // config files
@@ -113,6 +134,10 @@ Settings::Settings(QObject *parent) : QObject(parent) {
     stateConf = new QSettings(mConfDir->absolutePath() + "/savedState.ini", QSettings::IniFormat);
     themeConf = new QSettings(mConfDir->absolutePath() + "/theme.ini", QSettings::IniFormat);
 #endif
+    carryIdentityFiles(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/qimgv",
+                       QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation) + "/" + QCoreApplication::organizationName(),
+                       QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/qimgv",
+                       QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation) + "/" + QCoreApplication::applicationName());
     fillVideoFormats();
     // cache paths live in the constructor, not in an external protocol: a
     // directly-constructed instance (tests) used to carry uninitialized

@@ -20,7 +20,8 @@ QString formatLine(QtMsgType type, const QString &msg) {
 void pruneOldSessions(const QString &dir, int keep) {
     if(keep < 1)
         return;
-    const QStringList logs = QDir(dir).entryList(QStringList() << "qimgv-*.log*",
+    // the legacy glob ages out the logs the identity migration did not carry
+    const QStringList logs = QDir(dir).entryList(QStringList() << "impulse-*.log*" << "qimgv-*.log*",
                                                  QDir::Files, QDir::Name);
     for(int i = 0; i + keep < logs.size(); ++i)
         QFile::remove(dir + "/" + logs.at(i));
@@ -88,7 +89,7 @@ static void fileLogHandler(QtMsgType type, const QMessageLogContext &ctx, const 
 bool install(const QString &dir) {
     QDir().mkpath(dir);
     pruneOldSessions(dir, 10);
-    const QString base = dir + "/qimgv-"
+    const QString base = dir + "/impulse-"
                          + QDateTime::currentDateTime().toString("MMdd-hhmmss") + ".log";
     if(!gSession.open(base)) {
         fprintf(stderr, "[log] open failed: %s\n",

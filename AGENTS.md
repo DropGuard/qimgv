@@ -5,7 +5,7 @@ the worst place to store rules. Read it before editing it.
 
 ## What this repo is
 
-A qimgv fork (KDE/Qt6-first, GPL). `rustcore` is the integration trunk: the
+ImPulse — a qimgv-fork lineage (KDE/Qt6-first, GPL, Linux-only). The binary is `impulse`. `rustcore` is the integration trunk: the
 Rust engine (`engine/qimgv-engine`) is the sole writer of directory and
 decode scheduling; the C++ side is a read-only mirror plus Qt rendering.
 Mirror content and order are decided by the engine — mutation events carry

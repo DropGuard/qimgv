@@ -344,6 +344,45 @@ private slots:
         QCOMPARE(Settings::resolveCacheDir(), alt);
         QVERIFY(QDir(alt).exists());
     }
+
+    // The 2026.11 rename: the fork answered to "qimgv", and the user's config
+    // and cache belong to them, not to the old name. The first run under the
+    // new identity carries the three conf files and the cache over — once, and
+    // only when the new identity has nothing yet. The identity set here is the
+    // one the fixture already runs under (testhelpers mirrors production), so
+    // nothing leaks sideways into the other slots.
+    void firstRunUnderTheNewIdentityCarriesTheLegacyFiles() {
+        // scratch paths: the carry is a file-level operation and QSettings'
+        // shared per-file state would poison any assertion made behind its back
+        QTemporaryDir scratch;
+        QVERIFY(scratch.isValid());
+        const QString legacyConf = scratch.filePath("legacy-conf");
+        const QString newConf = scratch.filePath("new-conf");
+        const QString legacyCache = scratch.filePath("legacy-cache");
+        const QString newCache = scratch.filePath("new-cache");
+        QDir().mkpath(legacyConf);
+        QDir().mkpath(legacyCache + "/thumbnails");
+        writeTestFile(legacyConf + "/qimgv.conf", "theConf=carried\n");
+        writeTestFile(legacyConf + "/savedState.conf", "[state]\nlastDir=/x\n");
+        writeTestFile(legacyConf + "/theme.conf", "[theme]\n");
+        writeTestFile(legacyCache + "/thumbnails/carried.png", "png");
+
+        Settings::carryIdentityFiles(legacyConf, newConf, legacyCache, newCache);
+        QCOMPARE(readTestFile(newConf + "/impulse.conf"), QByteArray("theConf=carried\n"));
+        QVERIFY(QFile::exists(newConf + "/savedState.conf"));
+        QVERIFY(QFile::exists(newConf + "/theme.conf"));
+        QVERIFY(QFile::exists(newCache + "/thumbnails/carried.png"));
+        QVERIFY(!QFile::exists(legacyConf + "/qimgv.conf"));  // renamed, not copied
+        QVERIFY(!QDir(legacyCache).exists());                 // the cache moved whole
+
+        // the once-guard: a new identity that already exists is left alone —
+        // the second run of the new binary must not resurrect or clobber
+        writeTestFile(newConf + "/impulse.conf", "theConf=newer\n");
+        writeTestFile(legacyConf + "/qimgv.conf", "theConf=resurrected\n");
+        Settings::carryIdentityFiles(legacyConf, newConf, legacyCache, newCache);
+        QCOMPARE(readTestFile(newConf + "/impulse.conf"), QByteArray("theConf=newer\n"));
+    }
+
 };
 
 #include "settings_tests.moc"
