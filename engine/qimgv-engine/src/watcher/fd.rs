@@ -1,7 +1,9 @@
 //! The watcher thread and its file-descriptor machinery: the inotify fd, the
 //! eventfd wake pipe, poll, and the one thread that owns them. Nothing here
-//! runs under an interpreter (real syscalls only) — the semantics that tests
-//! and Miri can reach live in `super::apply`.
+//! runs under an interpreter (real syscalls only). The decisions about what a
+//! record means for the stream live in `super::pair` (the cookie pairing and
+//! the validation drops) and `super::apply` (what an event means to the
+//! listing) — this file only feeds them and sends what they yield.
 
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
@@ -137,47 +139,53 @@ fn enumerate_and_report(
     });
 }
 
-/// Sends one raw event, naming the directory whose watch produced it. False
-/// means the consumer is gone and the watcher thread has nothing left to do.
-fn send(
-    ev_tx: &Sender<super::RawWatchEvent>,
-    wd: i32,
-    dir: &Path,
-    name: Option<String>,
-    is_dir: bool,
-    kind: super::RawWatchKind,
-) -> bool {
-    let raw = super::RawWatchEvent { wd, dir: dir.to_path_buf(), name, is_dir, kind };
+/// Sends one raw event. False means the consumer is gone and the watcher
+/// thread has nothing left to do.
+fn send(ev_tx: &Sender<super::RawWatchEvent>, raw: super::RawWatchEvent) -> bool {
     crate::trace::line("read", || format!("{raw:?}"));
     ev_tx.send(raw).is_ok()
 }
 
-/// A MOVED_FROM that has been seen and not yet reported. The kernel emits the
-/// two halves of one move back to back under the parent inode lock, so the pair
-/// is the very next record — which is what makes holding it safe: a rename out
-/// of the watched directory has no MOVED_TO here at all, and waiting for one
-/// would delay a removal indefinitely. Anything that is not that next record,
-/// including the end of the batch, retires the hold as the plain removal it
-/// always would have been.
-struct HeldMove {
-    cookie: u32,
-    /// The watch's directory *at the time of the record*: a retarget can happen
-    /// between the two acts, and a removal must name where it was seen, not
-    /// where the thread is watching now.
-    dir: PathBuf,
-    wd: i32,
-    name: String,
-    is_dir: bool,
-}
-
-/// Reports a held MOVED_FROM as itself, because its pair never showed up beside
-/// it. True when the event went out or there was nothing held.
-fn flush(ev_tx: &Sender<super::RawWatchEvent>, held: &mut Option<HeldMove>) -> bool {
-    let Some(HeldMove { cookie, dir, wd, name, is_dir }) = held.take() else {
-        return true;
-    };
-    crate::trace::line("move", || format!("UNPAIRED cookie={cookie} {name} (no MOVED_TO beside it)"));
-    send(ev_tx, wd, &dir, Some(name), is_dir, super::RawWatchKind::MovedFrom)
+/// Hands one of the pairing layer's outcomes to the stream: the trace line
+/// names what happened, the channel gets the event. False means the consumer
+/// is gone.
+fn dispatch(ev_tx: &Sender<super::RawWatchEvent>, out: super::Out, live_wd: Option<i32>) -> bool {
+    match out {
+        super::Out::Report { ev, paired_cookie: Some(cookie) } => {
+            let from = match &ev.kind {
+                super::RawWatchKind::Renamed { from } => from.as_str(),
+                _ => "?",
+            };
+            crate::trace::line("move", || {
+                format!("PAIRED cookie={cookie} {from} -> {}", ev.name.as_deref().unwrap_or("?"))
+            });
+            send(ev_tx, ev)
+        }
+        super::Out::Report { ev, paired_cookie: None } => send(ev_tx, ev),
+        super::Out::Unpaired { ev, cookie } => {
+            crate::trace::line("move", || {
+                format!("UNPAIRED cookie={cookie} {} (no MOVED_TO beside it)", ev.name.as_deref().unwrap_or("?"))
+            });
+            send(ev_tx, ev)
+        }
+        super::Out::Drop(reason) => {
+            match &reason {
+                super::DropReason::Bookkeeping { bits } => {
+                    crate::trace::line("drop", || format!("mask={bits:#x} bookkeeping"))
+                }
+                super::DropReason::DeadWatch { wd, kind } => {
+                    crate::trace::line("drop", || format!("kind={kind:?} wd={wd} live={live_wd:?}"))
+                }
+                super::DropReason::NoDirectory { kind } => {
+                    crate::trace::line("drop", || format!("kind={kind:?} no directory to attribute"))
+                }
+                super::DropReason::NoName { kind } => {
+                    crate::trace::line("drop", || format!("kind={kind:?} no name"))
+                }
+            }
+            true
+        }
+    }
 }
 
 fn watcher_loop(
@@ -201,12 +209,12 @@ fn watcher_loop(
     let mut buffer = vec![0u8; 64 * 1024];
     // MOVED_FROM and MOVED_TO share an inotify cookie, and that pairing is the
     // only thing that can report a rename as one event instead of Removed+Added.
-    // The cookie is visible only here — `apply_event` cannot see it, because a
-    // record's subject is one path and a rename has two — so this thread decides
-    // *whether* the pair is a rename and leaves *what it means* to the listing:
-    // a rename to a non-member name, or from outside the watch, is answered by
-    // apply_event exactly as an unpaired half is.
-    let mut held: Option<HeldMove> = None;
+    // The cookie is visible only to the pairing layer — `apply_event` cannot
+    // see it, because a record's subject is one path and a rename has two — so
+    // that layer decides *whether* the pair is a rename and leaves *what it
+    // means* to the listing: a rename to a non-member name, or from outside
+    // the watch, is answered by apply_event exactly as an unpaired half is.
+    let mut pairer = super::Pairer::new();
 
     while running.load(Ordering::Relaxed) {
         let mut fds = [
@@ -234,63 +242,29 @@ fn watcher_loop(
             match inotify.read_events(&mut buffer) {
                 Ok(events) => {
                     let live_wd = watch.as_ref().map(|w| w.get_watch_descriptor_id());
+                    let dir: Option<&Path> = if watch_dir.as_os_str().is_empty() {
+                        None
+                    } else {
+                        Some(watch_dir.as_path())
+                    };
                     for ev in events {
-                        let Some(mut kind) = super::classify(ev.mask.bits()) else {
-                            crate::trace::line("drop", || format!("mask={:#x} bookkeeping", ev.mask.bits()));
-                            continue;
+                        let rec = super::Record {
+                            wd: ev.wd.get_watch_descriptor_id(),
+                            bits: ev.mask.bits(),
+                            cookie: ev.cookie,
+                            name: ev.name.map(|c| c.to_string_lossy().into_owned()),
                         };
-                        let wd = ev.wd.get_watch_descriptor_id();
-                        if !super::event_is_live(wd, &kind, live_wd) {
-                            // a record from a watch that is no longer installed
-                            crate::trace::line("drop", || format!("kind={kind:?} wd={wd} live={live_wd:?}"));
-                            continue;
-                        }
-                        if watch_dir.as_os_str().is_empty() {
-                            // overflow reported with no live folder to attribute
-                            crate::trace::line("drop", || format!("kind={kind:?} no directory to attribute"));
-                            continue;
-                        }
-                        let mut name = ev.name.map(|c| c.to_string_lossy().into_owned());
-                        if name.is_none()
-                            && !matches!(kind, super::RawWatchKind::Overflow | super::RawWatchKind::WatchGone)
-                        {
-                            crate::trace::line("drop", || format!("kind={kind:?} no name"));
-                            continue;
-                        }
-                        // Only a validated record can break the adjacency: a
-                        // bookkeeping or dead-watch record is not part of this
-                        // watch's stream, and holding past it costs nothing.
-                        let is_dir = super::is_dir_mask(ev.mask.bits());
-                        if matches!(kind, super::RawWatchKind::MovedTo)
-                            && held.as_ref().is_some_and(|h| h.cookie == ev.cookie)
-                        {
-                            let h = held.take().expect("pairing just checked the hold");
-                            crate::trace::line("move", || {
-                                format!("PAIRED cookie={} {} -> {}", h.cookie, h.name, name.as_deref().unwrap_or("?"))
-                            });
-                            kind = super::RawWatchKind::Renamed { from: h.name };
-                        } else if !flush(ev_tx, &mut held) {
-                            return;
-                        }
-                        if matches!(kind, super::RawWatchKind::MovedFrom) {
-                            held = Some(HeldMove {
-                                cookie: ev.cookie,
-                                dir: watch_dir.clone(),
-                                wd,
-                                name: name.take().unwrap_or_default(),
-                                is_dir,
-                            });
-                            continue;
-                        }
-                        if !send(ev_tx, wd, &watch_dir, name, is_dir, kind) {
-                            return;
+                        for out in pairer.intake(rec, dir, live_wd) {
+                            if !dispatch(ev_tx, out, live_wd) {
+                                return;
+                            }
                         }
                     }
-                    // The batch ended without the other half. A 64 KiB read can
-                    // in principle split a pair across its boundary, and then the
-                    // move is reported the way it always was: as a removal.
-                    if !flush(ev_tx, &mut held) {
-                        return;
+                    // The batch ended without the other half, if one was held.
+                    for out in pairer.settle() {
+                        if !dispatch(ev_tx, out, live_wd) {
+                            return;
+                        }
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}

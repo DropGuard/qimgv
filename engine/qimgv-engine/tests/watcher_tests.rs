@@ -8,8 +8,8 @@ use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use qimgv_engine::watcher::{
-    apply_event, classify, event_is_live, is_dir_mask, Applied, IgnoreReason, RawWatchEvent,
-    RawWatchKind, WatchAction,
+    apply_event, classify, event_is_live, is_dir_mask, Applied, DropReason, IgnoreReason, Out,
+    Pairer, RawWatchEvent, RawWatchKind, Record, WatchAction,
 };
 use qimgv_engine::{Command, Engine, EngineConfig, Event, NameFilter, SortMode, WatchChangeKind};
 
@@ -720,4 +720,182 @@ fn operations_on_a_settled_folder_all_land_in_the_listing() {
         got,
         want
     );
+}
+
+// --- the record stream's pairing layer ---------------------------------------
+//
+// These drive the Pairer directly, so the orderings the kernel rarely produces
+// (interleaved cookies, records that are not part of this watch's stream,
+// pairs split by a read boundary) can be stated exactly. Raw masks, same
+// constants the classify test above uses.
+
+use std::path::Path;
+
+fn rec(wd: i32, bits: u32, cookie: u32, name: Option<&str>) -> Record {
+    Record { wd, bits, cookie, name: name.map(|s| s.to_string()) }
+}
+
+#[test]
+fn a_pair_folds_into_one_renamed_event() {
+    let mut p = Pairer::new();
+    let dir = Path::new("/A");
+    let out = p.intake(rec(7, 0x40, 42, Some("a.jpg")), Some(dir), Some(7));
+    assert!(out.is_empty(), "a held MOVED_FROM reports nothing yet");
+
+    let out = p.intake(rec(7, 0x80, 42, Some("b.jpg")), Some(dir), Some(7));
+    match out.as_slice() {
+        [Out::Report { ev, paired_cookie: Some(42) }] => {
+            assert_eq!(ev.name.as_deref(), Some("b.jpg"));
+            assert_eq!(ev.kind, RawWatchKind::Renamed { from: "a.jpg".into() });
+            assert_eq!(ev.dir, dir);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(p.settle().is_empty(), "the pair is folded, nothing is held");
+}
+
+#[test]
+fn a_move_out_of_the_watch_is_a_removal_at_batch_end() {
+    let mut p = Pairer::new();
+    let out = p.intake(rec(7, 0x40, 42, Some("a.jpg")), Some(Path::new("/A")), Some(7));
+    assert!(out.is_empty());
+
+    match p.settle().as_slice() {
+        [Out::Unpaired { ev, cookie: 42 }] => {
+            assert_eq!(ev.kind, RawWatchKind::MovedFrom);
+            assert_eq!(ev.name.as_deref(), Some("a.jpg"));
+            assert_eq!(ev.dir, Path::new("/A"));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_move_in_from_outside_the_watch_is_an_arrival() {
+    let mut p = Pairer::new();
+    let out = p.intake(rec(7, 0x80, 42, Some("a.jpg")), Some(Path::new("/A")), Some(7));
+    match out.as_slice() {
+        [Out::Report { ev, paired_cookie: None }] => assert_eq!(ev.kind, RawWatchKind::MovedTo),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn interleaved_cookies_split_into_a_removal_and_an_arrival() {
+    let mut p = Pairer::new();
+    let dir = Path::new("/A");
+    assert!(p.intake(rec(7, 0x40, 1, Some("x.jpg")), Some(dir), Some(7)).is_empty());
+
+    // a MOVED_TO whose cookie does not match the hold: the held move retires
+    // first, in stream order, and the arrival reports after it
+    let out = p.intake(rec(7, 0x80, 2, Some("y.jpg")), Some(dir), Some(7));
+    assert_eq!(out.len(), 2, "one held move retired and one arrival reported");
+    match &out[0] {
+        Out::Unpaired { ev, cookie: 1 } => assert_eq!(ev.name.as_deref(), Some("x.jpg")),
+        other => panic!("{other:?}"),
+    }
+    match &out[1] {
+        Out::Report { ev, paired_cookie: None } => assert_eq!(ev.kind, RawWatchKind::MovedTo),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn bookkeeping_records_do_not_break_the_adjacency() {
+    let mut p = Pairer::new();
+    let dir = Path::new("/A");
+    assert!(p.intake(rec(7, 0x40, 42, Some("a.jpg")), Some(dir), Some(7)).is_empty());
+
+    // IN_IGNORED between the halves: not part of this watch's stream, so
+    // holding past it costs nothing and the pair still folds
+    let out = p.intake(rec(7, 0x8000, 0, None), Some(dir), Some(7));
+    assert!(matches!(&out[..], [Out::Drop(DropReason::Bookkeeping { .. })]));
+
+    let out = p.intake(rec(7, 0x80, 42, Some("b.jpg")), Some(dir), Some(7));
+    assert!(matches!(&out[..], [Out::Report { paired_cookie: Some(42), .. }]));
+}
+
+#[test]
+fn a_dead_watch_record_does_not_break_the_adjacency() {
+    let mut p = Pairer::new();
+    let dir = Path::new("/A");
+    assert!(p.intake(rec(7, 0x40, 42, Some("a.jpg")), Some(dir), Some(7)).is_empty());
+
+    // a record from a watch that is no longer installed (the delete for /A
+    // delivered after the watch moved on) — dropped, hold untouched
+    let out = p.intake(rec(9, 0x200, 0, Some("gone.jpg")), Some(dir), Some(7));
+    assert!(matches!(&out[..], [Out::Drop(DropReason::DeadWatch { wd: 9, .. })]));
+
+    let out = p.intake(rec(7, 0x80, 42, Some("b.jpg")), Some(dir), Some(7));
+    assert!(matches!(&out[..], [Out::Report { paired_cookie: Some(42), .. }]));
+}
+
+#[test]
+fn a_pair_split_across_batches_reports_a_removal_then_an_arrival() {
+    let mut p = Pairer::new();
+    let dir = Path::new("/A");
+    assert!(p.intake(rec(7, 0x40, 42, Some("a.jpg")), Some(dir), Some(7)).is_empty());
+
+    // a 64 KiB read can in principle split a pair across its boundary; the
+    // declared loss is that the move is reported the way it always was
+    let settled = p.settle();
+    assert!(matches!(&settled[..], [Out::Unpaired { .. }]));
+
+    // the next batch's MOVED_TO, whose FROM already retired, is an arrival
+    let out = p.intake(rec(7, 0x80, 42, Some("b.jpg")), Some(dir), Some(7));
+    assert!(
+        matches!(&out[..], [Out::Report { ev, paired_cookie: None }] if ev.kind == RawWatchKind::MovedTo),
+        "{out:?}"
+    );
+}
+
+#[test]
+fn a_pair_reports_with_the_destination_record_s_identity() {
+    let mut p = Pairer::new();
+    // the two halves of one move carry the same watch in production; the rule
+    // being pinned is that the folded event reports with the DESTINATION
+    // record's wd and directory, never the held half's
+    assert!(p.intake(rec(7, 0x40, 42, Some("a.jpg")), Some(Path::new("/A")), Some(7)).is_empty());
+    let out = p.intake(rec(9, 0x80, 42, Some("b.jpg")), Some(Path::new("/B")), Some(9));
+    match out.as_slice() {
+        [Out::Report { ev, paired_cookie: Some(42) }] => {
+            assert_eq!((ev.wd, ev.dir.as_path()), (9, Path::new("/B")));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_nameless_subject_is_dropped_but_bookkeeping_kinds_still_travel() {
+    let mut p = Pairer::new();
+    let dir = Path::new("/A");
+    let out = p.intake(rec(7, 0x2, 0, None), Some(dir), Some(7));
+    assert!(matches!(&out[..], [Out::Drop(DropReason::NoName { .. })]));
+
+    // Overflow and WatchGone name no subject by design: wd == -1, no name
+    let out = p.intake(rec(-1, 0x4000, 0, None), Some(dir), Some(7));
+    assert!(
+        matches!(&out[..], [Out::Report { ev, paired_cookie: None }] if ev.kind == RawWatchKind::Overflow),
+        "{out:?}"
+    );
+    let out = p.intake(rec(7, 0x400, 0, None), Some(dir), Some(7));
+    assert!(
+        matches!(&out[..], [Out::Report { ev, paired_cookie: None }] if ev.kind == RawWatchKind::WatchGone),
+        "{out:?}"
+    );
+}
+
+#[test]
+fn a_directory_flag_rides_through_the_pairing() {
+    let mut p = Pairer::new();
+    let dir = Path::new("/A");
+    assert!(p.intake(rec(7, 0x40 | 0x4000_0000, 42, Some("sub")), Some(dir), Some(7)).is_empty());
+    let out = p.intake(rec(7, 0x80 | 0x4000_0000, 42, Some("sub2")), Some(dir), Some(7));
+    match out.as_slice() {
+        [Out::Report { ev, paired_cookie: Some(_) }] => {
+            assert!(ev.is_dir);
+            assert_eq!(ev.kind, RawWatchKind::Renamed { from: "sub".into() });
+        }
+        other => panic!("{other:?}"),
+    }
 }
