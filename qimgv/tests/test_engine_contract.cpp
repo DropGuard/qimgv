@@ -58,7 +58,9 @@ int main() {
     qimgv_event ev{};
     qimgv_mutation mut{};
     char dirbuf[512];
-    CHECK(qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut, nullptr) == 0);
+    char oldbuf[512];
+    CHECK(qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), oldbuf, sizeof(oldbuf),
+                                 &mut, nullptr) == 0);
 
     // error paths leave a readable diagnostic
     CHECK(qimgv_engine_set_sort(engine, 99) == QIMGV_ERR_BAD_SORT);
@@ -73,7 +75,8 @@ int main() {
 
     int got = 0;
     for (int i = 0; i < 1000; ++i) {
-        got = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), &mut, nullptr);
+        got = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), oldbuf, sizeof(oldbuf),
+                                      &mut, nullptr);
         if (got != 0)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -113,6 +116,73 @@ int main() {
     CHECK(qimgv_engine_set_show_hidden(engine, 1) == QIMGV_OK);
     CHECK(qimgv_engine_set_show_hidden(engine, 0) == QIMGV_OK);
     CHECK(qimgv_engine_include_path(engine, (fixture + "/subdir").c_str()) == QIMGV_OK);
+
+    // --- rename: one mutation, two subjects ---------------------------------
+    // The engine pairs the two inotify halves of a move by their shared cookie,
+    // and the cookie exists nowhere else in the pipeline, so the old path needs
+    // its own out-buffer. This is the only place the second buffer can be
+    // checked from the consumer side, and getting it wrong is invisible to both
+    // compilers: the struct still fits, the symbol still links, and the mirror
+    // quietly keeps a row for a file that is now named something else.
+    {
+        const std::string from = fixture + "/b.jpg";
+        const std::string to = fixture + "/z.jpg";
+        std::error_code ec;
+        std::filesystem::rename(from, to, ec);
+        CHECK(!ec);
+
+        // First with no room for the second subject at all: the rename has to
+        // stay queued rather than be delivered as half an event. take_event
+        // answers 1 (event written), 0 (nothing pending) or a positive
+        // QIMGV_ERR_* code, and a refusal that reported 1 would be the worst
+        // outcome — the consumer would apply the PREVIOUS event's subject and
+        // mutation struct again, believing the rename had arrived.
+        int refused = 0;
+        for (int i = 0; i < 1000; ++i) {
+            const int r = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), nullptr, 0,
+                                                 &mut, nullptr);
+            if (r != 0 && r != 1) {
+                refused = r;
+                break;
+            }
+            if (r == 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CHECK(refused == QIMGV_ERR_INVALID);
+        CHECK(mut.kind != QIMGV_MUT_RENAMED); // nothing written by a refused call
+
+        // and the same event, now that both subjects have somewhere to go
+        int took = 0;
+        for (int i = 0; i < 200; ++i) {
+            took = qimgv_engine_take_event(engine, &ev, dirbuf, sizeof(dirbuf), oldbuf, sizeof(oldbuf),
+                                          &mut, nullptr);
+            if (took == 1)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        CHECK(took == 1);
+        CHECK(ev.kind == QIMGV_EVENT_DIR_MUTATED);
+        CHECK(mut.kind == QIMGV_MUT_RENAMED);
+        CHECK(std::strcmp(dirbuf, to.c_str()) == 0);
+        CHECK(std::strcmp(oldbuf, from.c_str()) == 0);
+        CHECK(mut.size == 1);
+        // z.jpg after a.jpg in the engine's own order, and the event says so
+        CHECK(mut.index == 1);
+
+        bool sawOld = false, sawNew = false;
+        for (uint32_t i = 0; i < uint32_t(qimgv_engine_file_count(engine)); ++i) {
+            if (qimgv_engine_file_entry_at(engine, i, &meta, name, sizeof(name), path, sizeof(path)) != QIMGV_OK)
+                continue;
+            if (std::strcmp(path, from.c_str()) == 0)
+                sawOld = true;
+            if (std::strcmp(path, to.c_str()) == 0)
+                sawNew = true;
+        }
+        CHECK(sawNew);
+        CHECK(!sawOld);
+        CHECK(qimgv_engine_file_count(engine) == 2);
+    }
+
     CHECK(qimgv_engine_stop_watch(engine) == QIMGV_OK);
 
     CHECK(qimgv_engine_thumb_config(engine, 2) == QIMGV_OK);

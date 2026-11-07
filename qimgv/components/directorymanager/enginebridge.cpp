@@ -290,6 +290,12 @@ void EngineBridge::drainEvents() {
     // else woke the notifier, which looks like a stalled listing.
     QByteArray subjectBuf;
     subjectBuf.resize(4096);
+    // The rename's second subject. Grown in lockstep with the subject above,
+    // because a truncation means "this event needs more room in both places" —
+    // the engine validates both buffers before it writes either, so the event
+    // is still queued when this loop retries.
+    QByteArray oldBuf;
+    oldBuf.resize(4096);
     for (;;) {
         qimgv_event ev{};
         qimgv_mutation mut{};
@@ -297,7 +303,8 @@ void EngineBridge::drainEvents() {
         int r;
         for (;;) {
             r = qimgv_engine_take_event(engine, &ev, subjectBuf.data(),
-                                       size_t(subjectBuf.size()), &mut, &treq);
+                                       size_t(subjectBuf.size()), oldBuf.data(),
+                                       size_t(oldBuf.size()), &mut, &treq);
             if (r != QIMGV_ERR_TRUNCATED)
                 break;
             if (subjectBuf.size() >= (1 << 20)) {
@@ -305,10 +312,18 @@ void EngineBridge::drainEvents() {
                 break;
             }
             subjectBuf.resize(subjectBuf.size() * 2);
+            oldBuf.resize(oldBuf.size() * 2);
         }
-        if (r <= 0) {
-            if (r < 0)
-                qWarning() << "[EngineBridge] take_event failed:" << qimgv_last_error();
+        // 1 is the only value that means "out and the buffers now describe an
+        // event". Anything else wrote nothing and left them holding the previous
+        // event, so falling through here would re-apply a stale one — and the
+        // error codes are positive enum values, not negatives: a refused rename
+        // (QIMGV_ERR_INVALID, no room for old_buf) and the 1 MiB give-up above
+        // both answer with a code that a "r <= 0" test would wave through.
+        if (r != 1) {
+            if (r != 0)
+                qWarning() << "[EngineBridge] take_event refused:" << r
+                           << (qimgv_last_error() ? qimgv_last_error() : "");
             break;
         }
         if (sessionEpoch != 0 && ev.epoch != 0 && ev.epoch < sessionEpoch) {
@@ -323,18 +338,24 @@ void EngineBridge::drainEvents() {
         // purpose — the kind decides which it is, and the value cannot say so.
         // See the table at qimgv_engine_take_event in qimgv_engine.h.
         const QString subject = QString::fromUtf8(subjectBuf.constData());
+        // Read only for the one kind that writes it: for every other event
+        // oldBuf still holds a previous event's bytes, and a string built from
+        // them would be a path no rename ever named.
+        const QString oldPath = mut.kind == QIMGV_MUT_RENAMED ? QString::fromUtf8(oldBuf.constData())
+                                                              : QString();
         if (EngineBridge::traceEnabled()) {
             // The last point where a mutation can vanish without the engine
             // knowing. Everything a consumer does with it is decided on the next
             // line, so "took" followed by nothing is the shape to look for.
             qDebug() << "[bridge trace] took kind" << ev.kind << "seq" << ev.seq
-                     << "epoch" << ev.epoch << "index" << mut.index << subject;
+                     << "epoch" << ev.epoch << "index" << mut.index << subject
+                     << (oldPath.isEmpty() ? QString() : QStringLiteral("<-") + oldPath);
         }
         if (ev.kind == QIMGV_EVENT_DIR_LISTED) {
             mListedDir = subject;
             emit dirListed(subject);
         } else if (ev.kind == QIMGV_EVENT_DIR_MUTATED) {
-            emit dirMutated(mut.kind, subject, mut.is_dir != 0, mut.size, mut.mtime_ms, mut.index);
+            emit dirMutated(mut.kind, subject, mut.is_dir != 0, mut.size, mut.mtime_ms, mut.index, oldPath);
         } else if (ev.kind == QIMGV_EVENT_THUMB_NEXT) {
             emit thumbNext(subject, static_cast<int>(treq.size), treq.crop != 0);
         } else if (ev.kind == QIMGV_EVENT_OPEN_FAILED) {

@@ -136,6 +136,23 @@ void FolderViewProxy::reloadItem(int index) {
         folderView->reloadItem(index);
 }
 
+// No row state but the selection lives in the buffer, and init() replays
+// exactly that — so the move has to reach it even before the view exists.
+void FolderViewProxy::renameItem(int oldIndex, int newIndex, const QString &name) {
+    if(folderView) {
+        folderView->renameItem(oldIndex, newIndex, name);
+    } else if(oldIndex != newIndex) {
+        for(int i = 0; i < stateBuf.selection.count(); i++) {
+            if(stateBuf.selection[i] == oldIndex)
+                stateBuf.selection[i] = newIndex;
+            else if(oldIndex < newIndex && stateBuf.selection[i] > oldIndex && stateBuf.selection[i] <= newIndex)
+                stateBuf.selection[i]--;
+            else if(newIndex < oldIndex && stateBuf.selection[i] >= newIndex && stateBuf.selection[i] < oldIndex)
+                stateBuf.selection[i]++;
+        }
+    }
+}
+
 void FolderViewProxy::setDragHover(int index) {
     if(folderView)
         folderView->setDragHover(index);

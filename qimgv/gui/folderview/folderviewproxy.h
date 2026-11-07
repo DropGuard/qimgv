@@ -30,6 +30,7 @@ public slots:
     void insertItem(int index) override;
     void removeItem(int index) override;
     void reloadItem(int index) override;
+    void renameItem(int oldIndex, int newIndex, const QString &name) override;
     void setDragHover(int) override;
     void addItem();
     void onFullscreenModeChanged(bool mode);

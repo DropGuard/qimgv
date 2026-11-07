@@ -131,6 +131,16 @@ void ThumbnailWidget::unsetThumbnail() {
     isLoaded = false;
 }
 
+// Thumbnail is immutable — a worker can still hold the one this widget was
+// given — so a rename builds a second description of the same pixels rather
+// than mutating the first. The QPixmap is refcounted, so nothing is decoded.
+void ThumbnailWidget::renameThumbnail(const QString &newName) {
+    if(!thumbnail)
+        return;
+    setThumbnail(std::make_shared<Thumbnail>(newName, thumbnail->info(), thumbnail->size(),
+                                             thumbnail->pixmap()));
+}
+
 void ThumbnailWidget::setupTextLayout() {
     if(thumbStyle != THUMB_SIMPLE) {
         nameRect = QRect(padding + marginX,

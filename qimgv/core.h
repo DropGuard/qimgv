@@ -31,14 +31,6 @@ struct State {
     // armed via DirectoryManager::whenListed: which image to show on a
     // folder-boundary transition is only knowable when the listing lands
     qint64 pendingListedToken = 0;
-    // The new name the app is waiting for after it renamed the file on screen.
-    // A rename reaches the mirror as Removed + Added (the engine pairs nothing)
-    // and the Removed half bounces the view, so following the file means
-    // remembering the destination at the one place that knows it — the call
-    // that issued the rename — and opening it when the Added half arrives.
-    // Empty means no rename in flight; reset() and a folder change drop it, so
-    // it cannot outlive the directory it was armed in.
-    QString pendingRenameTarget = "";
     QString currentFilePath = "";
     QString directoryPath = "";
     std::shared_ptr<Image> currentImg;
@@ -165,6 +157,7 @@ private slots:
     void onFileRemoved(const QString & filePath, int index);
     void onFileAdded(const QString & filePath);
     void onFileModified(const QString & filePath);
+    void onFileRenamed(const QString & filePath, const QString & newPath, int oldIndex);
     void showResizeDialog();
     void resize(QSize size);
     void flipH();

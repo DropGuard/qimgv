@@ -1,5 +1,9 @@
 #include "engine_stack_fixture.h"
 
+#include <QDeadlineTimer> // the convergence deadline below is a wall-clock budget
+#include <cstdio> // std::rename: RENAME_NOREPLACE is QFile::rename, and an
+                  // overwrite is exactly what the paired event is for
+
 // the bridge event pump, DirectoryManager's async open, the deferred-listing
 // primitive and the single-writer rule
 class TestListing : public QObject, protected EngineStackFixture {
@@ -132,22 +136,89 @@ private slots:
         QVERIFY(!dm.fileEntryAt(index).isDirectory);
     }
 
-    void liveRenameSurfacesAsRemoveAndAdd() {
-        // the engine does not pair inotify rename cookies (v1): a rename
-        // surfaces as Removed(old) + Added(new) — ordered and lossless
+    void liveRenameIsOneEvent() {
+        // The watcher pairs the kernel's MOVED_FROM/MOVED_TO cookie, so a rename
+        // reaches the mirror as ONE event moving ONE row: no window in which the
+        // file is missing from the listing, and no remove+add churn that costs
+        // the view a widget — and the picture inside it — for a file whose bytes
+        // never changed.
         resetFixture();
         DirectoryManager dm{EngineBridge::instance()};
         QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
         QSignalSpy added(&dm, &DirectoryManager::fileAdded);
+        QSignalSpy renamed(&dm, &DirectoryManager::fileRenamed);
         QVERIFY(dm.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
+        const int oldIndex = dm.indexOfFile(fixtureDir + "/img2.jpg");
+        QVERIFY(oldIndex >= 0);
 
         QVERIFY(QFile::rename(fixtureDir + "/img2.jpg", fixtureDir + "/renamed.jpg"));
-        QTRY_COMPARE_WITH_TIMEOUT(removed.count(), 1, 10000);
-        QTRY_COMPARE_WITH_TIMEOUT(added.count(), 1, 10000);
-        QCOMPARE(removed.at(0).at(0).toString(), fixtureDir + "/img2.jpg");
-        QCOMPARE(added.at(0).at(0).toString(), fixtureDir + "/renamed.jpg");
+        QTRY_COMPARE_WITH_TIMEOUT(renamed.count(), 1, 10000);
+        QCOMPARE(removed.count(), 0);
+        QCOMPARE(added.count(), 0);
+        QCOMPARE(renamed.at(0).at(0).toString(), fixtureDir + "/img2.jpg");
+        QCOMPARE(renamed.at(0).at(1).toString(), fixtureDir + "/renamed.jpg");
+        QCOMPARE(renamed.at(0).at(2).toInt(), oldIndex);
+
+        // one event, and the row it moved is the engine's own row: name sort
+        // lands "renamed" after "img1" and "img10", so the entry repositioned —
+        // the rename is a move under this mode, not an in-place edit
         QCOMPARE(dm.fileCount(), 3UL);
+        const int newIndex = dm.indexOfFile(fixtureDir + "/renamed.jpg");
+        QVERIFY(newIndex != oldIndex);
+        QVERIFY(!dm.containsFile(fixtureDir + "/img2.jpg"));
+        // the entry rode along whole: size is the stat the engine already had,
+        // not a re-derive and not a zeroed placeholder
+        QCOMPARE(dm.fileEntryAt(newIndex).name, QStringLiteral("renamed.jpg"));
+        QCOMPARE(dm.fileEntryAt(newIndex).size, 1UL);
+        assertMirrorMatchesEngineExport(dm);
+    }
+
+    void overwriteRenameReplacesTheListedRow() {
+        // rename(2) onto a path that is already listed. The kernel sends
+        // MOVED_FROM + MOVED_TO all the same, and until the pair was answered
+        // this was invisible for good: MOVED_TO on a listed path was
+        // Ignored(AlreadyListed), so the destination row kept the size, mtime
+        // and picture of the file that used to live there.
+        resetFixture();
+        {
+            QFile f(fixtureDir + "/over.jpg");
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            QCOMPARE(f.write(QByteArray(7, 'x')), 7);
+        }
+        DirectoryManager dm{EngineBridge::instance()};
+        QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
+        QSignalSpy added(&dm, &DirectoryManager::fileAdded);
+        QSignalSpy renamed(&dm, &DirectoryManager::fileRenamed);
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 4UL, 10000);
+        const int source = dm.indexOfFile(fixtureDir + "/over.jpg");
+        const int dest = dm.indexOfFile(fixtureDir + "/img1.jpg");
+        QVERIFY(source >= 0 && dest >= 0);
+
+        // QFile::rename would not do: it maps to RENAME_NOREPLACE and cannot
+        // overwrite, so it cannot even produce the event this test is about.
+        const QByteArray from = (fixtureDir + "/over.jpg").toLocal8Bit();
+        const QByteArray to = (fixtureDir + "/img1.jpg").toLocal8Bit();
+        QCOMPARE(std::rename(from.constData(), to.constData()), 0);
+
+        QTRY_COMPARE_WITH_TIMEOUT(renamed.count(), 1, 10000);
+        QCOMPARE(added.count(), 0);
+        QCOMPARE(renamed.at(0).at(0).toString(), fixtureDir + "/over.jpg");
+        QCOMPARE(renamed.at(0).at(1).toString(), fixtureDir + "/img1.jpg");
+        // the row the overwrite took away is announced before the move, because
+        // every index after it shifts — including the one just passed to this
+        // signal, which is the position the view is holding when it fires
+        QCOMPARE(removed.count(), 1);
+        QCOMPARE(removed.at(0).at(0).toString(), fixtureDir + "/img1.jpg");
+        QCOMPARE(renamed.at(0).at(2).toInt(), (source > dest) ? source - 1 : source);
+        // four rows became three: an overwrite consumes the destination entry,
+        // which is the whole difference between this and a plain rename
+        QCOMPARE(dm.fileCount(), 3UL);
+        QVERIFY(!dm.containsFile(fixtureDir + "/over.jpg"));
+        // and the surviving row now describes the file that is actually there
+        QCOMPARE(dm.fileEntryAt(dm.indexOfFile(fixtureDir + "/img1.jpg")).size, 7UL);
+        assertMirrorMatchesEngineExport(dm);
     }
 
     // "Decide when the listing lands" used to be a hand-rolled flag in Core
@@ -234,33 +305,73 @@ private slots:
         QCOMPARE(model.fileCount(), 2UL + 1UL);
     }
 
-    // the contract check itself: the mirror vectors are the engine's own
-    // export, order included — same entries, same positions
-    void assertMirrorMatchesEngineExport(DirectoryManager &dm) {
+    // the contract check itself: the mirror vectors against the engine's export,
+    // order included — same entries, same positions. Tells whether they agree
+    // and, when they do not, names the disagreement: a count that differs says
+    // "the mirror is wrong", which is not actionable, while the two lists say
+    // which entry the mirror never heard about.
+    static bool mirrorMatchesEngineExport(DirectoryManager &dm, QString &diff) {
         QByteArray arena;
         quint32 fileCount = 0, dirCount = 0;
-        QVERIFY(EngineBridge::instance().exportListing(arena, fileCount, dirCount));
-        std::vector<EngineBridge::EngineEntry> files, dirs;
-        QVERIFY(EngineBridge::parseListing(arena, files, dirs));
-        // name the difference before aborting on it: a count that disagrees says
-        // "the mirror is wrong", which is not actionable, while the two lists say
-        // which entry the mirror never heard about
-        if(files.size() != dm.fileCount()) {
-            QStringList engineNames, mirrorNames;
-            for(const auto &f : files)
-                engineNames << f.name;
-            for(unsigned long i = 0; i < dm.fileCount(); ++i)
-                mirrorNames << dm.fileNameAt(int(i));
-            QVERIFY2(false, qPrintable(QStringLiteral("engine: %1 files [%2] / mirror: %3 [%4]")
-                                           .arg(files.size()).arg(engineNames.join(QLatin1Char(' ')))
-                                           .arg(dm.fileCount()).arg(mirrorNames.join(QLatin1Char(' ')))));
+        if(!EngineBridge::instance().exportListing(arena, fileCount, dirCount)) {
+            diff = QStringLiteral("exportListing failed");
+            return false;
         }
-        QCOMPARE(files.size(), dm.fileCount());
-        QCOMPARE(dirs.size(), dm.dirCount());
-        for(quint32 i = 0; i < fileCount; ++i)
-            QCOMPARE(dm.filePathAt(static_cast<int>(i)), files[i].path);
-        for(quint32 i = 0; i < dirCount; ++i)
-            QCOMPARE(dm.dirPathAt(static_cast<int>(i)), dirs[i].path);
+        std::vector<EngineBridge::EngineEntry> files, dirs;
+        if(!EngineBridge::parseListing(arena, files, dirs)) {
+            diff = QStringLiteral("parseListing rejected a %1-byte arena").arg(arena.size());
+            return false;
+        }
+        auto joinNames = [](const std::vector<EngineBridge::EngineEntry> &entries) {
+            QStringList out;
+            for(const auto &e : entries)
+                out << e.name;
+            return out.join(QLatin1Char(' '));
+        };
+        auto joinMirrorFileNames = [&dm]() {
+            QStringList out;
+            for(unsigned long i = 0; i < dm.fileCount(); ++i)
+                out << dm.fileNameAt(int(i));
+            return out.join(QLatin1Char(' '));
+        };
+        auto fail = [&](const QString &what) {
+            diff = QStringLiteral("%1 — engine: %2 files [%3] / mirror: %4 files [%5]")
+                       .arg(what).arg(int(files.size()))
+                       .arg(joinNames(files)).arg(int(dm.fileCount())).arg(joinMirrorFileNames());
+            return false;
+        };
+        if(files.size() != dm.fileCount())
+            return fail(QStringLiteral("file count"));
+        if(dirs.size() != dm.dirCount())
+            return fail(QStringLiteral("dir count"));
+        for(size_t i = 0; i < files.size(); ++i) {
+            if(dm.filePathAt(static_cast<int>(i)) != files[i].path)
+                return fail(QStringLiteral("file row %1").arg(int(i)));
+        }
+        for(size_t i = 0; i < dirs.size(); ++i) {
+            if(dm.dirPathAt(static_cast<int>(i)) != dirs[i].path)
+                return fail(QStringLiteral("dir row %1").arg(int(i)));
+        }
+        return true;
+    }
+
+    // Convergence is the moment the contract speaks about. The pump that moves an
+    // event from the engine's queue into these vectors runs on the Qt event loop,
+    // and isSettled() says nothing about that queue — it reports the mirrored
+    // directory, the applied sort and the absence of a resync — so a pull taken
+    // the instant it turns true can compare the engine's now against the mirror's
+    // then. Waiting for agreement is the only way to name the point where the
+    // contract holds; a mirror that never agrees still fails, after the deadline,
+    // with both listings in the message.
+    void assertMirrorMatchesEngineExport(DirectoryManager &dm) {
+        QString diff;
+        bool agrees = mirrorMatchesEngineExport(dm, diff);
+        QDeadlineTimer deadline(10000);
+        while(!agrees && !deadline.hasExpired()) {
+            QTest::qWait(20);
+            agrees = mirrorMatchesEngineExport(dm, diff);
+        }
+        QVERIFY2(agrees, qPrintable(diff));
     }
 
     // THE mirror contract: the engine decides content and order; the mirror is
@@ -287,13 +398,18 @@ private slots:
             QVERIFY(f.write("appended") == 8);
         }
         QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 5UL, 10000); // 3 - 1 + 3 new
-        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000); // stragglers drained before the pull
+        // A count of 5 is reachable mid-flight (three adds and one removal), so
+        // this line only narrows the wait; isSettled() then rules out the things
+        // it can actually see — mirrored directory, applied sort, no resync — and
+        // the pull below is what waits for the event queue to be empty, because
+        // nothing before it can.
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
         assertMirrorMatchesEngineExport(dm);
 
         // under SIZE sort a metadata change re-seats the entry on the engine
         // side; the mirror must follow the wire index, not its own comparator
         dm.setSortingMode(SORT_SIZE);
-        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000); // the resort's mirror settles
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000); // the resort itself is applied
         assertMirrorMatchesEngineExport(dm);
 
         {
@@ -323,7 +439,7 @@ private slots:
 
         QSignalSpy added(&dm, &DirectoryManager::fileAdded);
         emit bridge.dirMutated(QIMGV_MUT_ADDED, QStringLiteral("/some/other/place/x.jpg"),
-                               false, 1, 0, 0);
+                               false, 1, 0, 0, QString());
         QCOMPARE(added.count(), 0);
         QCOMPARE(dm.fileCount(), before);
         QVERIFY(!dm.containsFile(QStringLiteral("/some/other/place/x.jpg")));
@@ -334,13 +450,44 @@ private slots:
         // an index computed against the other folder's order.
         const QString twin = QFileInfo(dm.filePathAt(0)).fileName();
         emit bridge.dirMutated(QIMGV_MUT_ADDED, QStringLiteral("/some/other/place/") + twin,
-                               false, 1, 0, 1);
+                               false, 1, 0, 1, QString());
         QCOMPARE(added.count(), 0);
         QCOMPARE(dm.fileCount(), before);
 
         // the guard must not swallow the real case
         makeFile("legit.jpg");
         QTRY_VERIFY_WITH_TIMEOUT(dm.containsFile(fixtureDir + "/legit.jpg"), 10000);
+    }
+
+    void renameFromOutsideTheMirroredDirectoryIsDropped() {
+        // A rename has two subjects, and the destination guard above can only
+        // see one of them: the source names the ROW to move, so a foreign
+        // source would erase a local entry that has nothing to do with it and
+        // then splice a row from another folder at an index computed against
+        // that other folder's order.
+        resetFixture();
+        DirectoryManager dm{EngineBridge::instance()};
+        auto &bridge = EngineBridge::instance();
+        QVERIFY(dm.setDirectory(fixtureDir));
+        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000);
+        const unsigned long before = dm.fileCount();
+        QVERIFY(before > 0);
+        QSignalSpy renamed(&dm, &DirectoryManager::fileRenamed);
+        QSignalSpy removed(&dm, &DirectoryManager::fileRemoved);
+
+        // legal destination, foreign source — the shape the guard exists for
+        emit bridge.dirMutated(QIMGV_MUT_RENAMED, fixtureDir + "/img1.jpg", false, 1, 0, 0,
+                               QStringLiteral("/some/other/place/x.jpg"));
+        QCOMPARE(renamed.count(), 0);
+        QCOMPARE(removed.count(), 0);
+        QCOMPARE(dm.fileCount(), before);
+        QVERIFY(dm.containsFile(fixtureDir + "/img1.jpg"));
+        // the row it would have moved is still the engine's own row
+        assertMirrorMatchesEngineExport(dm);
+
+        // and a real rename of the same destination still lands
+        QVERIFY(QFile::rename(fixtureDir + "/img2.jpg", fixtureDir + "/moved.jpg"));
+        QTRY_COMPARE_WITH_TIMEOUT(renamed.count(), 1, 10000);
     }
 };
 

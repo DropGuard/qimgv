@@ -81,8 +81,10 @@ signals:
     void fileRemoved(const QString &filePath, int index);
     void fileAdded(const QString &filePath);
     void fileModified(const QString &filePath);
+    void fileRenamed(const QString &filePath, const QString &newPath, int oldIndex);
     void dirRemoved(const QString &dirPath, int index);
     void dirAdded(const QString &dirPath);
+    void dirRenamed(const QString &dirPath, const QString &newPath, int oldIndex);
     void loaded(const QString &filePath);
     void loadFailed(const QString &path);
     void sortingChanged(SortingMode);
@@ -101,4 +103,5 @@ private slots:
     void onFileAdded(const QString &filePath);
     void onFileRemoved(const QString &filePath, int index);
     void onFileModified(const QString &filePath);
+    void onFileRenamed(const QString &filePath, const QString &newPath, int oldIndex);
 };

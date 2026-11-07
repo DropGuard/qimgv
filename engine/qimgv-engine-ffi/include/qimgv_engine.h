@@ -49,6 +49,9 @@ typedef struct qimgv_engine qimgv_engine;
 #define QIMGV_MUT_ADDED    1
 #define QIMGV_MUT_MODIFIED 2
 #define QIMGV_MUT_REMOVED  3
+/* One entry, a new path: subject_buf is where it is now and old_buf is the
+ * path it had. The only kind with a second subject. */
+#define QIMGV_MUT_RENAMED  4
 
 /* image formats (qimgv_probe_result.format) */
 #define QIMGV_FMT_UNKNOWN 0
@@ -213,7 +216,11 @@ int qimgv_engine_prev_file(qimgv_engine *engine, uint64_t handle, uint64_t *out)
 int qimgv_engine_next_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
 int qimgv_engine_prev_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
 
-/* Returns 1 if an event was written, 0 if none pending, negative on error.
+/* Returns 1 if an event was written, 0 if none pending, otherwise a POSITIVE
+ * QIMGV_ERR_* code — so a caller must compare against 1, not against 0: any
+ * other value than those two wrote NOTHING, and out/mutation/subject_buf still
+ * hold the previous event. Reading a refusal as "an event arrived" re-applies
+ * that stale event.
  *
  * subject_buf receives ONE STRING whose subject depends on out->kind — read
  * this table before using it, because the value alone does not say which it is:
@@ -227,6 +234,17 @@ int qimgv_engine_prev_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
  * mutation is filled for DIR_MUTATED and may be NULL otherwise. thumb is filled
  * for THUMB_NEXT.
  *
+ * old_buf is written for exactly ONE mutation kind and left untouched for every
+ * other event, so it must be read only after checking mutation->kind:
+ *
+ *   QIMGV_MUT_RENAMED    the FULL PATH the entry had, before it moved to the
+ *                        path in subject_buf
+ *
+ * A rename is refused — QIMGV_ERR_INVALID, event still queued — when old_buf is
+ * NULL or too small: without the path it came from, a consumer can only guess at
+ * the row to move, and guessing wrong leaves a row behind for a file that still
+ * exists under that name.
+ *
  * Two more fields are only meaningful in context:
  *   out->epoch == 0    the event belongs to no open session (THUMB_NEXT), so a
  *                      receiver must not filter it against the current one.
@@ -236,6 +254,7 @@ int qimgv_engine_prev_dir(qimgv_engine *engine, uint64_t handle, uint64_t *out);
  */
 int qimgv_engine_take_event(qimgv_engine *engine, qimgv_event *out,
                             char *subject_buf, size_t subject_cap,
+                            char *old_buf, size_t old_cap,
                             qimgv_mutation *mutation,
                             qimgv_thumb_req *thumb);
 

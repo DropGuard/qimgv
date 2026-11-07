@@ -66,9 +66,11 @@ public:
     void onFileRemoved(const QString &filePath, int index);
     void onFileAdded(const QString &filePath);
     void onFileModified(const QString &filePath);
+    void onFileRenamed(const QString &filePath, const QString &newPath, int oldIndex);
 
     void onDirRemoved(const QString &dirPath, int index);
     void onDirAdded(const QString &dirPath);
+    void onDirRenamed(const QString &dirPath, const QString &newPath, int oldIndex);
 
     bool showDirs();
     void setShowDirs(bool mode);

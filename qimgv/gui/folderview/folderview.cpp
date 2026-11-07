@@ -352,6 +352,10 @@ void FolderView::reloadItem(int index) {
     ui->thumbnailGrid->reloadItem(index);
 }
 
+void FolderView::renameItem(int oldIndex, int newIndex, const QString &name) {
+    ui->thumbnailGrid->renameItem(oldIndex, newIndex, name);
+}
+
 void FolderView::setDragHover(int index) {
     ui->thumbnailGrid->setDragHover(index);
 }

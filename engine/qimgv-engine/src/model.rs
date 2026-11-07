@@ -198,6 +198,11 @@ impl DirectoryState {
         Some((key, pos))
     }
 
+    /// Is this path one of the listing's entries?
+    pub fn contains_path(&self, path: &str) -> bool {
+        self.entries.values().any(|e| e.path == path)
+    }
+
     /// Removes by full path from whichever order it lives in. Returns the
     /// handle and the position the entry held before removal.
     pub fn remove_entry_by_path(&mut self, path: &str) -> Option<(EntryKey, u32)> {
@@ -244,24 +249,70 @@ impl DirectoryState {
             .iter()
             .find(|(_, e)| e.path == path)
             .map(|(k, _)| k)?;
-        let is_dir = self.entries.get(key).unwrap().is_dir;
         {
             let e = self.entries.get_mut(key).unwrap();
             e.size = size;
             e.mtime = mtime;
         }
-        let (order, pos) = if is_dir {
-            (&mut self.dir_order, &mut self.dir_pos)
-        } else {
-            (&mut self.file_order, &mut self.file_pos)
-        };
-        let old = pos.get(&key).copied()?;
+        // a name sort keys on the name, which a metadata change never moves
         if matches!(self.sort, SortMode::Name | SortMode::NameDesc) {
-            return Some(old);
+            let (order, _) = self.order_of(key);
+            return order.iter().position(|&k| k == key).map(|i| i as u32);
         }
-        let mode = self.sort;
-        let entries = &self.entries;
+        self.reseat(key)
+    }
+
+    /// Gives a listed entry a new path and name without replacing it, and
+    /// returns the position it lands in. The handle survives — that is the
+    /// whole point: to the engine (and to everything downstream that keys on
+    /// the path) this is one entry that moved, not an entry that died and a
+    /// second one that was born next door. Unlike a metadata update, a rename
+    /// re-seats under EVERY mode, because `Name` sorts by the name that just
+    /// changed.
+    ///
+    /// The destination must not already be listed: an overwrite takes the old
+    /// destination row out first (`remove_entry_by_path`), so the identity that
+    /// survives is the moved-in file's, and one event can describe the result.
+    pub fn rename_entry(&mut self, from: &str, to: &str, name: &str, size: u64, mtime: SystemTime) -> Option<u32> {
+        let key = self
+            .entries
+            .iter()
+            .find(|(_, e)| e.path == from)
+            .map(|(k, _)| k)?;
+        if self.entries.values().any(|e| e.path == to) {
+            return None;
+        }
+        {
+            let e = self.entries.get_mut(key).unwrap();
+            e.path = to.to_owned();
+            e.name = name.to_owned();
+            e.size = size;
+            e.mtime = mtime;
+        }
+        self.reseat(key)
+    }
+
+    /// Which order an entry lives in, and the position map that goes with it.
+    fn order_of(&self, key: EntryKey) -> (&Vec<EntryKey>, &HashMap<EntryKey, u32>) {
+        match self.entries.get(key) {
+            Some(e) if e.is_dir => (&self.dir_order, &self.dir_pos),
+            _ => (&self.file_order, &self.file_pos),
+        }
+    }
+
+    /// Re-seats one entry in its own order and rebuilds that order's position
+    /// map, so a splice in the vectors and `next_file`/`prev_file` both follow
+    /// the comparator instead of the history of how the entry got there.
+    fn reseat(&mut self, key: EntryKey) -> Option<u32> {
+        let is_dir = self.entries.get(key)?.is_dir;
+        let (order, pos, entries) = if is_dir {
+            (&mut self.dir_order, &mut self.dir_pos, &self.entries)
+        } else {
+            (&mut self.file_order, &mut self.file_pos, &self.entries)
+        };
+        let old = *pos.get(&key)?;
         order.remove(old as usize);
+        let mode = self.sort;
         let idx = order
             .binary_search_by(|&k| mode.compare(&entries[k], &entries[key]))
             .unwrap_or_else(|i| i);

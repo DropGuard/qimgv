@@ -87,7 +87,8 @@ public:
 signals:
     void dirListed(const QString &dirPath);
     void openFailed(const QString &dirPath, int statusCode);
-    void dirMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
+    void dirMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index,
+                    const QString &oldPath);
     void thumbNext(const QString &path, int size, bool crop);
 
 private:

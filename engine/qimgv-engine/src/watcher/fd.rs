@@ -137,6 +137,49 @@ fn enumerate_and_report(
     });
 }
 
+/// Sends one raw event, naming the directory whose watch produced it. False
+/// means the consumer is gone and the watcher thread has nothing left to do.
+fn send(
+    ev_tx: &Sender<super::RawWatchEvent>,
+    wd: i32,
+    dir: &Path,
+    name: Option<String>,
+    is_dir: bool,
+    kind: super::RawWatchKind,
+) -> bool {
+    let raw = super::RawWatchEvent { wd, dir: dir.to_path_buf(), name, is_dir, kind };
+    crate::trace::line("read", || format!("{raw:?}"));
+    ev_tx.send(raw).is_ok()
+}
+
+/// A MOVED_FROM that has been seen and not yet reported. The kernel emits the
+/// two halves of one move back to back under the parent inode lock, so the pair
+/// is the very next record — which is what makes holding it safe: a rename out
+/// of the watched directory has no MOVED_TO here at all, and waiting for one
+/// would delay a removal indefinitely. Anything that is not that next record,
+/// including the end of the batch, retires the hold as the plain removal it
+/// always would have been.
+struct HeldMove {
+    cookie: u32,
+    /// The watch's directory *at the time of the record*: a retarget can happen
+    /// between the two acts, and a removal must name where it was seen, not
+    /// where the thread is watching now.
+    dir: PathBuf,
+    wd: i32,
+    name: String,
+    is_dir: bool,
+}
+
+/// Reports a held MOVED_FROM as itself, because its pair never showed up beside
+/// it. True when the event went out or there was nothing held.
+fn flush(ev_tx: &Sender<super::RawWatchEvent>, held: &mut Option<HeldMove>) -> bool {
+    let Some(HeldMove { cookie, dir, wd, name, is_dir }) = held.take() else {
+        return true;
+    };
+    crate::trace::line("move", || format!("UNPAIRED cookie={cookie} {name} (no MOVED_TO beside it)"));
+    send(ev_tx, wd, &dir, Some(name), is_dir, super::RawWatchKind::MovedFrom)
+}
+
 fn watcher_loop(
     cmd_rx: &Receiver<WatchCmd>,
     ev_tx: &Sender<super::RawWatchEvent>,
@@ -156,6 +199,14 @@ fn watcher_loop(
     // the directory `watch` was added for; every event this thread emits names it
     let mut watch_dir: PathBuf = PathBuf::new();
     let mut buffer = vec![0u8; 64 * 1024];
+    // MOVED_FROM and MOVED_TO share an inotify cookie, and that pairing is the
+    // only thing that can report a rename as one event instead of Removed+Added.
+    // The cookie is visible only here — `apply_event` cannot see it, because a
+    // record's subject is one path and a rename has two — so this thread decides
+    // *whether* the pair is a rename and leaves *what it means* to the listing:
+    // a rename to a non-member name, or from outside the watch, is answered by
+    // apply_event exactly as an unpaired half is.
+    let mut held: Option<HeldMove> = None;
 
     while running.load(Ordering::Relaxed) {
         let mut fds = [
@@ -184,12 +235,12 @@ fn watcher_loop(
                 Ok(events) => {
                     let live_wd = watch.as_ref().map(|w| w.get_watch_descriptor_id());
                     for ev in events {
-                        let Some(kind) = super::classify(ev.mask.bits()) else {
+                        let Some(mut kind) = super::classify(ev.mask.bits()) else {
                             crate::trace::line("drop", || format!("mask={:#x} bookkeeping", ev.mask.bits()));
                             continue;
                         };
                         let wd = ev.wd.get_watch_descriptor_id();
-                        if !super::event_is_live(wd, kind, live_wd) {
+                        if !super::event_is_live(wd, &kind, live_wd) {
                             // a record from a watch that is no longer installed
                             crate::trace::line("drop", || format!("kind={kind:?} wd={wd} live={live_wd:?}"));
                             continue;
@@ -199,24 +250,47 @@ fn watcher_loop(
                             crate::trace::line("drop", || format!("kind={kind:?} no directory to attribute"));
                             continue;
                         }
-                        let name = ev.name.map(|c| c.to_string_lossy().into_owned());
+                        let mut name = ev.name.map(|c| c.to_string_lossy().into_owned());
                         if name.is_none()
                             && !matches!(kind, super::RawWatchKind::Overflow | super::RawWatchKind::WatchGone)
                         {
                             crate::trace::line("drop", || format!("kind={kind:?} no name"));
                             continue;
                         }
-                        let raw = super::RawWatchEvent {
-                            wd,
-                            dir: watch_dir.clone(),
-                            name,
-                            is_dir: super::is_dir_mask(ev.mask.bits()),
-                            kind,
-                        };
-                        crate::trace::line("read", || format!("{raw:?}"));
-                        if ev_tx.send(raw).is_err() {
+                        // Only a validated record can break the adjacency: a
+                        // bookkeeping or dead-watch record is not part of this
+                        // watch's stream, and holding past it costs nothing.
+                        let is_dir = super::is_dir_mask(ev.mask.bits());
+                        if matches!(kind, super::RawWatchKind::MovedTo)
+                            && held.as_ref().is_some_and(|h| h.cookie == ev.cookie)
+                        {
+                            let h = held.take().expect("pairing just checked the hold");
+                            crate::trace::line("move", || {
+                                format!("PAIRED cookie={} {} -> {}", h.cookie, h.name, name.as_deref().unwrap_or("?"))
+                            });
+                            kind = super::RawWatchKind::Renamed { from: h.name };
+                        } else if !flush(ev_tx, &mut held) {
                             return;
                         }
+                        if matches!(kind, super::RawWatchKind::MovedFrom) {
+                            held = Some(HeldMove {
+                                cookie: ev.cookie,
+                                dir: watch_dir.clone(),
+                                wd,
+                                name: name.take().unwrap_or_default(),
+                                is_dir,
+                            });
+                            continue;
+                        }
+                        if !send(ev_tx, wd, &watch_dir, name, is_dir, kind) {
+                            return;
+                        }
+                    }
+                    // The batch ended without the other half. A 64 KiB read can
+                    // in principle split a pair across its boundary, and then the
+                    // move is reported the way it always was: as a removal.
+                    if !flush(ev_tx, &mut held) {
+                        return;
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}

@@ -14,8 +14,10 @@ void DirectoryPresenter::unsetModel() {
     disconnect(model.get(), &DirectoryModel::fileRemoved,  this, &DirectoryPresenter::onFileRemoved);
     disconnect(model.get(), &DirectoryModel::fileAdded,    this, &DirectoryPresenter::onFileAdded);
     disconnect(model.get(), &DirectoryModel::fileModified, this, &DirectoryPresenter::onFileModified);
+    disconnect(model.get(), &DirectoryModel::fileRenamed,  this, &DirectoryPresenter::onFileRenamed);
     disconnect(model.get(), &DirectoryModel::dirRemoved,   this, &DirectoryPresenter::onDirRemoved);
     disconnect(model.get(), &DirectoryModel::dirAdded,     this, &DirectoryPresenter::onDirAdded);
+    disconnect(model.get(), &DirectoryModel::dirRenamed,   this, &DirectoryPresenter::onDirRenamed);
     model = nullptr;
     // also empty view?
 }
@@ -32,8 +34,10 @@ void DirectoryPresenter::setModel(std::shared_ptr<DirectoryModel> newModel) {
     connect(model.get(), &DirectoryModel::fileRemoved,  this, &DirectoryPresenter::onFileRemoved);
     connect(model.get(), &DirectoryModel::fileAdded,    this, &DirectoryPresenter::onFileAdded);
     connect(model.get(), &DirectoryModel::fileModified, this, &DirectoryPresenter::onFileModified);
+    connect(model.get(), &DirectoryModel::fileRenamed,  this, &DirectoryPresenter::onFileRenamed);
     connect(model.get(), &DirectoryModel::dirRemoved,   this, &DirectoryPresenter::onDirRemoved);
     connect(model.get(), &DirectoryModel::dirAdded,     this, &DirectoryPresenter::onDirAdded);
+    connect(model.get(), &DirectoryModel::dirRenamed,   this, &DirectoryPresenter::onDirRenamed);
 }
 
 void DirectoryPresenter::reloadModel() {
@@ -81,6 +85,23 @@ void DirectoryPresenter::onFileModified(const QString &filePath) {
     view->reloadItem(mShowDirs ? model->dirCount() + index : index);
 }
 
+// The row a rename moves is identified by the index the *event* carries, not by
+// a lookup: the mirror has already spliced, so the old path is gone from the
+// model by the time this runs. The destination index, on the other hand, is the
+// model's own answer — under name sort a rename repositions, and only the
+// listing knows where the entry ended up.
+void DirectoryPresenter::onFileRenamed(const QString &filePath, const QString &newPath, int oldIndex) {
+    Q_UNUSED(filePath)
+    if(!view)
+        return;
+    int index = model->indexOfFile(newPath);
+    if(index < 0)
+        return;
+    view->renameItem(mShowDirs ? model->dirCount() + oldIndex : oldIndex,
+                     mShowDirs ? model->dirCount() + index : index,
+                     model->fileNameAt(index));
+}
+
 void DirectoryPresenter::onDirRemoved(const QString &dirPath, int index) {
     Q_UNUSED(dirPath)
     if(!view || !mShowDirs)
@@ -93,6 +114,19 @@ void DirectoryPresenter::onDirAdded(const QString &dirPath) {
         return;
     int index = model->indexOfDir(dirPath);
     view->insertItem(index);
+}
+
+// Dirs hold the leading rows, so no offset on either side; the same rule as
+// onFileRenamed applies to the indices — the old row comes from the event, the
+// new one from the listing.
+void DirectoryPresenter::onDirRenamed(const QString &dirPath, const QString &newPath, int oldIndex) {
+    Q_UNUSED(dirPath)
+    if(!view || !mShowDirs)
+        return;
+    int index = model->indexOfDir(newPath);
+    if(index < 0)
+        return;
+    view->renameItem(oldIndex, index, model->dirNameAt(index));
 }
 
 bool DirectoryPresenter::showDirs() {

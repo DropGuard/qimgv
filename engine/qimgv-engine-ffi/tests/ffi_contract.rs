@@ -36,12 +36,17 @@ fn take_event(engine: *mut QimgvEngine, timeout: Duration) -> Option<(c_int, c_i
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 512];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
-        let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()) };
-        if r > 0 {
+        let r = unsafe { qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), std::ptr::null_mut(), 0, &mut m, std::ptr::null_mut()) };
+        // 1 is the only value that wrote anything into `ev`: the error codes are
+        // positive enum values, so treating any r > 0 as an event would hand
+        // back the PREVIOUS event's subject and call it this one.
+        if r == 1 {
             let dir = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned();
             return Some((ev.kind, ev.code, dir));
         }
-        if r < 0 || Instant::now() >= deadline {
+        assert_eq!(r, 0, "take_event refused with code {r}: {}", unsafe {
+            CStr::from_ptr(qimgv_last_error()).to_string_lossy() });
+        if Instant::now() >= deadline {
             return None;
         }
         std::thread::sleep(Duration::from_millis(5));
@@ -83,7 +88,7 @@ fn fresh_engine_state_and_free() {
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 64];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
-        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
+        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), std::ptr::null_mut(), 0, &mut m, std::ptr::null_mut()), 0);
         qimgv_engine_free(engine);
     }
 }
@@ -189,7 +194,7 @@ fn open_dir_event_queries_and_truncation() {
         let mut ev = QimgvEvent { kind: QIMGV_EVENT_NONE, code: QIMGV_OK, epoch: 0, seq: 0 };
         let mut buf = [0 as c_char; 64];
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
-        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, std::ptr::null_mut()), 0);
+        assert_eq!(qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), std::ptr::null_mut(), 0, &mut m, std::ptr::null_mut()), 0);
 
         qimgv_engine_free(engine);
     }
@@ -297,7 +302,7 @@ fn take_thumb(engine: *mut QimgvEngine, timeout: Duration) -> Option<(String, u3
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let mut t = QimgvThumbReq { size: 0, crop: 0 };
         let r = unsafe {
-            qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, &mut t)
+            qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), std::ptr::null_mut(), 0, &mut m, &mut t)
         };
         if r > 0 {
             assert_eq!(ev.kind, QIMGV_EVENT_THUMB_NEXT, "expected a thumbnail dispatch");
@@ -454,7 +459,7 @@ fn thumb_round_trip_works_while_a_directory_open_is_in_flight() {
         let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
         let mut t = QimgvThumbReq { size: 0, crop: 0 };
         let r = unsafe {
-            qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), &mut m, &mut t)
+            qimgv_engine_take_event(engine, &mut ev, buf.as_mut_ptr(), buf.len(), std::ptr::null_mut(), 0, &mut m, &mut t)
         };
         if r > 0 {
             let text = unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned();
@@ -628,7 +633,7 @@ fn a_truncated_take_event_still_owes_the_same_event() {
     let mut tiny = [0 as c_char; 8];
     let mut m = QimgvMutation { kind: 0, is_dir: 0, size: 0, mtime_ms: 0, index: 0 };
     let r = unsafe {
-        qimgv_engine_take_event(engine, &mut ev, tiny.as_mut_ptr(), tiny.len(), &mut m, std::ptr::null_mut())
+        qimgv_engine_take_event(engine, &mut ev, tiny.as_mut_ptr(), tiny.len(), std::ptr::null_mut(), 0, &mut m, std::ptr::null_mut())
     };
     assert_eq!(r, QIMGV_ERR_TRUNCATED, "a short buffer must report truncation, got {r}");
 
@@ -638,7 +643,7 @@ fn a_truncated_take_event_still_owes_the_same_event() {
     let deadline = Instant::now() + Duration::from_secs(5);
     let kind = loop {
         let rr = unsafe {
-            qimgv_engine_take_event(engine, &mut ev2, big.as_mut_ptr(), big.len(), &mut m, std::ptr::null_mut())
+            qimgv_engine_take_event(engine, &mut ev2, big.as_mut_ptr(), big.len(), std::ptr::null_mut(), 0, &mut m, std::ptr::null_mut())
         };
         assert!(rr != QIMGV_ERR_TRUNCATED, "the retry with a large buffer still truncated");
         if rr > 0 {

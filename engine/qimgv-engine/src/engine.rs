@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock, RwLockWriteGuard};
@@ -62,11 +62,17 @@ pub struct ThumbReq {
     pub crop: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WatchChangeKind {
     Added,
     Modified,
     Removed,
+    /// One entry, a new path: `path`/`name`/`size`/`mtime_ms`/`index` describe
+    /// what it is now and `from` is what it was. A consumer that knows only
+    /// `path` would treat this as an add and leave the old row behind, which is
+    /// why the old path rides in the kind rather than in a caller's memory of
+    /// the previous event.
+    Renamed { from: String },
 }
 
 #[derive(Debug)]
@@ -186,6 +192,27 @@ impl ThumbScheduler {
 
     fn done(&mut self, req: &ThumbReq) {
         self.in_flight.remove(req);
+    }
+
+    /// A rename rekeys the requests that have not been dispatched yet: left
+    /// holding the old path, the scheduler would decode a file that no longer
+    /// exists and never decode the one the listing now names. `in_flight` is
+    /// deliberately not touched — the C++ side answers with the request it was
+    /// handed, so an entry renamed there could never be removed by `done` and
+    /// the window would fill with ghosts that block every later pump.
+    fn rename(&mut self, from: &std::path::Path, to: &std::path::Path) {
+        let mut next: std::collections::VecDeque<ThumbReq> = Default::default();
+        for mut req in std::mem::take(&mut self.pending) {
+            if req.path == from {
+                req.path = to.to_path_buf();
+            }
+            // two requests that differed only by the renamed path are one
+            // request now, and the queue holds each identity once
+            if !next.contains(&req) {
+                next.push_back(req);
+            }
+        }
+        self.pending = next;
     }
 
     fn pump(&mut self, ev_tx: &Sender<Event>, notify: &Notify) {
@@ -443,6 +470,21 @@ impl Engine {
                                             watcher::Applied::Added => WatchChangeKind::Added,
                                             watcher::Applied::Modified => WatchChangeKind::Modified,
                                             watcher::Applied::Removed => WatchChangeKind::Removed,
+                                            watcher::Applied::Renamed { from } => {
+                                                // Everything the engine keys by path has to
+                                                // follow the entry, before the event goes out:
+                                                // a queued decode or an include-path override
+                                                // still naming the old path is a claim about a
+                                                // file that no longer exists.
+                                                thumbs.rename(Path::new(&from), Path::new(&path));
+                                                {
+                                                    let mut ov = overrides.lock().unwrap_or_else(|e| e.into_inner());
+                                                    if ov.remove(Path::new(&from)) {
+                                                        ov.insert(Path::new(&path).to_path_buf());
+                                                    }
+                                                }
+                                                WatchChangeKind::Renamed { from }
+                                            }
                                         };
                                         next_mutation += 1;
                                         crate::trace::line("emit", || format!(

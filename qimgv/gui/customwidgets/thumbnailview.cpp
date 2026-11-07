@@ -338,6 +338,39 @@ void ThumbnailView::reloadItem(int index) {
     emit thumbnailsRequested(QList<int>() << index, static_cast<int>(qApp->devicePixelRatio() * mThumbnailSize), mCropThumbnails, true);
 }
 
+// One row moving: the widget keeps its identity, and so does the picture it
+// holds. removeItem+insertItem would have destroyed both, asked for a decode
+// the disk cache cannot answer for a renamed path, and renumbered every
+// selection index around the hole — for a file whose bytes never changed.
+void ThumbnailView::renameItem(int oldIndex, int newIndex, const QString &name) {
+    if(!checkRange(oldIndex) || !checkRange(newIndex))
+        return;
+    ThumbnailWidget *widget = thumbnails.at(oldIndex);
+    widget->renameThumbnail(name);
+    if(oldIndex == newIndex)
+        return;
+
+    // the two layout hooks read the row list on either side of the change:
+    // removeItemFromLayout expects the widget still in it, addItemToLayout
+    // expects it already re-seated
+    removeItemFromLayout(oldIndex);
+    thumbnails.move(oldIndex, newIndex);
+    addItemToLayout(widget, newIndex);
+    updateLayout();
+
+    // the same permutation the rows went through, applied to the selection
+    auto newSelection = mSelection;
+    for(int i = 0; i < newSelection.count(); i++) {
+        if(newSelection[i] == oldIndex)
+            newSelection[i] = newIndex;
+        else if(oldIndex < newIndex && newSelection[i] > oldIndex && newSelection[i] <= newIndex)
+            newSelection[i]--;
+        else if(newIndex < oldIndex && newSelection[i] >= newIndex && newSelection[i] < oldIndex)
+            newSelection[i]++;
+    }
+    select(newSelection);
+}
+
 void ThumbnailView::setDragHover(int index) {
     Q_UNUSED(index)
 }

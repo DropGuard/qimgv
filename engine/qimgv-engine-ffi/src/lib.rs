@@ -43,6 +43,9 @@ pub const QIMGV_EVENT_DIR_MUTATED: c_int = 3;
 pub const QIMGV_MUT_ADDED: c_int = 1;
 pub const QIMGV_MUT_MODIFIED: c_int = 2;
 pub const QIMGV_MUT_REMOVED: c_int = 3;
+// One entry, a new path. `subject_buf` holds the path it has now; the path it
+// had is the event's second subject and rides in `old_buf` (see take_event).
+pub const QIMGV_MUT_RENAMED: c_int = 4;
 
 // --- events (continued) ------------------------------------------------------
 pub const QIMGV_EVENT_THUMB_NEXT: c_int = 4;
@@ -221,16 +224,24 @@ fn read_path(ptr: *const c_char) -> Result<PathBuf, c_int> {
 }
 
 fn write_str(buf: *mut c_char, cap: usize, s: &str) -> Result<(), c_int> {
-    if buf.is_null() {
-        return Err(QIMGV_ERR_INVALID);
-    }
+    fits(buf, cap, s)?;
     let bytes = s.as_bytes();
-    if bytes.len() + 1 > cap {
-        return Err(QIMGV_ERR_TRUNCATED);
-    }
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr().cast::<c_char>(), buf, bytes.len());
         buf.add(bytes.len()).write(0);
+    }
+    Ok(())
+}
+
+/// The checks `write_str` makes, without the copy. take_event promises that a
+/// refused event "has written nothing", so a call site that needs two buffers
+/// validates both before touching the first one.
+fn fits(buf: *mut c_char, cap: usize, s: &str) -> Result<(), c_int> {
+    if buf.is_null() {
+        return Err(QIMGV_ERR_INVALID);
+    }
+    if s.as_bytes().len() + 1 > cap {
+        return Err(QIMGV_ERR_TRUNCATED);
     }
     Ok(())
 }
@@ -825,17 +836,29 @@ pub extern "C" fn qimgv_engine_supports_watching() -> c_int {
 
 // --- events -----------------------------------------------------------------
 
-/// Returns 1 if an event was written to `out`, 0 if none is pending, negative
-/// on error. `subject_buf` receives the event's subject, which is the directory
-/// for DIR_LISTED and OPEN_FAILED and the *full path* for DIR_MUTATED and
+/// Returns 1 if an event was written to `out`, 0 if none is pending, otherwise
+/// a positive `QIMGV_ERR_*` code (the codes are enum values, not negated — so
+/// compare against 1, and treat anything else as "wrote nothing"). `subject_buf`
+/// receives the event's subject, which is the directory for DIR_LISTED and
+/// OPEN_FAILED and the *full path* for DIR_MUTATED and
 /// THUMB_NEXT (the table lives in qimgv_engine.h next to the declaration);
 /// `mutation` is filled for DIR_MUTATED, `thumb` for THUMB_NEXT.
+///
+/// `old_buf` is written for ONE mutation kind, QIMGV_MUT_RENAMED, and holds the
+/// path the entry had. A rename has two subjects and one slot, so the second
+/// buffer exists rather than the old path being guessed by the consumer: a
+/// rename delivered without it cannot be applied in place, and applying it as an
+/// add leaves a row behind for a file that is still on disk under that name.
+/// Every other kind leaves `old_buf` untouched, and a NULL `old_buf` refuses a
+/// rename (it stays queued) instead of reporting it incompletely.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn qimgv_engine_take_event(
     engine: *mut QimgvEngine,
     out: *mut QimgvEvent,
     subject_buf: *mut c_char,
     subject_cap: usize,
+    old_buf: *mut c_char,
+    old_cap: usize,
     mutation: *mut QimgvMutation,
     thumb: *mut QimgvThumbReq,
 ) -> c_int {
@@ -888,11 +911,26 @@ pub unsafe extern "C" fn qimgv_engine_take_event(
                 Ok(1)
             }
             Event::Mutated { seq, kind, path, name: _, is_dir, size, mtime_ms, index, epoch } => {
+                // A rename is the one mutation with two subjects, and both have
+                // to fit before either is written: a caller that cannot receive
+                // the old path is left with an event it can only mis-apply, so
+                // the event stays queued instead.
+                let from = match kind {
+                    qimgv_engine::WatchChangeKind::Renamed { from } => Some(from),
+                    _ => None,
+                };
+                if let Some(from) = from {
+                    fits(old_buf, old_cap, from)?;
+                }
                 write_str(subject_buf, subject_cap, path)?;
-                let mkind = match *kind {
+                if let Some(from) = from {
+                    write_str(old_buf, old_cap, from)?;
+                }
+                let mkind = match kind {
                     qimgv_engine::WatchChangeKind::Added => QIMGV_MUT_ADDED,
                     qimgv_engine::WatchChangeKind::Modified => QIMGV_MUT_MODIFIED,
                     qimgv_engine::WatchChangeKind::Removed => QIMGV_MUT_REMOVED,
+                    qimgv_engine::WatchChangeKind::Renamed { .. } => QIMGV_MUT_RENAMED,
                 };
                 if !mutation.is_null() {
                     unsafe {

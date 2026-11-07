@@ -12,8 +12,10 @@ DirectoryModel::DirectoryModel(WorkerPool &pool, QObject *parent) :
     connect(&dirManager, &DirectoryManager::fileRemoved,  this, &DirectoryModel::onFileRemoved);
     connect(&dirManager, &DirectoryManager::fileAdded,    this, &DirectoryModel::onFileAdded);
     connect(&dirManager, &DirectoryManager::fileModified, this, &DirectoryModel::onFileModified);
+    connect(&dirManager, &DirectoryManager::fileRenamed,  this, &DirectoryModel::onFileRenamed);
     connect(&dirManager, &DirectoryManager::dirRemoved,  this, &DirectoryModel::dirRemoved);
     connect(&dirManager, &DirectoryManager::dirAdded,    this, &DirectoryModel::dirAdded);
+    connect(&dirManager, &DirectoryManager::dirRenamed,  this, &DirectoryModel::dirRenamed);
 
     connect(&dirManager, &DirectoryManager::loaded, this, &DirectoryModel::loaded);
     connect(&dirManager, &DirectoryManager::sortingChanged, this, &DirectoryModel::onSortingChanged);
@@ -124,8 +126,9 @@ void DirectoryModel::removeFile(const QString &filePath, bool trash, FileOpResul
 }
 
 void DirectoryModel::renameEntry(const QString &oldPath, const QString &newName, bool force, FileOpResult &result) {
-    // the engine watch surfaces a rename as remove+add — an in-app rename now
-    // rides the exact path an external rename takes
+    // the disk is the only thing touched here: the watcher pairs the move into
+    // one Renamed event, so an in-app rename and an external one land on the
+    // mirror through the same single-event path
     FileOperations::rename(oldPath, newName, force, result);
 }
 
@@ -245,6 +248,17 @@ void DirectoryModel::onFileModified(const QString &filePath) {
 void DirectoryModel::onFileRemoved(const QString &filePath, int index) {
     unload(filePath);
     emit fileRemoved(filePath, index);
+}
+
+// The bytes did not move, only the name they are reached by — but the image
+// cache is keyed by path and has no rekey, so the old key is dropped rather
+// than followed. That is the same memory behavior the remove+add pair had: the
+// renamed file decodes again on the next request, and nothing stale waits
+// under a path the listing no longer has.
+void DirectoryModel::onFileRenamed(const QString &filePath, const QString &newPath, int oldIndex) {
+    Q_UNUSED(oldIndex)
+    unload(filePath);
+    emit fileRenamed(filePath, newPath, oldIndex);
 }
 
 bool DirectoryModel::isLoaded(int index) const {

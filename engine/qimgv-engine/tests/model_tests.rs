@@ -127,3 +127,56 @@ fn meta_update_keeps_the_position_under_name_sort() {
     let pos = st.update_entry_meta("/tmp/a.jpg", 9, SystemTime::now()).unwrap();
     assert_eq!(pos, 0);
 }
+
+#[test]
+fn a_rename_reseats_even_under_name_sort() {
+    // The opposite answer to the test above, and the reason rename_entry is a
+    // method of its own: a metadata change cannot move a name-sorted row, but
+    // a rename IS a change of the thing the name sort compares.
+    let mut st = DirectoryState::new(SortMode::Name);
+    st.replace_all(
+        "/tmp".into(),
+        vec![entry("img2.jpg", 1, 0), entry("img3.jpg", 1, 0)],
+        vec![],
+    );
+    let pos = st.rename_entry("/tmp/img3.jpg", "/tmp/img1.jpg", "img1.jpg", 1, SystemTime::now()).unwrap();
+    assert_eq!(pos, 0);
+    let names: Vec<&str> = (0..2).map(|i| st.file_at(i).unwrap().data.name.as_str()).collect();
+    assert_eq!(names, ["img1.jpg", "img2.jpg"]);
+}
+
+#[test]
+fn a_rename_keeps_the_handle_it_moved() {
+    // The listing's handles are what the FFI export carries and what a consumer
+    // that remembered a row uses to find it again. If a rename inserted and
+    // removed instead of moving, every one of those would be a dangling id —
+    // so identity, not just order, is the contract here.
+    let mut st = DirectoryState::new(SortMode::Name);
+    let Some((key, _)) = st.insert_entry(entry("img2.jpg", 1, 0)) else { panic!("first insert") };
+    let Some((other, _)) = st.insert_entry(entry("img1.jpg", 1, 0)) else { panic!("second insert") };
+    assert_eq!(st.index_of_file(key), Some(1));
+
+    let mtime = SystemTime::now();
+    let pos = st.rename_entry("/tmp/img2.jpg", "/tmp/img0.jpg", "img0.jpg", 1, mtime).unwrap();
+    assert_eq!(pos, 0);
+    assert_eq!(st.index_of_file(key), Some(0), "the same handle now names row 0");
+    assert_eq!(st.file_at(0).unwrap().data.path, "/tmp/img0.jpg");
+    assert_eq!(st.file_at(0).unwrap().handle, key, "the export hands out the surviving handle");
+    assert_eq!(st.next_file(key), Some(other), "and the neighbour links were re-woven, not left pointing at a dead row");
+    assert_eq!(st.prev_file(other), Some(key));
+    assert!(st.contains_path("/tmp/img0.jpg"));
+    assert!(!st.contains_path("/tmp/img2.jpg"));
+}
+
+#[test]
+fn a_rename_refuses_a_destination_the_listing_holds() {
+    // Two rows cannot share a path, and the state has no way to pick which one
+    // dies — that decision belongs to the event applier, which takes the old
+    // destination row out first and then renames into it. Refusing is what keeps
+    // the ordering a listing from ever holding the same path twice.
+    let mut st = DirectoryState::new(SortMode::Name);
+    st.replace_all("/tmp".into(), vec![entry("a.jpg", 1, 0), entry("b.jpg", 2, 0)], vec![]);
+    assert_eq!(st.rename_entry("/tmp/a.jpg", "/tmp/b.jpg", "b.jpg", 1, SystemTime::now()), None);
+    assert_eq!(st.file_count(), 2, "a refusal changes nothing");
+    assert_eq!(st.file_at(0).unwrap().data.name, "a.jpg");
+}

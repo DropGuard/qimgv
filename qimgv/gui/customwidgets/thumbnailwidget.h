@@ -30,6 +30,7 @@ public:
 
     bool isLoaded;
     void setThumbnail(std::shared_ptr<Thumbnail> _thumbnail);
+    void renameThumbnail(const QString &newName);
 
     void setHighlighted(bool mode);
     bool isHighlighted();

@@ -151,6 +151,12 @@ private:
     // the mirror replaces content and splices to the engine's position — it
     // never re-derives either
     void applyEngineModification(const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
+    // RENAMED applied from the wire: one row moves instead of two being
+    // destroyed and rebuilt, and its pixels survive because a rename changes
+    // the name and nothing else. Also the only applier that can answer an
+    // overwrite — the engine removed the destination entry, so the mirror drops
+    // that row before splicing the source into the engine's position.
+    void applyEngineRename(const QString &from, const QString &to, bool isDir, quint64 size, qint64 mtimeMs, int index);
     void scheduleRescan();
     // a landed listing is the definition of agreement: it clears any repair
     // the mirror still owed from an earlier pass
@@ -175,26 +181,29 @@ private:
 private slots:
     void onEngineDirListed(const QString &dirPath);
     void onEngineOpenFailed(const QString &dirPath, int code);
-    void onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index);
+    void onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index,
+                         const QString &oldPath);
 
 signals:
-    // The mutation vocabulary of the engine is Added | Modified | Removed
-    // (watcher/apply.rs::Applied) and these signals mirror exactly that: a
-    // rename arrives as Removed(from) + Added(to), in order. There is
-    // deliberately no *Renamed signal. It used to exist, and its only emitter
-    // was DirectoryManager::renameFileEntry — a mirror writer, called from the
-    // in-app rename; the watcher never paired MOVED_FROM/MOVED_TO even then.
-    // The single-writer commit (64993a68) deleted that writer and with it the
-    // last emitter, leaving four signal declarations, five connects, two
-    // disconnects and four handlers that no event could ever reach. Pin:
-    // listing_tests liveRenameSurfacesAsRemoveAndAdd.
+    // The mutation vocabulary of the engine is Added | Modified | Removed |
+    // Renamed (watcher/apply.rs::Applied) and these signals mirror exactly that.
+    // Renamed is the one the watcher has to earn: the kernel reports a move as
+    // MOVED_FROM + MOVED_TO sharing a cookie, and watcher/fd.rs pairs adjacent
+    // halves into a single event before it can reach the applier — a pair it
+    // cannot pair (split across read batches at a 64 KiB burst) degrades to the
+    // Removed + Added these signals would otherwise have carried.
+    // The trailing index is the row the source held *after* a destination row
+    // this rename overwrote was already dropped, i.e. exactly the position the
+    // view holds when the signal fires. Pin: listing_tests liveRenameIsOneEvent.
     void loaded(const QString &path);
     void sortingChanged();
     void loadingFailed(const QString &dirPath);
     void fileRemoved(const QString &filePath, int);
     void fileModified(const QString &filePath);
     void fileAdded(const QString &filePath);
+    void fileRenamed(const QString &filePath, const QString &newPath, int oldIndex);
 
     void dirRemoved(const QString &dirPath, int);
     void dirAdded(const QString &dirPath);
+    void dirRenamed(const QString &dirPath, const QString &newPath, int oldIndex);
 };

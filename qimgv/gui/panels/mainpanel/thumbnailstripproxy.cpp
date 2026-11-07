@@ -118,6 +118,23 @@ void ThumbnailStripProxy::reloadItem(int index) {
         thumbnailStrip->reloadItem(index);
 }
 
+// The buffered selection is the only row state a viewless proxy holds, and
+// init() replays it — so the row move has to reach it here too.
+void ThumbnailStripProxy::renameItem(int oldIndex, int newIndex, const QString &name) {
+    if(thumbnailStrip) {
+        thumbnailStrip->renameItem(oldIndex, newIndex, name);
+    } else if(oldIndex != newIndex) {
+        for(int i = 0; i < stateBuf.selection.count(); i++) {
+            if(stateBuf.selection[i] == oldIndex)
+                stateBuf.selection[i] = newIndex;
+            else if(oldIndex < newIndex && stateBuf.selection[i] > oldIndex && stateBuf.selection[i] <= newIndex)
+                stateBuf.selection[i]--;
+            else if(newIndex < oldIndex && stateBuf.selection[i] >= newIndex && stateBuf.selection[i] < oldIndex)
+                stateBuf.selection[i]++;
+        }
+    }
+}
+
 void ThumbnailStripProxy::setDragHover(int index) {
     if(thumbnailStrip)
         thumbnailStrip->setDragHover(index);

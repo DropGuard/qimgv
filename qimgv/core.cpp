@@ -171,6 +171,7 @@ void Core::connectComponents() {
     connect(model.get(), &DirectoryModel::fileAdded,      this, &Core::onFileAdded);
     connect(model.get(), &DirectoryModel::fileRemoved,    this, &Core::onFileRemoved);
     connect(model.get(), &DirectoryModel::fileModified,   this, &Core::onFileModified);
+    connect(model.get(), &DirectoryModel::fileRenamed,    this, &Core::onFileRenamed);
     connect(model.get(), &DirectoryModel::loaded,         this, &Core::onModelLoaded);
     connect(model.get(), &DirectoryModel::imageReady,     this, &Core::onModelItemReady);
     connect(model.get(), &DirectoryModel::imageUpdated,   this, &Core::onModelItemUpdated);
@@ -646,12 +647,9 @@ void Core::setFoldersDisplay(bool mode) {
 }
 
 void Core::renameCurrentSelection(const QString &newName) {
-    // A rename reaches the mirror as Removed(old) + Added(new): the engine
-    // pairs nothing, and the Removed half bounces the view by itself. The app
-    // is the one party that knows both halves of its own rename, so this is
-    // where the destination gets armed and onFileAdded lands on it. An
-    // external rename has no arm here and still does not follow the file —
-    // pairing that needs the inotify cookie, which is an engine-side change.
+    // Nothing is armed here: the watcher pairs the move into one Renamed event,
+    // and Core::onFileRenamed follows it for the file on screen — an in-app
+    // rename and an external one take the same path and get the same result.
     const QString oldPath = selectedPath();
     if(!model->fileCount() || newName.isEmpty() || oldPath.isEmpty())
         return;
@@ -667,8 +665,6 @@ void Core::renameCurrentSelection(const QString &newName) {
             mw->toggleRenameOverlay(newName);
         }
     }
-    if(result == FileOpResult::SUCCESS && oldPath == state.currentFilePath)
-        state.pendingRenameTarget = QFileInfo(oldPath).absolutePath() + QLatin1Char('/') + newName;
     outputError(result);
 }
 
@@ -713,16 +709,22 @@ void Core::onFileRemoved(const QString &filePath, int index) {
 }
 
 void Core::onFileAdded(const QString &filePath) {
+    Q_UNUSED(filePath)
     // update file count
     updateInfoString();
-    // the Added half of a rename the app issued; see renameCurrentSelection
-    if(filePath == state.pendingRenameTarget) {
-        state.pendingRenameTarget.clear();
-        loadPath(filePath);
-        return;
-    }
     if(model->fileCount() == 1 && state.currentFilePath == "")
         loadFileIndex(0, false, settings->usePreloader());
+}
+
+// Following the file the viewer is showing across a rename is the reason the
+// rename is one event: the Removed half of the old pair had already bounced
+// currentFilePath to "" by the time the Added half arrived, and only a rename
+// the app itself issued could be patched back.
+void Core::onFileRenamed(const QString &filePath, const QString &newPath, int oldIndex) {
+    Q_UNUSED(oldIndex)
+    if(state.currentFilePath == filePath)
+        loadPath(newPath);
+    updateInfoString();
 }
 
 // !! fixme
@@ -1255,7 +1257,6 @@ void Core::onScalingFinished(QPixmap scaled, const ScalerRequest &req) {
 void Core::reset() {
     state.hasActiveImage = false;
     state.currentFilePath = "";
-    state.pendingRenameTarget.clear();
     if(state.pendingListedToken) {
         model->cancelListed(state.pendingListedToken);
         state.pendingListedToken = 0;

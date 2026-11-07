@@ -12,6 +12,8 @@
 #include <QApplication>
 
 #include <cerrno>
+#include <cstdio> // std::rename: the external rename below is what a file
+                  // manager does, and QFile::rename is RENAME_NOREPLACE
 #include <sys/wait.h>
 #include <unistd.h>
 #include <QSignalSpy>
@@ -145,26 +147,40 @@ public:
         reloaded << index;
         ThumbnailStripProxy::reloadItem(index);
     }
+    void renameItem(int oldIndex, int newIndex, const QString &name) override {
+        renamed << oldIndex << newIndex;
+        renamedTo << name;
+        ThumbnailStripProxy::renameItem(oldIndex, newIndex, name);
+    }
     int thumbnailCalls = 0;
     int hoverCalls = 0;
     int lastThumbnailPos = -1;
-    QList<int> removed, inserted, reloaded;
+    QList<int> removed, inserted, reloaded, renamed;
+    QList<QString> renamedTo;
 };
 
-QPoint dropPosOverThumbnail(FolderGridView &grid, int index) {
+// The widgets in the grid's own visual order, which is the order an
+// IDirectoryView index means. Shared by the drop probe below and by the
+// row-identity check in renameMovesTheRowAndCarriesItsWidget.
+QList<ThumbnailWidget *> orderedThumbnails(FolderGridView &grid) {
     QList<ThumbnailWidget *> widgets;
     const QList<QGraphicsItem *> sceneItems = grid.items(); // named: no detach
     for(QGraphicsItem *item : sceneItems)
         if(auto *tw = dynamic_cast<ThumbnailWidget *>(item))
             widgets << tw;
-    if(widgets.count() <= index) {
-        QTest::qFail(qPrintable(QStringLiteral("no thumbnail #%1").arg(index)), __FILE__, __LINE__);
-        return {};
-    }
     std::sort(widgets.begin(), widgets.end(), [](const ThumbnailWidget *a, const ThumbnailWidget *b) {
         const QPointF pa = a->scenePos(), pb = b->scenePos();
         return pa.y() != pb.y() ? pa.y() < pb.y() : pa.x() < pb.x();
     });
+    return widgets;
+}
+
+QPoint dropPosOverThumbnail(FolderGridView &grid, int index) {
+    const QList<ThumbnailWidget *> widgets = orderedThumbnails(grid);
+    if(widgets.count() <= index) {
+        QTest::qFail(qPrintable(QStringLiteral("no thumbnail #%1").arg(index)), __FILE__, __LINE__);
+        return {};
+    }
     const QPointF center = widgets.at(index)->mapToScene(widgets.at(index)->boundingRect().center());
     return grid.mapFromScene(center);
 }
@@ -1665,16 +1681,13 @@ private slots:
         QCOMPARE(fake.confirmCalls, 1); // the overwrite question was asked and scripted yes
     }
 
-    // Renaming has no event of its own: the engine's mutation vocabulary is
-    // Added|Modified|Removed, so a rename reaches the mirror as Removed(from)
-    // then Added(to). The *Renamed signal chain that assumed otherwise was
-    // dead on arrival — its only historical emitter was the C++ mirror writer
-    // the single-writer commit deleted (note on DirectoryManager's signals).
-    // Following the renamed file is therefore the app's job: the call that
-    // issues the rename knows the destination, and the Added half is the
-    // first moment that destination is a listing member. This pins both halves
-    // of the result — the listing converges losslessly, and the view ends up
-    // on the new name instead of wherever the Removed hop left it.
+    // A rename is one event: the engine pairs the kernel's MOVED_FROM and MOVED_TO
+    // by cookie and answers with RENAMED(old -> new), so the mirror moves a row
+    // instead of dropping one and growing another (DirectoryManager::applyEngineRename,
+    // with the wire half pinned by listing_tests' liveRenameIsOneEvent). Following
+    // the renamed file is still the app's job, and the two ways a file gets renamed
+    // are two separate pins: this one is the rename the app issued, where a call
+    // site knows the destination, and the next is one done behind its back.
     void renamingTheCurrentFileConvergesTheListingAndLandsOnTheNewName() {
         const QString dir = uniqueDir("renamelanding");
         const QString from = QDir(dir).filePath("aardvark.png");
@@ -1697,6 +1710,34 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(core.currentFilePath() == to, 10000);
         QVERIFY(core.model->isLoaded(to));      // landed on it, not merely listed
         QVERIFY(!core.model->isLoaded(from));   // and the old name is gone from memory
+    }
+
+    // The other half of 跟手: a rename this process never issued, done by another
+    // program while the view sits on the file. No call site knows the
+    // destination, so only the event can carry the view across — which is what
+    // Core::onFileRenamed is for, and the reason the old pendingRenameTarget
+    // arm in onFileAdded is gone: an arm that had to be armed by the code
+    // performing the rename could never fire for a rename it did not perform.
+    // The name change also crosses a sort boundary (aardvark -> zebra under name
+    // sort), so the row moves and the view still has to land on it.
+    void externallyRenamingTheCurrentFileKeepsItTheCurrentFile() {
+        const QString dir = uniqueDir("extrenamelanding");
+        const QString from = QDir(dir).filePath("aardvark.png");
+        const QString to = QDir(dir).filePath("zebra.png");
+        writeImage(from);
+        writeImage(QDir(dir).filePath("zzz.png"));
+        Core core;
+        QVERIFY(core.loadPath(from));
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->containsFile(from), 10000);
+        QCOMPARE(core.currentFilePath(), from);
+
+        QVERIFY(std::rename(from.toLocal8Bit().constData(),
+                            to.toLocal8Bit().constData()) == 0);
+
+        QTRY_VERIFY_WITH_TIMEOUT(core.currentFilePath() == to, 10000);
+        QVERIFY(core.model->isLoaded(to));      // on it, not merely pointing at it
+        QVERIFY(!core.model->isLoaded(from));
+        QCOMPARE(core.model->fileCount(), 2);   // lossless, as under an issued rename
     }
 
     // ---- DirectoryPresenter lifecycle: the view is an injected observer, the
@@ -1974,6 +2015,7 @@ private slots:
         const QString f0 = model->filePathAt(0);
         const QString f1 = model->filePathAt(1);
         const QString d0 = model->dirPathAt(0);
+        const QString d1 = model->dirPathAt(1);
         const int dirCount = model->dirCount();
         QVERIFY2(dirCount > 0, "precondition broken: no directories to offset by");
 
@@ -1995,7 +2037,20 @@ private slots:
         QCOMPARE(view.removed.count(), 1);   // dirs are not in the grid: no splice
         QCOMPARE(view.inserted.count(), 1);
 
+        // A rename is one call, not a remove plus an insert: the old row comes
+        // from the event (the mirror has already spliced, so the listing cannot
+        // answer "where was it") and the new row and the name come from the
+        // listing. In files-only mode a directory rename is refused outright.
+        QMetaObject::invokeMethod(model.get(), "fileRenamed", Q_ARG(QString, f0),
+                                  Q_ARG(QString, f1), Q_ARG(int, 0));
+        QCOMPARE(view.renamed, QList<int>({0, 1}));
+        QCOMPARE(view.renamedTo, QList<QString>({QFileInfo(f1).fileName()}));
+        QMetaObject::invokeMethod(model.get(), "dirRenamed", Q_ARG(QString, d0),
+                                  Q_ARG(QString, d1), Q_ARG(int, 0));
+        QCOMPARE(view.renamed.count(), 2);
+
         view.removed.clear(); view.inserted.clear(); view.reloaded.clear();
+        view.renamed.clear(); view.renamedTo.clear();
 
         // dirs shown: every file index shifts by dirCount, dir indices do not
         presenter.setShowDirs(true);
@@ -2009,6 +2064,112 @@ private slots:
         QMetaObject::invokeMethod(model.get(), "dirAdded", Q_ARG(QString, d0));
         QCOMPARE(view.removed, QList<int>({dirCount, 0}));
         QCOMPARE(view.inserted, QList<int>({dirCount + 1, 0}));
+
+        // with dirs in front, both rename sides of a *file* shift by dirCount
+        // while a dir row — already in the leading block — does not shift at all
+        view.renamed.clear(); view.renamedTo.clear();
+        QMetaObject::invokeMethod(model.get(), "fileRenamed", Q_ARG(QString, f0),
+                                  Q_ARG(QString, f1), Q_ARG(int, 0));
+        QMetaObject::invokeMethod(model.get(), "dirRenamed", Q_ARG(QString, d0),
+                                  Q_ARG(QString, d1), Q_ARG(int, 0));
+        QCOMPARE(view.renamed, QList<int>({dirCount, dirCount + 1, 0, 1}));
+        QCOMPARE(view.renamedTo, QList<QString>({QFileInfo(f1).fileName(),
+                                                 QFileInfo(d1).fileName()}));
+    }
+
+    // The row is the unit a rename moves. Driven straight at the view because
+    // populate() is a fixture of real rows with no filesystem behind them, and
+    // everything at stake here is view arithmetic: the widget surviving (its
+    // pixels ride along with its name), the rows it jumped over sliding the other
+    // way, and the selection following the row instead of staying on the vacated
+    // index — that last one is the visible bug shape, a highlight left behind on
+    // a row the user is no longer on.
+    void renameMovesTheRowAndCarriesItsWidgetAndSelection() {
+        FolderGridView grid;
+        grid.resize(500, 600);
+        grid.populate(25);
+        grid.show();
+        const QList<ThumbnailWidget *> before = orderedThumbnails(grid);
+        QVERIFY2(before.count() == 25,
+                 qPrintable(QStringLiteral("populate(25) laid out %1 rows").arg(before.count())));
+        grid.select(1);
+        ThumbnailWidget *const moving = before.at(1);
+
+        grid.renameItem(1, 4, QStringLiteral("moved.png"));
+
+        const QList<ThumbnailWidget *> after = orderedThumbnails(grid);
+        QCOMPARE(after.count(), 25);
+        QVERIFY2(after.at(4) == moving,
+                 "the moved row is a different widget — renaming does not recreate the row");
+        QVERIFY2(after.at(1) == before.at(2) && after.at(3) == before.at(4),
+                 "the rows the move jumped over did not slide into the space it left");
+        QCOMPARE(grid.selection(), QList<int>({4}));
+
+        // and back again: the same rows slide the other way
+        grid.renameItem(4, 0, QStringLiteral("front.png"));
+        const QList<ThumbnailWidget *> back = orderedThumbnails(grid);
+        QVERIFY2(back.at(0) == moving, "the row did not move back to the front");
+        QVERIFY2(back.at(1) == before.at(0) && back.at(4) == before.at(4),
+                 "the rows it passed going back did not shift down");
+        QCOMPARE(grid.selection(), QList<int>({0}));
+
+        // an in-place rename — the name-sort case where the row does not move —
+        // touches neither the layout nor the selection
+        grid.renameItem(0, 0, QStringLiteral("still.png"));
+        QVERIFY2(orderedThumbnails(grid).at(0) == moving, "an in-place rename moved a row");
+        QCOMPARE(grid.selection(), QList<int>({0}));
+
+        // out-of-range on either side is refused rather than clamped: the caller
+        // is a live event about a row the view may already have dropped
+        grid.renameItem(0, 99, QStringLiteral("nowhere.png"));
+        QCOMPARE(orderedThumbnails(grid).count(), 25);
+        QVERIFY2(orderedThumbnails(grid).at(0) == moving, "an out-of-range rename moved a row");
+
+        // A multi-row selection is the other half of the remap: the selected row
+        // moves and the selected rows it passes shift the other way. One selected
+        // index reaches only the first branch, and the branches it does not reach
+        // are the ones that leave a highlight on the wrong picture.
+        grid.select(QList<int>{1, 2, 3});
+        grid.renameItem(1, 4, QStringLiteral("moved.png"));
+        QList<int> shifted = grid.selection();
+        std::sort(shifted.begin(), shifted.end());
+        QCOMPARE(shifted, QList<int>({1, 2, 4}));
+
+        grid.renameItem(4, 0, QStringLiteral("front.png"));
+        shifted = grid.selection();
+        std::sort(shifted.begin(), shifted.end());
+        QCOMPARE(shifted, QList<int>({0, 2, 3}));
+    }
+
+    // The same arithmetic exists in a second place, for the second owner of a
+    // selection: a strip proxy that has never been shown holds no rows at all,
+    // only a buffered selection that init() replays. Driven end to end — the
+    // rename happens on disk, so the engine pairs it, the mirror moves its row,
+    // the presenter offsets and looks up, and the buffer is what is left to move.
+    void viewlessProxyRemapsItsBufferedSelectionOnRename() {
+        WorkerPool pool(2);
+        auto model = std::make_shared<DirectoryModel>(pool);
+        const QString dir = uniqueDir("proxyrename");
+        writeImage(QDir(dir).filePath("a.png"));
+        writeImage(QDir(dir).filePath("b.png"));
+        writeImage(QDir(dir).filePath("c.png"));
+        QVERIFY(model->setDirectory(dir));
+        QTRY_COMPARE_WITH_TIMEOUT(model->fileCount(), 3, 10000);
+
+        CountingStripProxy view;               // never shown: the buffer is all there is
+        DirectoryPresenter presenter(pool);
+        presenter.setView(&view);
+        presenter.setModel(model);             // populate + select(0)
+        QCOMPARE(view.selection(), QList<int>({0}));
+        QCOMPARE(model->fileNameAt(0), QStringLiteral("a.png"));
+
+        QVERIFY(QFile::rename(QDir(dir).filePath("a.png"), QDir(dir).filePath("z.png")));
+
+        QTRY_COMPARE_WITH_TIMEOUT(view.renamed.count(), 2, 10000);
+        // a.png was row 0 and z.png is the last row: the buffer moved with it,
+        // so a strip materialized later replays the highlight onto the renamed row
+        QCOMPARE(view.renamed, QList<int>({0, 2}));
+        QCOMPARE(view.selection(), QList<int>({2}));
     }
 
     // The settings bus drains a pool on the UI thread, and the scope of that

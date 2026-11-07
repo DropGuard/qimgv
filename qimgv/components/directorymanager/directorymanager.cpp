@@ -462,7 +462,69 @@ void DirectoryManager::applyEngineModification(const QString &path, bool isDir, 
     emit fileModified(path);
 }
 
-void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs, int index) {
+// RENAMED is one row moving, and the pixels ride along with it: a rename
+// changes a name and nothing else, so the thumbnail a row already holds is
+// still the right picture for the path it now describes. Two shapes are not a
+// move: an overwrite-by-move, where the engine removed the destination entry
+// before relocating the source, and a source the mirror never saw — there the
+// only way back into agreement is to insert at the wire position.
+void DirectoryManager::applyEngineRename(const QString &from, const QString &to, bool isDir,
+                                         quint64 size, qint64 mtimeMs, int index) {
+    std::vector<FSEntry> &vec = isDir ? dirEntryVec : fileEntryVec;
+    int source = isDir ? indexOfDir(from) : indexOfFile(from);
+    int dest = isDir ? indexOfDir(to) : indexOfFile(to);
+
+    // The engine's index counts the vector *without* the entry it removed, so
+    // the overwritten row has to be gone before the source is spliced — and its
+    // removal has to be announced first, because every index after it shifts.
+    if(dest >= 0 && dest != source) {
+        vec.erase(vec.begin() + dest);
+        if(!isDir)
+            mPrevFileMeta.remove(to);
+        if(dest < source)
+            --source;
+        if(isDir)
+            emit dirRemoved(to, dest);
+        else
+            emit fileRemoved(to, dest);
+    }
+
+    if(source < 0) {
+        FSEntry entry;
+        entry.path = to;
+        entry.name = QFileInfo(to).fileName();
+        entry.isDirectory = isDir;
+        entry.size = size;
+        entry.modifyTime = fileTimeFromMs(isDir ? 0 : mtimeMs);
+        insertAtEngineIndex(vec, std::move(entry), index);
+        if(isDir) {
+            emit dirAdded(to);
+        } else {
+            mPrevFileMeta.insert(to, qMakePair(size, mtimeMs));
+            emit fileAdded(to);
+        }
+        return;
+    }
+
+    // rewrite in place, then splice: the row itself never leaves the view
+    vec[source].path = to;
+    vec[source].name = QFileInfo(to).fileName();
+    vec[source].size = size;
+    vec[source].modifyTime = fileTimeFromMs(isDir ? 0 : mtimeMs);
+    FSEntry moved = std::move(vec[source]);
+    vec.erase(vec.begin() + source);
+    insertAtEngineIndex(vec, std::move(moved), index);
+    if(isDir) {
+        emit dirRenamed(from, to, source);
+    } else {
+        mPrevFileMeta.remove(from);
+        mPrevFileMeta.insert(to, qMakePair(size, mtimeMs));
+        emit fileRenamed(from, to, source);
+    }
+}
+
+void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir, quint64 size, qint64 mtimeMs,
+                                      int index, const QString &oldPath) {
     const bool tracing = EngineBridge::traceEnabled();
     if(mResyncing) {
         if (tracing)
@@ -505,6 +567,19 @@ void DirectoryManager::onEngineMutated(int kind, const QString &path, bool isDir
         case QIMGV_MUT_MODIFIED:
             applyEngineModification(path, isDir, size, mtimeMs, index);
             break;
+        case QIMGV_MUT_RENAMED: {
+            // The guard above can only see the destination. A rename also edits
+            // the row its *source* names, so that path has to live here too —
+            // otherwise the mirror would erase an unrelated entry and grow a row
+            // from another folder at an index computed against that folder.
+            if(!mMirroredDir.isEmpty() && !oldPath.startsWith(mMirroredDir + QLatin1Char('/'))) {
+                qWarning() << "[DirectoryManager] rename source outside the mirrored directory:" << oldPath
+                           << "mirrored:" << mMirroredDir;
+                return;
+            }
+            applyEngineRename(oldPath, path, isDir, size, mtimeMs, index);
+            break;
+        }
         case QIMGV_MUT_REMOVED:
             removeDirEntry(path);
             removeFileEntry(path);
