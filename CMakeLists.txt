@@ -164,13 +164,25 @@ endif()
 # LoaderRunnable::run and Thumbnailer::onTaskStart) landing on QArrayData
 # blocks, QArrayData::reallocateUnaligned, and cleanOrphanedConnectionsImpl
 # during widget teardown. The racing access is inside Qt's own container and
-# connection machinery; our frames are only the callers, so the "any frame of
-# ours fails the run" rule fires on them, and the honest state is: named
-# above, triage deferred to its own arc, tree still out of the gate. The
-# engine-boundary face of the noise is suppressed for real — a set ordering
-# bug left ENGINE_CONTRACT's suppression property expanding to an empty env
-# and 32 reports a run that looked like residue and were just a missing
-# baseline (qimgv/tests/CMakeLists.txt, TSAN_ENV).
+# connection machinery; our frames are only the callers.
+# DECIDED 2026-11-07, this is the triage the residue block above awaited: the
+# emit-path class reproduces with zero qimgv code — four std::threads, four
+# sender QObjects, one UI-thread receiver, queued signals carrying a QString
+# and a heap metatype, no event loop (~/tsan-qthreadpool-check/qsignals.cpp).
+# 5/5 runs, same signature, and libQt6Core+0x29c364 — the exact offset the
+# tree's reports name. Same verdict as the qtimagepool shape: Qt 6.10.2's own
+# signal-argument path is a TSan race with no application fault involved. The
+# residue is therefore upstream's, decided rather than deferred — but it is
+# deliberately NOT suppressed: name-matching QArrayData::reallocateUnaligned
+# or the arg-copy memmove would blind every real app race that flows through
+# the same machinery, the exact over-reach the baseline's rules forbid. The
+# tree stays out of the gate with the enumeration as its record, and any NEW
+# report shape (a frame of ours beyond the emit callers, or a fresh third-party
+# offset) still fails the run. The engine-boundary face of the noise is
+# suppressed for real — a set ordering bug left ENGINE_CONTRACT's suppression
+# property expanding to an empty env and 32 reports a run that looked like
+# residue and were just a missing baseline (qimgv/tests/CMakeLists.txt,
+# TSAN_ENV).
 # The Rust half is measured by Miri over the semantics layer, on the seam the
 # watcher split made explicit (watcher/apply is libc-free semantics; watcher/fd
 # is real syscalls by design):

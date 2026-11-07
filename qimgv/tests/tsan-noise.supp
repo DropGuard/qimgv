@@ -38,6 +38,11 @@ race:tzset_internal
 # taskStart delivery (Thumbnailer::onTaskStart), QArrayData::reallocateUnaligned,
 # and cleanOrphanedConnectionsImpl during widget teardown. Qt's own container
 # and connection internals race by TSan's lights; our frames are only the
-# callers. Same verdict: no in-tree fix, no honest name-match (these template
-# names are the machinery every real race through Qt also travels), so they
-# keep ENGINE_STACK and CORE_NAV red until triaged in their own arc.
+# callers.
+# Decided the same day, no longer deferred: the emit-path class reproduces
+# with zero qimgv code in ~/tsan-qthreadpool-check/qsignals.cpp — 5/5 runs at
+# libQt6Core+0x29c364, the exact offset the tree names. Upstream's, like the
+# qtimagepool shape above. Deliberately unsuppressed: these names are the
+# machinery every real race through Qt also travels, so matching them would
+# blind the instrument exactly where it must stay sharp. The enumeration IS
+# the record; any shape beyond it still fails the run.
