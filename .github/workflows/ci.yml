@@ -1,0 +1,64 @@
+name: ci
+# The fork is Linux-only by design: the engine's watcher is inotify and the
+# C++ fallback watcher was deleted, so the old msys2 packaging workflow could
+# never build this tree again. What CI can and should carry is the pipeline
+# the repo already trusts locally — the build with its zero-warning contract,
+# the five ctest suites, and the Rust suite. The deep checks (the lint gate,
+# the sanitizer tree, Miri) stay out of the per-push path: the gate's clazy
+# counts are baseline-sensitive to the toolchain version and belong to the
+# pre-push ritual on the machine that owns the baseline, and the sanitizer and
+# interpreter runs pay minutes the push path does not need to pay. They run on
+# the nightly schedule instead, and on demand.
+on:
+  push:
+    branches: [rustcore]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # the apt Qt on noble is 6.4.x and the floor is 6.6 (the test suites
+      # hard-require it); aqt pins a real 6.8 instead
+      - name: install qt (aqtinstall directly — the wrapper action breaks under act)
+        run: |
+          python3 -m venv /opt/aqt-venv
+          /opt/aqt-venv/bin/pip install -q aqtinstall
+          /opt/aqt-venv/bin/aqt install-qt linux desktop 6.9.1 linux_gcc_64 -O /opt/qt
+      - name: system deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libopencv-dev libexiv2-dev libgl1-mesa-dev python3-venv cmake libmpv-dev libxkbcommon-dev
+      - name: configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/opt/qt/6.9.1/gcc_64
+      - name: build (warnings are contractual — the fatal families are -Werror)
+        run: cmake --build build -j$(nproc)
+      - name: the five suites
+        run: cd build && QT_QPA_PLATFORM=offscreen ctest --output-on-failure
+      - name: rust suite
+        run: cargo test --manifest-path engine/qimgv-engine/Cargo.toml
+
+  deep-checks:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - name: install qt (aqtinstall directly — the wrapper action breaks under act)
+        run: |
+          python3 -m venv /opt/aqt-venv
+          /opt/aqt-venv/bin/pip install -q aqtinstall
+          /opt/aqt-venv/bin/aqt install-qt linux desktop 6.9.1 linux_gcc_64 -O /opt/qt
+      - name: system deps
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libopencv-dev libexiv2-dev libgl1-mesa-dev python3-venv cmake libmpv-dev libxkbcommon-dev
+      - name: sanitizer tree (address,undefined — the ASan gate the local tree runs)
+        run: |
+          cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined -DCMAKE_PREFIX_PATH=/opt/qt/6.9.1/gcc_64
+          cmake --build build-asan -j$(nproc)
+          cd build-asan && QT_QPA_PLATFORM=offscreen ASAN_OPTIONS=detect_leaks=1 ctest --output-on-failure
+      - name: miri over the pure layer (the armed race test must fail to pass)
+        run: sh scripts/miri.sh
