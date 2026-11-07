@@ -101,20 +101,21 @@ void Settings::store(const SettingDesc &d, const T &v) {
     settingsConf->setValue(d.key, v);
 }
 
-// The fork answered to "qimgv" until 2026.11, and the user's config and cache
-// belong to them, not to the old name. Once, and only when the new identity has
-// nothing yet: the three conf files move to the new config dir and the cache
-// (thumbnails included) renames in place. An IsolatedHome test has no legacy
-// identity under its redirected HOME, so this is a no-op there.
+// The fork answered to "qimgv" until 2026.11, and a user trying ImPulse should
+// not pay for the trial: the conf files are COPIED, so upstream qimgv keeps
+// working if they go back — the cache (regenerable thumbnails, megabytes)
+// RENAMES, because duplicating it buys nothing. Once, and only when the new
+// identity has nothing yet. An IsolatedHome test has no legacy identity under
+// its redirected HOME, so this is a no-op there.
 void Settings::carryIdentityFiles(const QString &legacyConfDir, const QString &newConfDir,
                                   const QString &legacyCacheDir, const QString &newCacheDir) {
     const QDir legacyConf(legacyConfDir);
     const QDir currentConf(newConfDir);
     if (legacyConf.exists() && !currentConf.exists()) {
         QDir().mkpath(currentConf.absolutePath());
-        for (const QString &name : {QStringLiteral("theme.conf"), QStringLiteral("savedState.conf")})
-            QFile::rename(legacyConf.filePath(name), currentConf.filePath(name));
-        QFile::rename(legacyConf.filePath("qimgv.conf"), currentConf.filePath("impulse.conf"));
+        QFile::copy(legacyConf.filePath("qimgv.conf"), currentConf.filePath("impulse.conf"));
+        QFile::copy(legacyConf.filePath("savedState.conf"), currentConf.filePath("savedState.conf"));
+        QFile::copy(legacyConf.filePath("theme.conf"), currentConf.filePath("theme.conf"));
     }
     if (QDir(legacyCacheDir).exists() && !QDir(newCacheDir).exists())
         QDir().rename(legacyCacheDir, newCacheDir);

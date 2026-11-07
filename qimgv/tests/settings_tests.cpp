@@ -372,15 +372,19 @@ private slots:
         QVERIFY(QFile::exists(newConf + "/savedState.conf"));
         QVERIFY(QFile::exists(newConf + "/theme.conf"));
         QVERIFY(QFile::exists(newCache + "/thumbnails/carried.png"));
-        QVERIFY(!QFile::exists(legacyConf + "/qimgv.conf"));  // renamed, not copied
-        QVERIFY(!QDir(legacyCache).exists());                 // the cache moved whole
+        // the conf files were COPIED: upstream qimgv keeps working if the user
+        // goes back — only the regenerable cache moved whole
+        QCOMPARE(readTestFile(legacyConf + "/qimgv.conf"), QByteArray("theConf=carried\n"));
+        QVERIFY(!QDir(legacyCache).exists());
 
         // the once-guard: a new identity that already exists is left alone —
         // the second run of the new binary must not resurrect or clobber
         writeTestFile(newConf + "/impulse.conf", "theConf=newer\n");
-        writeTestFile(legacyConf + "/qimgv.conf", "theConf=resurrected\n");
+        writeTestFile(legacyConf + "/qimgv.conf", "theConf=edited-after\n");
         Settings::carryIdentityFiles(legacyConf, newConf, legacyCache, newCache);
         QCOMPARE(readTestFile(newConf + "/impulse.conf"), QByteArray("theConf=newer\n"));
+        // and the legacy conf the user kept editing upstream is untouched
+        QCOMPARE(readTestFile(legacyConf + "/qimgv.conf"), QByteArray("theConf=edited-after\n"));
     }
 
 };
