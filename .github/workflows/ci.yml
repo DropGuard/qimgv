@@ -94,9 +94,9 @@ jobs:
           CC: gcc-12
           CXX: g++-12
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          cmake -S . -B build-appimage -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH=/opt/qt/6.9.1/gcc_64
-          cmake --build build -j$(nproc)
+          cmake --build build-appimage -j$(nproc)
       - name: assemble the AppDir
         run: |
           VERSION=$(grep -oP 'appVersion\(\K[0-9,]+' qimgv/appversion.cpp | tr ',' '.')
@@ -106,12 +106,12 @@ jobs:
                    "$APPDIR/usr/share/metainfo" \
                    "$APPDIR/usr/share/icons/hicolor/scalable/apps" \
                    "$APPDIR/usr/share/impulse/translations"
-          cp build/qimgv/impulse "$APPDIR/usr/bin/"
-          cp build/plugins/player_mpv/player_mpv.so "$APPDIR/usr/bin/plugins/"
+          cp build-appimage/qimgv/impulse "$APPDIR/usr/bin/"
+          cp build-appimage/plugins/player_mpv/player_mpv.so "$APPDIR/usr/bin/plugins/"
           cp qimgv/distrib/impulse.desktop "$APPDIR/usr/share/applications/"
           cp qimgv/distrib/impulse.appdata.xml "$APPDIR/usr/share/metainfo/"
           cp qimgv/distrib/hicolor/scalable/apps/impulse.svg "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
-          cp build/qimgv/translations/*.qm "$APPDIR/usr/share/impulse/translations/"
+          cp build-appimage/qimgv/translations/*.qm "$APPDIR/usr/share/impulse/translations/"
       - name: linuxdeploy (gathers the shared-library closure, writes its own AppRun)
         run: |
           curl -L -o linuxdeploy.AppImage \
