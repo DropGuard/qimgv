@@ -1,240 +1,106 @@
-## :exclamation: Updates may be slow due to war in Ukraine :sunflower: :sunflower: :sunflower:
+# ImPulse
 
-qimgv | Current version: 1.0.2
-=====
-Image viewer. Fast, easy to use. Optional video support.
+A fast Qt6 image viewer for Linux. Fork of [qimgv](https://github.com/easymodo/qimgv) · GPL-3.0 · v0.1.0
 
-> **This fork targets Linux (KDE/Qt6), and it is the only platform it can be
-> built on today.** The installation sections for Windows and BSD below come
-> from upstream qimgv, whose platform differences were absorbed by Qt. Here the
-> directory listing belongs to the Rust engine, whose watcher is an inotify one:
-> on other platforms the event channel is `never()`, the old
-> `QFileSystemWatcher` fallback is gone, and `inotify`/`libc` are unconditional
-> dependencies. So live folder updates, and the build itself, are not expected
-> to work elsewhere. If another platform is ever picked up, the first step is
-> `cargo check --target x86_64-pc-windows-gnu` — it does not link, so it runs
-> fine here and will say how much is missing before anything is written.
+The interface is upstream's and is unchanged: the same browsing, folder view,
+thumbnail panel, crop/rotate/resize, quick copy/move, scripts and shortcuts. What
+this fork changes is underneath it — the backend architecture, the machinery that
+keeps it honest, and a long tail of bug fixes. For the feature tour, screenshots,
+control scheme and usage notes, read
+[upstream's README](https://github.com/easymodo/qimgv#readme); repeating it here
+would only let the two drift apart.
 
-## Screenshots
+## Linux is the only platform
 
-Main window & panel        |  Folder view   |  Settings window  
-:-------------------------:|:-------------------------:|:-------------------------:|
-[![img1](qimgv/distrib/screenshots/qimgv0.9_1_thumb.jpg)](qimgv/distrib/screenshots/qimgv0.9_1.jpg?raw=true)  |  [![img2](qimgv/distrib/screenshots/qimgv0.9_2_thumb.jpg)](qimgv/distrib/screenshots/qimgv0.9_2.jpg?raw=true) | [![img3](qimgv/distrib/screenshots/qimgv_3_thumb.jpg)](qimgv/distrib/screenshots/qimgv_3.jpg?raw=true)
+The directory listing belongs to a Rust engine whose watcher is inotify. On other
+platforms the event channel is `never()`, the old `QFileSystemWatcher` fallback is
+gone, and `inotify`/`libc` are unconditional dependencies — so live folder updates,
+and the build itself, are not expected to work elsewhere. Picking another platform
+up starts with `cargo check --target x86_64-pc-windows-gnu`: it does not link, so it
+runs here and reports how much is missing before anything is written.
 
-## Key features:
+Distro packages named `qimgv` install upstream, not this fork. Build from source.
 
-- Simple UI
+## What changed underneath
 
-- Fast
+**One writer for the listing.** The Rust engine (`engine/qimgv-engine`) owns the
+directory listing and decode scheduling. The C++ side is a read-only mirror plus
+Qt rendering: mutation events carry engine-side indices and watcher-statted data,
+and C++ only splices. The monopoly is enforced by a test, not by convention.
 
-- Easy to use
+**A rename is one event, end to end.** The engine pairs the kernel's inotify
+cookie, the wire carries both subjects, and the mirror moves a row instead of
+killing one and growing another — so the thumbnail survives, the selection stays
+put, and the viewer keeps showing the file you were looking at when another
+program renames it. Pairing is best-effort by design: a pair can straddle a read
+boundary, so remove+add remains a shape consumers must tolerate.
 
-- Fully configurable, including themes, shortcuts
+**Quality machinery, as tests.** Ten structural architecture rules (R1–R10) run as
+a ctest suite: GUI isolation, the FFI speaker whitelist, the Rust seal, settings
+dereferencing off the UI thread, the ABI layout pin, the signal re-declaration ban,
+the mirror-writer monopoly, the settings-table bypass ban, the single Thumbnailer
+owner, and the ban on decision logic inside the syscall shell. A static-analysis
+gate counts findings per family and pins its own instrument: the scanned
+`(file, command)` set plus the versions of the tools that judged it. A
+re-configured build tree or a compiler upgrade therefore fails the gate by name
+instead of moving the counts silently. Counts may only shrink, and a reduction
+ships with the fix that earned it.
 
-- High quality scaling
+## Building
 
-- Basic image editing: Crop, Rotate and Resize
+Requirements: CMake >= 3.16, a C++17 compiler, Qt6 >= 6.9 (Core, Widgets, Svg,
+PrintSupport, OpenGLWidgets), and a Rust toolchain —
+[Corrosion](https://github.com/corrosion-rs/corrosion) is fetched by CMake and runs
+cargo inside the same build.
 
-- Ability to quickly copy / move images to different folders
-
-- Experimental video playback via libmpv
-
-- Folder view mode
-
-- Ability to run shell scripts
-
-## Default control scheme:
-
-| Action  | Shortcut |
-| ------------- | ------------- |
-| Next image  | Right arrow / MouseWheel |
-| Previous image  | Left arrow / MouseWheel |
-| Goto first image  | Home |
-| Goto last image  | End |
-| Zoom in  | Ctrl+MouseWheel / Crtl+Up |
-| Zoom out  | Ctrl+MouseWheel / Crtl+Down |
-| Zoom (alt. method) | Hold right mouse button & move up / down |
-| Fit mode: window | 1 |
-| Fit mode: width | 2 |
-| Fit mode: 1:1 (no scaling) | 3 |
-| Switch fit modes  | Space |
-| Toggle fullscreen mode  | DoubleClick / F / F11 |
-| Exit fullscreen mode | Esc |
-| Show EXIF panel  | I |
-| Crop image  | X |
-| Resize image  | R |
-| Rotate left  | Ctrl+L |
-| Rotate Right  | Ctrl+R |
-| Open containing directory | Ctrl+D |
-| Slideshow mode | ~ |
-| Shuffle mode | Ctrl+~ |
-| Quick copy  | C |
-| Quick move  | M |
-| Move to trash | Delete |
-| Delete file  | Shift+Delete |
-| Save  | Ctrl+S |
-| Save As  | Ctrl+Shift+S |
-| Folder view | Enter / Backspace |
-| Open | Ctrl+O |
-| Print / Export PDF | Ctrl+P |
-| Settings  | P |
-| Exit application | Esc / Ctrl+Q / Alt+X / MiddleClick |
-
-... and more.
-
-Note: you can configure every shortcut by going to __Settings > Controls__
-
-# User interface
-
-The idea is to have a uncluttered, simple and easy to use UI. You can see UI elements only when you need them.
-
-There is a pull-down panel with thumbnails, as well as folder view. You can also bring up a context menu via right click.
-
-## Using quick copy / quick move panels
-
-Bring up the panel with C or M shortcut. You will see 9 destination directories, click on the folder icon to change them.
-
-With panel visible, use 1 - 9 keys to copy/move current image to corresponding directory.
-
-When you are done press C or M again to hide the panel.
-
-## Running scripts
-
-You can run custom scripts on a current image.
-
-Open __Settings > Scripts__. Press Add. Here you can choose between a shell command and a shell script. 
-
-Example of a command: 
-
-`convert %file% %file%_.pdf`
-
-Example of a shell script file (`$1` will be image path): 
-```
-#!/bin/bash
-gimp "$1"
-```
-_Note: The script file must be an executable. Also, "shebang" (`#!/bin/bash`) needs to be present._
-
-When you've created your script go to __Settings > Controls > Add__, then select it and assign a shortcut like for any regular action.
-
-## HiDPI (Linux / MacOS only)
-
-If qimgv appears too small / too big on your display, you can override the scale factor. Example:
-```
-QT_SCALE_FACTOR="1.5" qimgv /path/to/image.png
-```
-You can put it in `qimgv.desktop` file to make it permanent. Using values less than `1.0` is not supported.
-
-qimgv should also obey the global scale factor set in KDE's systemsettings.
-
-## High quality scaling
-
-qimgv supports nicer scaling filters when compiled with `opencv` support (ON by default, but might vary depending on your linux distribution). Filter options are available in __Settings > Scaling__. `Bicubic` or `bilinear+sharpen` is recommended.
-
-# Additional image formats
-
-qimgv can open some extra formats via third-party image plugins. All of them are included with windows package.
-
-| Format  | Plugin |
-| ------- | ------------- |
-| JPEG-XL | [github.com/novomesk/qt-jpegxl-image-plugin](https://github.com/novomesk/qt-jpegxl-image-plugin) |
-| AVIF | [github.com/novomesk/qt-avif-image-plugin](https://github.com/novomesk/qt-avif-image-plugin) |
-| APNG | [github.com/Skycoder42/QtApng](https://github.com/Skycoder42/QtApng) |
-| HEIF / HEIC | [github.com/jakar/qt-heif-image-plugin](https://github.com/jakar/qt-heif-image-plugin) |
-| RAW | [https://gitlab.com/mardy/qtraw](https://gitlab.com/mardy/qtraw) |
-
-# Installation
-
-## Windows
-  
-  *(Upstream text. This fork does not build on Windows — see the note at the top.)*
-
-  Windows builds are portable (everything is contained within the install folder). The installer also sets up file associations.
-  
-  _NOTE: `-video` variants include mpv for video support_
-  
-  Grab the latest version from the [releases page](https://github.com/easymodo/qimgv/releases)
-
-  Alternatively you can install it with Chocolatey:
-  
-  ```
-  choco install qimgv
-  ```
-  
-  Or WinGet:
-  
-  ```
-  winget install --id easymodo.qimgv
-  ```
-
-## GNU+Linux
-
-### Arch Linux / Manjaro / etc.
-
-AUR package: 
-
-```
-qimgv-git
-```
-  
-### Ubuntu / Linux Mint / Pop!\_OS / etc.
-
-```
-sudo apt install qimgv
+```bash
+cmake -S . -B build
+cmake --build build -j$(nproc)
 ```
 
-### Fedora
+The binary is `build/qimgv/impulse`.
 
-```
-sudo dnf install qimgv
-```
+| Option | Default | Effect |
+| --- | --- | --- |
+| `EXIV2` | ON | Read/write EXIF tags (needs Exiv2) |
+| `OPENCV_SUPPORT` | ON | High-quality scaling filters (needs OpenCV core, imgproc) |
+| `VIDEO_SUPPORT` | ON | Video playback plugin (needs libmpv) |
+| `KDE_SUPPORT` | OFF | Blur behind windows on KDE (needs KF6WindowSystem) |
+| `QIMGV_SANITIZERS` | empty | `address,undefined` or `thread`; use a separate build dir |
+| `LINT_TESTS` | OFF | Add the static-analysis sweep to ctest (needs Python 3) |
 
-### OpenSUSE
+Warnings are contractual: the build runs `-Wall -Wextra -Wpedantic`, and zero is
+the normal result.
 
-```
-zypper install qimgv
-```
+## Running
 
-### Gentoo
-
-```
-emerge qimgv
-```
-
-### Void linux
-
-```
-xbps-install -S qimgv
+```bash
+impulse /path/to/image-or-directory
 ```
 
-### Alpine Linux
+## Testing
 
-```
-apk add qimgv
-```
-
-## BSD
-
-*(Upstream text. This fork does not build on BSD either — see the note at the top.)*
-
-### FreeBSD
-
-```
-pkg install qimgv
+```bash
+cd build && ctest                       # five suites, including the architecture rules
+python3 scripts/lint.py build --gate    # static analysis against its pinned baseline
+python3 scripts/coverage.py             # line coverage, logic and GUI reported separately
 ```
 
-This list may be incomplete. 
+Sanitizers live in their own trees so the default build stays untouched:
 
-## Compiling from source
+```bash
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined
+cmake --build build-asan -j$(nproc) && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
+```
 
-See [Compiling qimgv from source](https://github.com/easymodo/qimgv/wiki/Compiling-qimgv-from-source) on the wiki
+The thread-sanitizer tree uses the same option with `thread`. Its enumerated
+third-party noise baseline is `qimgv/tests/tsan-noise.supp`, and a report naming an
+in-tree frame is still a failure. The engine's pure layer is checked with Miri.
+New tests are run by name before their suite is trusted: a green suite is only
+evidence if the test you think ran actually ran.
 
-# Donate
+## License and credits
 
-If you wish to give me a few bucks, please consider donating to the Ukrainian Army instead:
-
-[https://savelife.in.ua/en/donate-en/#donate-army-card-once](https://savelife.in.ua/en/donate-en/#donate-army-card-once)
-
-[https://u24.gov.ua/](https://u24.gov.ua/)
-
-This directly increases the chances of me being able to work on this in future
+GPL-3.0, as upstream. ImPulse is a fork of
+[qimgv](https://github.com/easymodo/qimgv) by easymodo and contributors; the
+application, its interface and its artwork come from there. See `LICENSE`.
