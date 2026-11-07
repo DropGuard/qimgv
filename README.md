@@ -53,6 +53,22 @@ PrintSupport, OpenGLWidgets), and a Rust toolchain —
 [Corrosion](https://github.com/corrosion-rs/corrosion) is fetched by CMake and runs
 cargo inside the same build.
 
+### Obtaining Qt ≥ 6.9
+
+Distro archives mostly ship older Qt (Ubuntu 24.04: 6.4, Debian 13: 6.8). The
+road the CI itself takes is [aqtinstall](https://github.com/miurahr/aqtinstall),
+which downloads official Qt binaries into a prefix of your choosing:
+
+```bash
+pip install aqtinstall
+aqt install-qt linux desktop 6.9.1 linux_gcc_64 -O /opt/qt
+cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH=/opt/qt/6.9.1/gcc_64
+```
+
+The other dev libraries are apt names on Ubuntu/Debian
+(`libopencv-dev libexiv2-dev libmpv-dev`); each maps to a build option above,
+and turning the option OFF removes the dependency.
+
 ```bash
 cmake -S . -B build
 cmake --build build -j$(nproc)
