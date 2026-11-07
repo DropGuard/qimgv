@@ -51,7 +51,12 @@ Core::Core()
     QVersionNumber lastVersion = settings->lastVersion();
     if(settings->firstRun())
         onFirstRun();
-    else if(appVersion > lastVersion)
+    // 'different', not 'greater': the version line restarted at 0.1.0 when the
+    // fork took its own name, so an upgrade from the inherited qimgv numbers
+    // (0.9.x, 1.0.x) compares as a DOWNGRADE — and 'greater' would never fire
+    // again. The adjustment machinery is keyed on lastVer and idempotent per
+    // step, which is what makes any direction safe to run it in.
+    else if(appVersion != lastVersion)
         onUpdate();
 }
 
