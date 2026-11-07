@@ -275,6 +275,34 @@ for path, rel in sources():
                             "value member — the process has exactly one, owned by Core; "
                             "take it by reference")
 
+# Rule 10: fd.rs is the watcher's syscall shell, and its function inventory is
+# frozen. The watcher's decision logic — classification, the cookie pairing,
+# what a record stream means — lives in watcher/pair.rs and watcher/apply.rs,
+# the surfaces Miri runs. fd.rs is excluded from the hook's Miri trigger
+# (real syscalls), so a decision that sneaks back into this file escapes every
+# instrument silently: native cargo test would pass it, Miri never sees it,
+# and nothing else would notice. A new fn here fails the rule; adding a name
+# to the set is the review, the way R2's speaker set and R7's writer set are.
+FD_FNS = {'spawn', 'send', 'shutdown', 'drop', 'new_eventfd',
+          'enumerate_and_report', 'dispatch', 'watcher_loop'}
+fd_path = os.path.join(ROOT, 'engine', 'qimgv-engine', 'src', 'watcher', 'fd.rs')
+if not os.path.exists(fd_path):
+    failures.append("R10 cannot run: watcher/fd.rs missing — scanned 0 files is not a pass")
+else:
+    scanned['R10'] = scanned.get('R10', 0) + 1
+    fd_text = open(fd_path, encoding='utf-8', errors='replace').read()
+    for m in re.finditer(r'\bfn\s+([a-z_][a-z0-9_]*)', fd_text):
+        if m.group(1) not in FD_FNS:
+            line = fd_text[:m.start()].count('\n') + 1
+            failures.append(f"R10 decision logic in the syscall shell: watcher/fd.rs:{line} defines "
+                            f"fn {m.group(1)} — the watcher's decisions live in pair.rs/apply.rs "
+                            "(the surfaces Miri runs); extend FD_FNS only after reading the purity seam")
+    if re.search(r'#\[cfg\(test\)\]|#\[test\]', fd_text):
+        failures.append("R10 uninstrumented tests: watcher/fd.rs carries test code — it is excluded "
+                        "from the hook's Miri trigger, so its tests never run under the interpreter "
+                        "and fake their coverage; tests for fd behavior live in watcher_tests.rs "
+                        "(the real-machinery pins) or in pair.rs/apply.rs (the pure layer)")
+
 if failures:
     print("architecture violations:")
     for f in failures:
