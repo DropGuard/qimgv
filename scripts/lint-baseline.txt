@@ -28,7 +28,12 @@
 #   duplInheritedMember — Qt-style signal/slot re-declaration patterns
 #   (non-virtual shadowing is intentional in this framework).
 clazy qcolor-from-literal 50
-clazy range-loop-detach 18
+# 18 -> 14, 2026-11-07: not a source change — the tip content is byte-identical to
+# what measured 18 (git diff against the pre-rewrite tip is empty). The instrument
+# moved: compile_commands.json regenerates as CMake flag/entry state evolves, and a
+# fresh-configure scan of the SAME content reads 13-14. The four sites were an
+# artifact of the older flag set, recorded here twice-verified gone.
+clazy range-loop-detach 14
 #   connect-3arg-lambda — retired at zero on 2026-11-06: every lambda
 #   connect now names a context object, so the connection dies with the
 #   receiver instead of outliving it whenever the sender lives longer
