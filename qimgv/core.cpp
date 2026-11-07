@@ -11,6 +11,7 @@
 
 #include <QThread>
 #include <QDrag>
+#include <QTemporaryFile>
 
 #ifdef __WIN32
 #include <tchar.h>
@@ -621,13 +622,30 @@ QMimeData *Core::getMimeDataForImage(std::shared_ptr<Image> img, MimeDataTarget 
     QString path = img->filePath();
     if(img->type() == STATIC) {
         if(img->isEdited()) {
-            // TODO: cleanup temp files
-            // meanwhile use generic name
-            //path = settings->cacheDir() + img->baseName() + ".png";
-            path = settings->tmpDir() + "image.png";
+            // An edited image has no file on disk: the export hands the
+            // consumer a rendering of the edits. That file used to be one
+            // fixed name, tmpDir/image.png — a drag in flight and a clipboard
+            // entry from two exports shared it, and one consumer read the
+            // other's pixels. The file is now a uniquely-named QTemporaryFile
+            // parented to the QMimeData it serves: it lives exactly as long
+            // as the drag gesture or the clipboard entry does, and the
+            // autoremove takes it away with that — the "cleanup temp files"
+            // TODO was about this path, and it is now true by construction.
+            auto *tmp = new QTemporaryFile(
+                QDir(settings->tmpDir()).filePath("image-XXXXXX.png"), mimeData);
+            tmp->setAutoRemove(true);
             // use faster compression for drag'n'drop
             int pngQuality = (target == TARGET_DROP) ? 80 : 30;
-            img->getImage()->save(path, nullptr, pngQuality);
+            if(tmp->open()) {
+                img->getImage()->save(tmp, "png", pngQuality);
+                path = tmp->fileName();
+            } else {
+                // no writable tmp: fall back to the old fixed name rather
+                // than turning an export into a failure
+                qWarning() << "[mime] edited-image temp file did not open:" << tmp->errorString();
+                path = settings->tmpDir() + "image.png";
+                img->getImage()->save(path, nullptr, pngQuality);
+            }
         }
     }
     // !!! using setImageData() while doing drag'n'drop hangs Xorg !!!

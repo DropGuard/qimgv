@@ -1100,8 +1100,9 @@ private slots:
     // companion format ends up carrying no url, a file manager is handed the
     // bare word "copy" and cannot paste the file.
     // The edited-image branch is pinned in the same run because it is the one
-    // that writes: the temp file is a single fixed name under the cache dir,
-    // which is what keeps repeated copies bounded.
+    // that writes: the temp file is uniquely named per clipboard entry and
+    // owned by the mime data it serves, so it autoremoves when that entry is
+    // replaced — unique names without accumulating litter.
     void clipboardFileCopyAdvertisesTheFileInEveryFormat() {
         const QString dir = uniqueDir("clipcopy");
         const QString img = dir + QStringLiteral("/one.png");
@@ -1123,29 +1124,37 @@ private slots:
                             + QString::fromUtf8(cb->data("x-special/gnome-copied-files")) + '\"'));
         QCOMPARE(cb->data("application/x-kde-cutselection"), QByteArray("0"));
 
-        // an edited image is written to one fixed temp name and the url points
-        // at what was written
+        // an edited image is written to a uniquely-named temp file and the url
+        // points at what was written — never at the one fixed name two
+        // concurrent consumers used to share
         core.flipH();
         QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
         core.copyFileClipboard();
         const QUrl editedUrl = QApplication::clipboard()->mimeData()->urls().constFirst();
-        QCOMPARE(editedUrl, QUrl::fromLocalFile(settings->tmpDir() + QStringLiteral("image.png")));
-        QVERIFY2(QFileInfo::exists(editedUrl.toLocalFile()),
+        const QString editedPath = editedUrl.toLocalFile();
+        QVERIFY2(editedPath.startsWith(settings->tmpDir()),
+                 qPrintable(QStringLiteral("the edited copy advertised a file outside the tmp dir: ")
+                            + editedPath));
+        QVERIFY2(editedPath != settings->tmpDir() + QStringLiteral("image.png"),
+                 qPrintable(QStringLiteral("the edited copy was handed the old fixed name: ")
+                            + editedPath));
+        QVERIFY2(QFileInfo::exists(editedPath),
                  qPrintable(QStringLiteral("the edited copy advertised a temp file that was never "
-                                            "written: ") + editedUrl.toLocalFile()));
-        const qint64 firstSize = QFileInfo(editedUrl.toLocalFile()).size();
-        QVERIFY2(firstSize > 0, "the edited temp image was written empty");
+                                            "written: ") + editedPath));
+        QVERIFY2(QFileInfo(editedPath).size() > 0, "the edited temp image was written empty");
 
-        // copying again reuses the same name rather than accumulating one file
-        // per copy: the cache dir holds exactly one image.png
+        // copying again replaces the clipboard entry, and the entry the file is
+        // owned by dies with the replacement: a new unique name, and the old
+        // file autoremoved — unique names without accumulating litter
         core.flipV();
         QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
         core.copyFileClipboard();
-        QCOMPARE(QFileInfo(editedUrl.toLocalFile()).size() > 0, true);
-        // named local: a range loop over a container returned by value is the
-        // detach clazy warns about, and only the names are wanted here
-        const QStringList names = QDir(settings->tmpDir()).entryList({"image.png"});
-        QCOMPARE(names, QStringList{ QStringLiteral("image.png") });
+        const QString secondPath = QApplication::clipboard()->mimeData()->urls().constFirst().toLocalFile();
+        QVERIFY2(secondPath != editedPath, "two clipboard entries shared one temp name");
+        QVERIFY2(!QFileInfo::exists(editedPath),
+                 qPrintable(QStringLiteral("the replaced clipboard entry left its temp file behind: ")
+                            + editedPath));
+        QVERIFY(QFileInfo::exists(secondPath));
     }
 
     // Every overlay proxy creates its overlay as a child of the container and
@@ -2262,6 +2271,38 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(core.model->getImage(img)->size(), QSize(8, 16), 10000);
         QCOMPARE(fake.confirmCalls, 0); // document mode: in memory, no save, no ask
         QCOMPARE(contentOf(img), diskBefore); // the disk file is untouched until save
+    }
+
+    // The edited-image export used to hand every consumer one fixed path,
+    // tmpDir/image.png: a drag in flight and a clipboard entry from two
+    // exports shared one file and one of them read the other's pixels. The
+    // file is now a uniquely-named QTemporaryFile owned by the QMimeData it
+    // serves — it exists exactly as long as that mime data does, and the
+    // autoremove takes it away with it.
+    void theEditedImageExportGetsAUniqueTempFileOwnedByItsMime() {
+        Core core;
+        const QString img = QDir(alpha).filePath("rect.png");
+        writeRectImage(img);
+        QVERIFY(core.loadPath(img));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(img), 10000);
+        core.rotateLeft();
+        auto image = core.model->getImage(img);
+        QVERIFY(image->isEdited());
+
+        QMimeData *first = core.getMimeDataForImage(image, TARGET_DROP);
+        QMimeData *second = core.getMimeDataForImage(image, TARGET_DROP);
+        const QString firstPath = QUrl(first->urls().value(0)).toLocalFile();
+        const QString secondPath = QUrl(second->urls().value(0)).toLocalFile();
+        QVERIFY2(firstPath != secondPath, "two exports were handed one fixed temp name");
+        QVERIFY(QFile::exists(firstPath));
+        QVERIFY(QFile::exists(secondPath));
+
+        delete first; // the drag machinery does this when the gesture ends
+        QVERIFY2(!QFile::exists(firstPath), "the temp file outlived its mime data");
+        QVERIFY(QFile::exists(secondPath));
+        delete second;
+        QVERIFY2(!QFile::exists(secondPath), "the temp file outlived its mime data");
     }
 
     void editingInFolderViewSavesAfterScriptedConfirmation() {
