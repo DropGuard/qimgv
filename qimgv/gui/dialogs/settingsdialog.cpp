@@ -1,4 +1,6 @@
 #include "settingsdialog.h"
+
+#include <utility>
 #include "ui_settingsdialog.h"
 
 SettingsDialog::SettingsDialog(QWidget *parent) :
@@ -209,9 +211,9 @@ void SettingsDialog::setupSidebar() {
 //------------------------------------------------------------------------------
 void SettingsDialog::readSettings() {
     // checkbox bindings: one declaration, both directions
-    for(const CheckBinding &b : mChecks)
+    for(const CheckBinding &b : std::as_const(mChecks))
         b.box->setChecked((settings->*b.get)());
-    for(const ComboBinding &b : mCombos) {
+    for(const ComboBinding &b : std::as_const(mCombos)) {
         int idx = b.values.indexOf(settings->load<QString>(*b.desc));
         if(idx < 0)
             idx = b.values.indexOf(b.fallback);
@@ -344,9 +346,9 @@ void SettingsDialog::readSettings() {
 void SettingsDialog::saveSettings() {
     // background work is waited on where the new settings are consumed:
     // Core::readSettings() drains the shared worker pool before re-reading
-    for(const CheckBinding &b : mChecks)
+    for(const CheckBinding &b : std::as_const(mChecks))
         (settings->*b.set)(b.box->isChecked());
-    for(const ComboBinding &b : mCombos) {
+    for(const ComboBinding &b : std::as_const(mCombos)) {
         int idx = b.box->currentIndex();
         if(idx >= 0 && idx < b.values.size())
             settings->store(*b.desc, b.values.at(idx));
