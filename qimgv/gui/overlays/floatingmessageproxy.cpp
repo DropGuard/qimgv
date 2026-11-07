@@ -9,8 +9,7 @@ FloatingMessageProxy::FloatingMessageProxy(FloatingWidgetContainer *parent) :
 }
 
 FloatingMessageProxy::~FloatingMessageProxy() {
-    if(overlay)
-        overlay->deleteLater();
+    // owned by the container; see ZoomIndicatorOverlayProxy
 }
 
 void FloatingMessageProxy::showMessage(QString text, FloatingMessageIcon icon, int duration) {

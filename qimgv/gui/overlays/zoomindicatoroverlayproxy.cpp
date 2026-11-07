@@ -7,8 +7,11 @@ ZoomIndicatorOverlayProxy::ZoomIndicatorOverlayProxy(FloatingWidgetContainer *pa
 }
 
 ZoomIndicatorOverlayProxy::~ZoomIndicatorOverlayProxy() {
-    if(overlay)
-        overlay->deleteLater();
+    // The overlay is the container's child, so the tree reclaims it: deleting
+    // it from here was a proxy destroying a widget it never owned. The
+    // use-after-free that shape allowed is closed by the member being a
+    // QPointer, which nulls itself when the overlay dies - pinned by
+    // proxyOutlivesItsContainer in core_nav_tests.cpp.
 }
 
 void ZoomIndicatorOverlayProxy::show() {

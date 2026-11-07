@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include "gui/overlays/fullscreeninfooverlay.h"
 
 struct InfoOverlayStateBuffer {
@@ -21,6 +22,6 @@ public:
 
 private:
     FloatingWidgetContainer *container;
-    FullscreenInfoOverlay *infoOverlay;
+    QPointer<FullscreenInfoOverlay> infoOverlay;
     InfoOverlayStateBuffer stateBuf;
 };

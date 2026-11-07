@@ -56,9 +56,7 @@ public:
      */
     QSizeF inner() const;
     QSizeF outer() const;
-signals:
-    void positionChanged(float x, float y);
-    
+
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;

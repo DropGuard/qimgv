@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include "gui/overlays/zoomindicatoroverlay.h"
 
 struct ZoomIndicatorOverlayStateBuffer {
@@ -18,6 +19,8 @@ public:
 
 private:
     FloatingWidgetContainer *container;
-    ZoomIndicatorOverlay *overlay;
+    // QPointer rather than a raw handle: the tree owns the overlay, so it can
+    // die first and the proxy has to see that instead of dereferencing it
+    QPointer<ZoomIndicatorOverlay> overlay;
     ZoomIndicatorOverlayStateBuffer stateBuf;
 };

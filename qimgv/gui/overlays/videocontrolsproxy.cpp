@@ -7,8 +7,7 @@ VideoControlsProxyWrapper::VideoControlsProxyWrapper(FloatingWidgetContainer *pa
 }
 
 VideoControlsProxyWrapper::~VideoControlsProxyWrapper() {
-    if(videoControls)
-        videoControls->deleteLater();
+    // owned by the container; see ZoomIndicatorOverlayProxy
 }
 
 void VideoControlsProxyWrapper::init() {

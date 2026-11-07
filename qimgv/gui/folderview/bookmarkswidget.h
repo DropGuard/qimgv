@@ -28,9 +28,6 @@ signals:
     void bookmarkClicked(QString dirPath);
     void droppedIn(QList<QString> paths, QString dirPath);
 
-protected:
-    void dropEvent(QDropEvent *event) override;
-    void dragEnterEvent(QDragEnterEvent *event) override;
 private:
     QVBoxLayout layout;
     QStringList paths;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include "gui/overlays/imageinfooverlay.h"
 
 struct ImageInfoOverlayStateBuffer {
@@ -18,6 +19,6 @@ public:
     bool isHidden();
 private:
     FloatingWidgetContainer *container;
-    ImageInfoOverlay *overlay;
+    QPointer<ImageInfoOverlay> overlay;
     ImageInfoOverlayStateBuffer stateBuf;
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include "gui/overlays/videocontrols.h"
 
 struct VideoControlsStateBuffer {
@@ -36,6 +37,6 @@ public slots:
 
 private:
     FloatingWidgetContainer *container;
-    VideoControls *videoControls;
+    QPointer<VideoControls> videoControls;
     VideoControlsStateBuffer stateBuf;
 };

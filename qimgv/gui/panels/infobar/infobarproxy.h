@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include "gui/panels/infobar/infobar.h"
 #include <QVBoxLayout>
 
@@ -24,6 +25,6 @@ protected:
 
 private:
     InfoBarStateBuffer stateBuf;
-    InfoBar *infoBar;
+    QPointer<InfoBar> infoBar;
     QVBoxLayout layout;
 };

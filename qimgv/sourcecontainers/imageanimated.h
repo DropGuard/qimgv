@@ -16,15 +16,11 @@ public:
     int width() override;
     QSize size() override;
 
-    bool isEditable();
     bool isEdited();
 
     int frameCount();
 public slots:
     bool save(QString destPath, int jpegQuality) override;
-
-signals:
-    void frameChanged(QPixmap*);
 
 private:
     void load() override;

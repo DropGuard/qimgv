@@ -56,21 +56,6 @@ void MapOverlay::MapOverlayPrivate::moveMainImage(float xPos, float yPos) {
     float y = yPos - (innerRect.height() / 2);
 
     moveInnerWidget(x, y);
-
-    x /= -xSpeedDiff;
-    y /= -ySpeedDiff;
-
-    // Check limits;
-    float invisibleX = windowRect.width() - drawingRect.width();
-    float invisibleY = windowRect.height() - drawingRect.height();
-
-    if(x < invisibleX) x = invisibleX;
-    if(x > 0) x = 0;
-
-    if(y < invisibleY) y = invisibleY;
-    if(y > 0) y = 0;
-
-    emit q->positionChanged(x, y);
 }
 
 MapOverlay::MapOverlay(QWidget *parent) : QWidget(parent),

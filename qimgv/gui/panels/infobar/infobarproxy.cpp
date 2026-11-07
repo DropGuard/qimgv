@@ -9,8 +9,8 @@ InfoBarProxy::InfoBarProxy(QWidget *parent) : QWidget(parent), infoBar(nullptr) 
 }
 
 InfoBarProxy::~InfoBarProxy() {
-    if(infoBar)
-        infoBar->deleteLater();
+    // infoBar is this widget's own child: ~QObject reclaims it, and doing it
+    // from here meant touching a handle the child list had already released
 }
 
 void InfoBarProxy::setInfo(const QString& position, const QString& fileName, const QString& info) {

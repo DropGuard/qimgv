@@ -28,14 +28,12 @@ public:
     explicit CropOverlay(FloatingWidgetContainer *parent = nullptr);
     void setImageDrawRect(QRect);
     void setImageRealSize(QSize);
-    void setButtonText(QString text);
     void setImageScale(float scale);
     // observability for tests: the scale the overlay draws with
     float imageScale() const { return scale; }
     void clearSelection();
 
 signals:
-    void positionChanged(float x, float y);
     void selectionChanged(QRect);
     void escPressed();
     void cropDefault();
@@ -62,7 +60,6 @@ private:
     qreal dpr;
     QPointF ar;
 
-    QPoint setInsidePoint(QPoint, QRect);
     QRect placeInside(QRect what, QRect where);
     void drawSelection(QPainter*);
     void drawHandles(QBrush&, QPainter*);

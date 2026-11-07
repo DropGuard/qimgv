@@ -7,8 +7,7 @@ ImageInfoOverlayProxy::ImageInfoOverlayProxy(FloatingWidgetContainer *parent)
 }
 
 ImageInfoOverlayProxy::~ImageInfoOverlayProxy() {
-    if(overlay)
-        overlay->deleteLater();
+    // owned by the container; see ZoomIndicatorOverlayProxy
 }
 
 void ImageInfoOverlayProxy::show() {

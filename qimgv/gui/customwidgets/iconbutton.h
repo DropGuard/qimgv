@@ -5,7 +5,6 @@
 
 class IconButton : public IconWidget {
     Q_OBJECT
-    bool isHovered();
 public:
     explicit IconButton(QWidget *parent = nullptr);
     void setCheckable(bool mode);

@@ -1,7 +1,6 @@
 #include "bookmarkswidget.h"
 
 BookmarksWidget::BookmarksWidget(QWidget *parent) : QWidget(parent), highlightedPath("") {
-    setAcceptDrops(true);
     setContentsMargins(0,0,0,0);
     layout.setContentsMargins(0,0,0,0);
     layout.setSpacing(0);
@@ -70,18 +69,5 @@ void BookmarksWidget::onPathChanged(const QString& path) {
         auto w = dynamic_cast<BookmarksItem*>(layout.itemAt(newIndex)->widget());
         w->setHighlighted(true);
         highlightedPath = path;
-    }
-}
-
-void BookmarksWidget::dropEvent(QDropEvent *event) {
-    Q_UNUSED(event)
-//    QModelIndex dropIndex = indexAt(event->pos());
-//    if(dropIndex.isValid())
-//        emit droppedIn(event->mimeData()->urls(), dropIndex);
-}
-
-void BookmarksWidget::dragEnterEvent(QDragEnterEvent *event) {
-    if(event->mimeData()->hasUrls()) {
-        event->acceptProposedAction();
     }
 }

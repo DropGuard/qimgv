@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include "gui/overlays/floatingmessage.h"
 
 class FloatingMessageProxy
@@ -12,5 +13,5 @@ public:
     void init();
 private:
     FloatingWidgetContainer *container;
-    FloatingMessage *overlay;
+    QPointer<FloatingMessage> overlay;
 };

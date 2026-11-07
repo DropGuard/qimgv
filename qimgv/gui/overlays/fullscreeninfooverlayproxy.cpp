@@ -7,8 +7,7 @@ FullscreenInfoOverlayProxy::FullscreenInfoOverlayProxy(FloatingWidgetContainer *
 }
 
 FullscreenInfoOverlayProxy::~FullscreenInfoOverlayProxy() {
-    if(infoOverlay)
-        infoOverlay->deleteLater();
+    // owned by the container; see ZoomIndicatorOverlayProxy
 }
 
 void FullscreenInfoOverlayProxy::show() {

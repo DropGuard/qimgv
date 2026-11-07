@@ -60,8 +60,6 @@ public:
 signals:
     void scalingRequested(QSize, ScalingFilter);
     void scaleChanged(qreal);
-    void sourceSizeChanged(QSize);
-    void imageAreaChanged(QRect);
     void draggedOut();
     void playbackFinished();
     void animationPaused(bool);
@@ -179,7 +177,6 @@ private:
 
     void scroll(int dx, int dy, bool animated);
 
-    void mousePanWrapping(QMouseEvent *event);
     void mousePan(QMouseEvent *event);
     void mouseMoveZoom(QMouseEvent *event);
     void reset();
