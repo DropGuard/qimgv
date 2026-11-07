@@ -1,5 +1,7 @@
 #include "foldergridview.h"
 
+#include <QMimeData>
+
 // TODO: create a base class for this and the one on panel
 
 FolderGridView::FolderGridView(QWidget *parent)

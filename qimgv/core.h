@@ -105,6 +105,7 @@ private:
     bool setDirectory(const QString & path);
 
     QMimeData *getMimeDataForImage(std::shared_ptr<Image> img, MimeDataTarget target);
+    QMimeData *mimeDataForPaths(const QList<QString> &paths);
     QTranslator *translator = nullptr;
 
     Randomizer randomizer;

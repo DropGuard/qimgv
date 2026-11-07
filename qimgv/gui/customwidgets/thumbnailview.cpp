@@ -677,8 +677,9 @@ void ThumbnailView::mouseMoveEvent(QMouseEvent *event) {
         return;
     if(QLineF(dragStartPos, event->pos()).length() >= 40) {
         auto *item = dynamic_cast<ThumbnailWidget*>(itemAt(dragStartPos));
-        if(item && selection().contains(thumbnails.indexOf(item)))
+        if(item && selection().contains(thumbnails.indexOf(item))) {
             emit draggedOut();
+        }
     }
 }
 

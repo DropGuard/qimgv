@@ -748,6 +748,31 @@ private slots:
                  qPrintable(QStringLiteral("widgets outliving their owner: ") + surplus.join(", ")));
     }
 
+    // Dragging an entry whose full-size image was never DECODED: every listed
+    // entry has an Image object, but an undecoded one carries no pixels — the
+    // mime must still offer the FILE (its path), because the drag is the file
+    // reference, not the pixels. mimeDataForPaths guarantees the path even for
+    // an entry whose Image object was never decoded (and the fallback also
+    // covers the defensive case of getImage returning null).
+    void draggingAnUndecodedEntryStillOffersTheFile() {
+        Core core;
+        QVERIFY(core.loadPath(QDir(alpha).filePath("a.png")));
+        QTRY_VERIFY_WITH_TIMEOUT(core.isSettled(), 10000);
+        // far.png sits beyond the preload neighborhood: a.png preloads its
+        // immediate neighbor (mid.png), never the far one — undecoded
+        writeImage(QDir(alpha).filePath("mid.png"));
+        const QString far = QDir(alpha).filePath("far.png");
+        writeImage(far);
+        QVERIFY2(!core.model->isLoaded(far),
+                 "precondition broken: the far image is decoded, the test measures nothing");
+
+        std::unique_ptr<QMimeData> mime(core.mimeDataForPaths({far}));
+
+        QVERIFY2(mime->hasUrls(),
+                 "dragging an undecoded entry produced a mime without urls");
+        QCOMPARE(mime->urls().first(), QUrl::fromLocalFile(far));
+    }
+
     void renameCurrentSelectionForcesAfterScriptedConfirmation() {
         Core core;
         FakeInteractions fake;

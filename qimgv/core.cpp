@@ -622,13 +622,17 @@ void Core::onDraggedOut() {
     onDraggedOut(currentSelection());
 }
 
-void Core::onDraggedOut(const QList<QString> &paths) {
-    if(paths.isEmpty())
-        return;
+QMimeData *Core::mimeDataForPaths(const QList<QString> &paths) {
     QMimeData *mimeData;
     // single selection, image
     if(paths.count() == 1 && model->containsFile(paths.first())) {
         mimeData = getMimeDataForImage(model->getImage(paths.last()), TARGET_DROP);
+        // the Image object may simply not be in the cache — an entry in the
+        // listing is a file whether or not its full-size image was loaded.
+        // An empty QMimeData makes every drop target refuse the drag with a
+        // forbidden cursor for its entire lifetime.
+        if(!mimeData->hasUrls())
+            mimeData->setUrls({QUrl::fromLocalFile(paths.first())});
     } else { // multi-selection, or single directory. drag urls
         mimeData = new QMimeData();
         QList<QUrl> urlList;
@@ -636,9 +640,15 @@ void Core::onDraggedOut(const QList<QString> &paths) {
             urlList << QUrl::fromLocalFile(path);
         mimeData->setUrls(urlList);
     }
+    return mimeData;
+}
+
+void Core::onDraggedOut(const QList<QString> &paths) {
+    if(paths.isEmpty())
+        return;
     //auto thumb = Thumbnailer::getThumbnail(paths.last(), 100);
     mDrag = new QDrag(this);
-    mDrag->setMimeData(mimeData);
+    mDrag->setMimeData(mimeDataForPaths(paths));
     //mDrag->setPixmap(*thumb->pixmap().get());
     mDrag->exec(Qt::CopyAction | Qt::MoveAction | Qt::LinkAction, Qt::CopyAction);
 }
