@@ -206,7 +206,8 @@ private slots:
 
     void modelFileOperationsRideTheEngineRoundTrip() {
         resetFixture();
-        DirectoryModel model;
+        WorkerPool pool(2);
+        DirectoryModel model(pool);
         QSignalSpy removed(&model, &DirectoryModel::fileRemoved);
         QSignalSpy added(&model, &DirectoryModel::fileAdded);
         QVERIFY(model.setDirectory(fixtureDir));

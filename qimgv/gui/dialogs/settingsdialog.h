@@ -3,7 +3,6 @@
 #include <QDialog>
 #include <QFileDialog>
 #include <QColorDialog>
-#include <QThreadPool>
 #include <QTableWidget>
 #include <QTextBrowser>
 #include <QListWidget>

@@ -6,18 +6,14 @@
 
 #include "../directorymanager/enginebridge.h"
 
-Thumbnailer::Thumbnailer(EngineBridge &bridge)
-    : mBridge(bridge)
+Thumbnailer::Thumbnailer(WorkerPool &_pool, EngineBridge &bridge)
+    : mBridge(bridge),
+      pool(_pool)
 {
     connect(&mBridge, &EngineBridge::thumbNext,
             this, &Thumbnailer::onThumbNext);
     cache = new ThumbnailCache();
-    pool = new QThreadPool(this);
-    int threads = settings->thumbnailerThreadCount();
-    int globalThreads = QThreadPool::globalInstance()->maxThreadCount();
-    if(threads > globalThreads)
-        threads = globalThreads;
-    pool->setMaxThreadCount(threads);
+    // the shared pool's size is decided once, where it is constructed (Core)
     // startup sweep, after the first frames have settled; stat-only walk
     QTimer::singleShot(3000, this, [this]() {
         cache->purgeOlderThan(ThumbnailCache::cacheMaxIdleDays);
@@ -25,27 +21,27 @@ Thumbnailer::Thumbnailer(EngineBridge &bridge)
 }
 
 Thumbnailer::~Thumbnailer() {
-    pool->clear();
-    pool->waitForDone();
-    // a parentless QObject: nothing else in the graph owns it, and the runnables
-    // that were handed its pointer are gone with the drain above
+    auto dropped = pool.drain(PoolOwner::Thumbnailer);
+    pool.waitForOwner(PoolOwner::Thumbnailer);
+    // a parentless QObject: nothing else in the graph owns it, and the jobs
+    // that were handed its pointer are gone with the drain and the wait above
     delete cache;
 }
 
 void Thumbnailer::waitForDone() {
-    pool->waitForDone();
+    pool.waitForOwner(PoolOwner::Thumbnailer);
 }
 
 void Thumbnailer::clearTasks() {
-    // pool->clear() kills queued runnables whose taskEnd will never fire —
-    // report every dispatched request as done so the engine's in-flight
-    // accounting doesn't leak, then drop the pending batch
+    // drain() kills queued jobs whose taskEnd will never fire — report every
+    // dispatched request as done so the engine's in-flight accounting doesn't
+    // leak, then drop the pending batch
     auto &bridge = mBridge;
     for (auto it = dispatched.begin(); it != dispatched.end(); ++it)
         bridge.thumbDone(it.key(), it.value().first, it.value().second);
     dispatched.clear();
     bridge.thumbClear();
-    pool->clear();
+    auto dropped = pool.drain(PoolOwner::Thumbnailer);
     mBatchStart = true;
 }
 
@@ -66,12 +62,12 @@ void Thumbnailer::getThumbnailAsync(const QString& path, int size, bool crop, bo
 }
 
 void Thumbnailer::startThumbnailerThread(QString filePath, int size, bool crop, bool force) {
-    auto runnable = new ThumbnailerRunnable(settings->useThumbnailCache() ? cache : nullptr, std::move(filePath), size, crop, force,
-                                            LoadPolicy::fromSettings());
-    connect(runnable, &ThumbnailerRunnable::taskStart, this, &Thumbnailer::onTaskStart);
-    connect(runnable, &ThumbnailerRunnable::taskEnd, this, &Thumbnailer::onTaskEnd);
-    runnable->setAutoDelete(true);
-    pool->start(runnable);
+    auto job = std::make_unique<ThumbnailerRunnable>(settings->useThumbnailCache() ? cache : nullptr,
+                                                     std::move(filePath), size, crop, force,
+                                                     LoadPolicy::fromSettings());
+    connect(job.get(), &ThumbnailerRunnable::taskStart, this, &Thumbnailer::onTaskStart);
+    connect(job.get(), &ThumbnailerRunnable::taskEnd, this, &Thumbnailer::onTaskEnd);
+    pool.submit(PoolOwner::Thumbnailer, 0, std::move(job));
 }
 
 void Thumbnailer::onTaskStart(const QString& filePath, int size) {

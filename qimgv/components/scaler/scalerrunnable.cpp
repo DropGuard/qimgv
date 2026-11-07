@@ -1,12 +1,10 @@
 #include "scalerrunnable.h"
 
-#include <QElapsedTimer>
+#include "utils/imagelib.h"
+
 #include <utility>
 
-ScalerRunnable::ScalerRunnable() {
-}
-
-void ScalerRunnable::setRequest(ScalerRequest r) {
+ScalerRunnable::ScalerRunnable(ScalerRequest r) {
     req = std::move(r);
 }
 

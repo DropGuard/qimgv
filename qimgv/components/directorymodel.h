@@ -10,7 +10,7 @@
 class DirectoryModel : public QObject {
     Q_OBJECT
 public:
-    explicit DirectoryModel(QObject *parent = nullptr);
+    explicit DirectoryModel(WorkerPool &pool, QObject *parent = nullptr);
     ~DirectoryModel() override;
 
     Scaler *scaler = nullptr;

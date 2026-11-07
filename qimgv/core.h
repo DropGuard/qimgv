@@ -10,6 +10,7 @@
 #include <QTranslator>
 #include "appversion.h"
 #include "settings.h"
+#include "components/workerpool/workerpool.h"
 #include "components/directorymodel.h"
 #include "components/directorypresenter.h"
 #include "components/scriptmanager/scriptmanager.h"
@@ -70,6 +71,12 @@ private:
 
     // ui stuff
     MW *mw;
+
+    // the one executor Loader/Scaler/Thumbnailer run on, injected into every
+    // component that needs it. Declared before them so its destruction — the
+    // only place the workers are joined — happens after each of them has
+    // drained and waited
+    WorkerPool pool_;
 
     State state;
     FolderEndAction folderEndAction;

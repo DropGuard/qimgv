@@ -2,9 +2,10 @@
 
 #include <utility>
 
-DirectoryPresenter::DirectoryPresenter(QObject *parent) :
+DirectoryPresenter::DirectoryPresenter(WorkerPool &_pool, QObject *parent) :
     QObject(parent),
-    thumbnailer(EngineBridge::instance()),
+    pool(_pool),
+    thumbnailer(_pool, EngineBridge::instance()),
     mShowDirs(false) {
     connect(&thumbnailer, &Thumbnailer::thumbnailReady, this, &DirectoryPresenter::onThumbnailReady);
 }

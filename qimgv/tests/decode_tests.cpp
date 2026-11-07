@@ -22,7 +22,8 @@ private slots:
         const QSize orig = screen * 2;
         QVERIFY(writeBigImage(fixtureDir + "/big.jpg", "jpg", orig));
 
-        DirectoryModel model;
+        WorkerPool pool(2);
+        DirectoryModel model(pool);
         QSignalSpy ready(&model, &DirectoryModel::imageReady);
         QVERIFY(ready.isValid());
         QVERIFY(model.setDirectory(fixtureDir));
@@ -48,7 +49,8 @@ private slots:
         const QSize orig = offscreenScreenPixels() * 2;
         QVERIFY(writeBigImage(fixtureDir + "/big.png", "png", orig));
 
-        DirectoryModel model;
+        WorkerPool pool(2);
+        DirectoryModel model(pool);
         QSignalSpy ready(&model, &DirectoryModel::imageReady);
         QVERIFY(model.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
@@ -67,7 +69,8 @@ private slots:
         const QSize orig = offscreenScreenPixels() * 2;
         QVERIFY(writeBigImage(fixtureDir + "/big.jpg", "jpg", orig));
 
-        DirectoryModel model;
+        WorkerPool pool(2);
+        DirectoryModel model(pool);
         QSignalSpy ready(&model, &DirectoryModel::imageReady);
         QVERIFY(model.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
@@ -84,7 +87,8 @@ private slots:
         const QSize screen = offscreenScreenPixels();
         QVERIFY(writeBigImage(fixtureDir + "/big.jpg", "jpg", screen * 2));
 
-        DirectoryModel model;
+        WorkerPool pool(2);
+        DirectoryModel model(pool);
         QSignalSpy ready(&model, &DirectoryModel::imageReady);
         QVERIFY(model.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);
@@ -109,7 +113,8 @@ private slots:
         resetFixture();
         QVERIFY(writeBigImage(fixtureDir + "/big.png", "png", offscreenScreenPixels() * 2));
 
-        DirectoryModel model;
+        WorkerPool pool(2);
+        DirectoryModel model(pool);
         QSignalSpy ready(&model, &DirectoryModel::imageReady);
         QVERIFY(model.setDirectory(fixtureDir));
         QTRY_COMPARE_WITH_TIMEOUT(model.fileCount(), 4, 10000);

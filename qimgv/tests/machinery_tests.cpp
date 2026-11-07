@@ -482,7 +482,8 @@ private slots:
         QVERIFY(image->getImage()->size() == orig);
 
         Cache cache;
-        Scaler scaler(&cache);
+        WorkerPool pool(2);
+        Scaler scaler(&cache, pool);
         int delivered = 0;
         QPixmap result;
         QObject::connect(&scaler, &Scaler::scalingFinished, [&](QPixmap pix, ScalerRequest) {
@@ -514,7 +515,8 @@ private slots:
         Cache cache;
         cache.insert(a);
         cache.insert(b);
-        Scaler scaler(&cache);
+        WorkerPool pool(2);
+        Scaler scaler(&cache, pool);
         int delivered = 0;
         QSize gotSize;
         QString gotPath;
@@ -559,7 +561,8 @@ private slots:
         Cache cache;
         QVERIFY(cache.insert(a));
         QVERIFY(cache.insert(b));
-        Scaler scaler(&cache);
+        WorkerPool pool(2);
+        Scaler scaler(&cache, pool);
         int delivered = 0;
         QObject::connect(&scaler, &Scaler::scalingFinished, [&](QPixmap, ScalerRequest) {
             ++delivered;
@@ -578,11 +581,14 @@ private slots:
         QVERIFY(!cache.contains(a->filePath())); // unlocked by now, so this pass takes it
     }
 
-    // The runnable is the one object the Scaler creates and nobody owns: it goes
-    // to the pool with autoDelete(false), so the pool runs it but never frees it,
-    // and Scaler had no destructor to free it either. Every Scaler that ever
-    // scaled something left a runnable behind, still holding its last
-    // ScalerRequest and through it the decoded image — unreachable, but pinned.
+    // Ownership used to be the bug here: the runnable was the one object the
+    // Scaler created and nobody owned (autoDelete(false), no destructor), so
+    // every Scaler that ever scaled something left it behind, still holding
+    // its last ScalerRequest and through it the decoded image. The pool owns
+    // its jobs outright now — submit() transfers, run() returning is the
+    // pool's deletion point on the worker thread — and this pin stays to
+    // prove the Scaler leaves nothing behind: once it is dead, the image's
+    // refcount is back to the caller's copy alone.
     void destroyingTheScalerReleasesTheImageItWasHolding() {
         resetFixture();
         const QSize orig(64, 64);
@@ -593,7 +599,8 @@ private slots:
         {
             Cache cache;
             QVERIFY(cache.insert(image));
-            Scaler scaler(&cache);
+            WorkerPool pool(2);
+            Scaler scaler(&cache, pool);
             int delivered = 0;
             QObject::connect(&scaler, &Scaler::scalingFinished, [&](QPixmap, ScalerRequest) {
                 ++delivered;
@@ -627,7 +634,8 @@ private slots:
 
     void thumbnailerAccountingSurvivesAClearMidFlight() {
         resetFixture();
-        Thumbnailer thumb(EngineBridge::instance());
+        WorkerPool pool(2);
+        Thumbnailer thumb(pool, EngineBridge::instance());
         QSignalSpy ready(&thumb, &Thumbnailer::thumbnailReady);
         QVERIFY(ready.isValid());
 

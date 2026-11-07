@@ -13,6 +13,7 @@ int runDecodeTests(int argc, char **argv);
 int runSettingsTableTests(int argc, char **argv);
 int runFileLogTests(int argc, char **argv);
 int runMachineryTests(int argc, char **argv);
+int runWorkerPoolTests(int argc, char **argv);
 int runImageOpsTests(int argc, char **argv);
 int runInfraTests(int argc, char **argv);
 
@@ -41,6 +42,7 @@ int main(int argc, char **argv) {
         runSettingsTableTests,
         runFileLogTests,
         runMachineryTests,
+        runWorkerPoolTests,
         runImageOpsTests,
         runInfraTests,
     };

@@ -14,7 +14,7 @@
 class DirectoryPresenter : public QObject {
     Q_OBJECT
 public:
-    explicit DirectoryPresenter(QObject *parent = nullptr);
+    explicit DirectoryPresenter(WorkerPool &pool, QObject *parent = nullptr);
 
     void setView(std::shared_ptr<IDirectoryView>);
     void setModel(std::shared_ptr<DirectoryModel> newModel);
@@ -58,6 +58,10 @@ private slots:
 
     void onDroppedInto(const QMimeData *data, QObject *source, int targetIndex);
 private:
+    // injected from Core; declared before the thumbnailer that runs on it so
+    // the destruction order keeps the pool alive through the thumbnailer's
+    // drain
+    WorkerPool &pool;
     std::shared_ptr<IDirectoryView> view = nullptr;
     std::shared_ptr<DirectoryModel> model = nullptr;
     Thumbnailer thumbnailer;

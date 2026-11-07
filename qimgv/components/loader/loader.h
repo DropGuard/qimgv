@@ -1,14 +1,16 @@
 #pragma once
 
-#include <QThreadPool>
 #include <optional>
 #include "components/cache/thumbnailcache.h"
+#include "components/workerpool/workerpool.h"
 #include "loaderrunnable.h"
 
 class Loader : public QObject {
     Q_OBJECT
 public:
-    explicit Loader();
+    // the pool is injected, not owned: Core's single WorkerPool outlives every
+    // component that runs on it
+    explicit Loader(WorkerPool &_pool);
     ~Loader() override;
     // nullopt when the file cannot be opened; the async path reports the same
     // case as loadFailed(), so loadFinished() never carries an absent image
@@ -23,8 +25,10 @@ public:
     bool isBusy() const;
     bool isLoading(const QString &path);
 private:
+    // bookkeeping only: submitted jobs belong to the pool, which destroys them
+    // on the worker thread once run() returns
     QHash<QString, LoaderRunnable*> tasks;
-    QThreadPool *pool;    
+    WorkerPool &pool;
     void clearPool();
     void doLoadAsync(const QString &path, int priority, bool scaled, const LoadPolicy &policy);
 

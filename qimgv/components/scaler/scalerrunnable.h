@@ -1,20 +1,16 @@
 #pragma once
 
 #include <QObject>
-#include <QRunnable>
-#include <QThread>
-#include <QDebug>
-#include "components/cache/cache.h"
+#include "components/workerpool/workerpool.h"
 #include "scalerrequest.h"
-#include "utils/imagelib.h"
-#include "settings.h"
 
-class ScalerRunnable : public QObject, public QRunnable
+// one-shot: a fresh runnable per request, owned by the pool from submit() to
+// the moment run() returns
+class ScalerRunnable : public QObject, public PoolJob
 {
     Q_OBJECT
 public:
-    explicit ScalerRunnable();
-    void setRequest(ScalerRequest r);
+    explicit ScalerRunnable(ScalerRequest r);
     void run() override;
 signals:
     // the result is shared, not handed over as a naked pointer: this signal is
@@ -23,5 +19,4 @@ signals:
 
 private:
     ScalerRequest req;
-    const float CMPL_FALLBACK_THRESHOLD = 70.0; // equivalent of ~ 5000x3500 @ 32bpp
 };

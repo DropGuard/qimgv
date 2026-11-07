@@ -9,17 +9,30 @@
 
 #include "utils/folderend.h"
 
+#include <QThread>
+
 #ifdef __WIN32
 #include <tchar.h>
 #endif
 
+// the shared pool's size: the old thumbnailerThreads knob now means "the
+// pipeline's threads". Never below 2, so a stuck mpv frame grab cannot starve
+// decoding; never above the hardware
+static int workerPoolThreadCount() {
+    const int hw = qMax(2, QThread::idealThreadCount());
+    return qBound(2, settings->thumbnailerThreadCount(), hw);
+}
+
 Core::Core()
     : QObject(),
+      pool_(workerPoolThreadCount()),
       folderEndAction(FOLDER_END_NO_ACTION),
       loopSlideshow(false),
       mDrag(nullptr),
       slideshow(false),
-      shuffle(false)
+      shuffle(false),
+      thumbPanelPresenter(pool_),
+      folderViewPresenter(pool_)
 {
     loadTranslation();
     initGui();
@@ -49,6 +62,10 @@ Core::~Core() {
 }
 
 void Core::readSettings() {
+    // what the settings dialog's dead globalInstance() wait aspired to: the
+    // new settings take effect only once nothing scheduled under the old ones
+    // is still in flight
+    pool_.waitForAll();
     loopSlideshow = settings->loopSlideshow();
     folderEndAction = settings->folderEndAction();
     slideshowTimer.setInterval(settings->slideshowInterval());
@@ -85,7 +102,7 @@ void Core::attachModel(DirectoryModel *_model) {
 }
 
 void Core::initComponents() {
-    attachModel(new DirectoryModel());
+    attachModel(new DirectoryModel(pool_));
 }
 
 void Core::connectComponents() {

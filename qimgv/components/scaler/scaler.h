@@ -1,16 +1,16 @@
 #pragma once
 
 #include <QObject>
-#include <QThreadPool>
 #include <QThread>
 #include "components/cache/cache.h"
+#include "components/workerpool/workerpool.h"
 #include "scalerrequest.h"
 #include "scalerrunnable.h"
 
 class Scaler : public QObject {
     Q_OBJECT
 public:
-    explicit Scaler(Cache *_cache, QObject *parent = nullptr);
+    explicit Scaler(Cache *_cache, WorkerPool &_pool, QObject *parent = nullptr);
     ~Scaler() override;
 
 signals:
@@ -27,16 +27,17 @@ private slots:
     void slotForwardScaledResult(std::shared_ptr<const QImage> image, const ScalerRequest &req);
 
 private:
-    QThreadPool *pool = nullptr;
-    ScalerRunnable *runnable;
+    WorkerPool &pool;
     bool buffered, running;
     ScalerRequest bufferedRequest, startedRequest;
 
     Cache *cache;
 
-    // hands the request to the pool and records it as in flight — on this thread,
-    // at the moment of hand-off; the pool telling us back would be both later
-    // and racy, since maxThreadCount(1) lets a second hand-off overwrite the
-    // first task's request while it is already running
+    // hands the request to the pool and records it as in flight — on this
+    // thread, at the moment of hand-off; the pool telling us back would be
+    // both later and racy. The machine itself never hands off a second request
+    // while one is in flight (startRequest runs from requestScaled only when
+    // !running, and from onTaskFinish after running=false), so at most one
+    // Scaler job is ever queued or running — no thread-count guarantee needed
     void startRequest(const ScalerRequest &req);
 };

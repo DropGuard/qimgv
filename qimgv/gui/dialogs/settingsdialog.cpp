@@ -342,10 +342,8 @@ void SettingsDialog::readSettings() {
 }
 //------------------------------------------------------------------------------
 void SettingsDialog::saveSettings() {
-    // wait for all background stuff to finish
-    if(QThreadPool::globalInstance()->activeThreadCount()) {
-        QThreadPool::globalInstance()->waitForDone();
-    }
+    // background work is waited on where the new settings are consumed:
+    // Core::readSettings() drains the shared worker pool before re-reading
     for(const CheckBinding &b : mChecks)
         (settings->*b.set)(b.box->isChecked());
     for(const ComboBinding &b : mCombos) {

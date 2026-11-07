@@ -1,19 +1,19 @@
 #pragma once
 
-#include <QRunnable>
 #include <QProcess>
 #include <QThread>
 #include <QCryptographicHash>
 #include <ctime>
 #include "sourcecontainers/thumbnail.h"
 #include "components/cache/thumbnailcache.h"
+#include "components/workerpool/workerpool.h"
 #include "utils/imagefactory.h"
 #include "utils/imagelib.h"
 #include "settings.h"
 #include <memory>
 #include <QImageWriter>
 
-class ThumbnailerRunnable : public QObject, public QRunnable {
+class ThumbnailerRunnable : public QObject, public PoolJob {
     Q_OBJECT
 public:
     ThumbnailerRunnable(ThumbnailCache* _cache, QString _path, int _size, bool _crop, bool _force,

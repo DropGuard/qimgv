@@ -20,6 +20,8 @@ target_sources(qimgv_nongui PRIVATE
     thumbnailer/thumbnailer.cpp
     thumbnailer/thumbnailerrunnable.cpp
 
+    workerpool/workerpool.cpp
+
     directorymanager/directorymanager.cpp
     directorymanager/enginebridge.cpp
 )

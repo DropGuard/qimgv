@@ -1,19 +1,20 @@
 #pragma once
 
-#include <QThreadPool>
 #include "components/directorymanager/enginebridge.h"
 #include "components/thumbnailer/thumbnailerrunnable.h"
 #include "components/cache/thumbnailcache.h"
+#include "components/workerpool/workerpool.h"
 #include "settings.h"
 
 class Thumbnailer : public QObject
 {
     Q_OBJECT
 public:
-    // The bridge is required, not defaulted: production names the process-wide
-    // instance at the construction site, tests name their isolated one. A
-    // default lets every call site keep the hidden choice (00cf517e's rule).
-    explicit Thumbnailer(EngineBridge &bridge);
+    // The pool and the bridge are required, not defaulted: production names
+    // the shared pool and the process-wide bridge at the construction site,
+    // tests name their isolated ones. A default lets every call site keep the
+    // hidden choice (00cf517e's rule).
+    explicit Thumbnailer(WorkerPool &_pool, EngineBridge &bridge);
     ~Thumbnailer() override;
     static std::shared_ptr<Thumbnail> getThumbnail(QString filePath, int size);
     void clearTasks();
@@ -24,8 +25,8 @@ public slots:
 
 private:
     EngineBridge &mBridge;
+    WorkerPool &pool;
     ThumbnailCache *cache;
-    QThreadPool *pool = nullptr;
     void startThumbnailerThread(QString filePath, int size, bool crop, bool force);
     QMultiMap<QString, int> runningTasks;
     // engine-dispatched requests (path -> {size, crop}); cleared entries are

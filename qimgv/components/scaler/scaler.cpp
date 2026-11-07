@@ -8,33 +8,29 @@
  *    start the last task that came and ignore the middle ones.
  */
 
-Scaler::Scaler(Cache *_cache, QObject *parent)
+Scaler::Scaler(Cache *_cache, WorkerPool &_pool, QObject *parent)
     : QObject(parent),
+      pool(_pool),
       buffered(false),
       running(false),
       cache(_cache)
 {
-    pool = new QThreadPool(this);
-    pool->setMaxThreadCount(1);
-    runnable = new ScalerRunnable();
-    runnable->setAutoDelete(false);
     // no explicit connection type: `finished` is emitted on a pool thread and
     // received here, so it is queued by construction and the state machine runs
     // on the UI thread. DirectConnection used to run these slots on the pool
     // thread, where they wrote `running`/`buffered`/`startedRequest` and reached
     // Cache's QMap through a semaphore that nothing else in the app shared.
-    connect(runnable, &ScalerRunnable::finished, this, &Scaler::onTaskFinish);
     connect(this, &Scaler::acceptScalingResult, this, &Scaler::slotForwardScaledResult, Qt::QueuedConnection);
 }
 
 Scaler::~Scaler() {
-    // the runnable is ours alone: autoDelete(false) is the pool's permission not
-    // to free it, and it is one reusable object handed out repeatedly, so it can
-    // only be deleted once no pool thread is inside run() and none is queued to
-    // enter it — hence drain first, then delete
-    pool->clear();
-    pool->waitForDone();
-    delete runnable;
+    // at most one job is out (queued or running): the machine never hands off a
+    // second while one is in flight. Whatever is queued comes back from drain()
+    // and dies with the vector; a running one the pool destroys on its worker
+    // thread when run() returns. Reservations still held at this point are not
+    // released — moot, since the Cache that owns them dies right after.
+    auto dropped = pool.drain(PoolOwner::Scaler);
+    pool.waitForOwner(PoolOwner::Scaler);
 }
 
 void Scaler::requestScaled(const ScalerRequest &req) {
@@ -120,6 +116,7 @@ void Scaler::startRequest(const ScalerRequest &req) {
     // clear the buffered flag if there were no requests after this one
     if(buffered && bufferedRequest == req)
         buffered = false;
-    runnable->setRequest(req);
-    pool->start(runnable);
+    auto job = std::make_unique<ScalerRunnable>(req);
+    connect(job.get(), &ScalerRunnable::finished, this, &Scaler::onTaskFinish);
+    pool.submit(PoolOwner::Scaler, 1, std::move(job));
 }
