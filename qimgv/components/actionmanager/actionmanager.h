@@ -26,7 +26,6 @@ public:
     bool processEvent(QInputEvent*);
     void addShortcut(const QString &keys, const QString &action);
     void resetDefaults();
-    void resetDefaults(const QString& action);
     QString actionForShortcut(const QString &keys);
     const QString shortcutForAction(const QString& action);
     const QList<QString> shortcutsForAction(const QString& action);

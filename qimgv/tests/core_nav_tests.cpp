@@ -963,41 +963,31 @@ private slots:
     }
 
     // Core::onUpdate: the version-migration path, run from the constructor when
-    // firstRun is off and appVersion is ahead of the stored version. Never
-    // entered by any test before this. It is the one place that decides what a
-    // user who upgraded from 0.9.x keeps, and it reads its own version back
-    // through the K_LastVer* rows, so this also pins that those rows serve a
-    // written value. ActionManager is a process-wide singleton, so its shortcut
-    // map is snapshotted and put back: leaving it swapped would silently hand
-    // the next test the post-migration bindings.
-    void versionMigrationRewritesPre101BindingsAndRecordsTheVersion() {
+    // firstRun is off and appVersion differs from the stored version. The
+    // pre-1.0.1 binding rewrites retired with the rename — ImPulse has no
+    // released ancestor whose users carry those formats, and the only
+    // population that could ever arrive with them was hypothetical. What the
+    // path still does is record the version, and the trigger is 'different'
+    // rather than 'greater': a qimgv 1.0.3 past compares as a numeric
+    // downgrade against 0.1.0, and the migration must fire for it anyway —
+    // that inverted comparison is exactly what this pin guards. lastVer is
+    // read back through the K_LastVer* rows, so this also pins that those
+    // rows serve a written value. ActionManager is a process-wide singleton,
+    // so its shortcut map is snapshotted and put back.
+    void versionMigrationRecordsTheVersionFromAnInheritedPast() {
         FreshSettings fresh;
         const QMap<QString, QString> snapshot = actionManager->allShortcuts();
 
         settings->setFirstRun(false);
-        QVersionNumber old(0, 9, 1);
-        settings->setLastVersion(old);
-        QCOMPARE(settings->lastVersion(), old);        // the rows serve what was written
-
-        // a custom binding on an action the migration resets
-        actionManager->addShortcut(QStringLiteral("Ctrl+J"), QStringLiteral("print"));
-        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("Ctrl+J")), QStringLiteral("print"));
-        // the current (post-1.0.1) wheel convention
-        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("WheelDown")), QStringLiteral("nextImage"));
+        QVersionNumber inherited(1, 0, 3);
+        settings->setLastVersion(inherited);
+        QCOMPARE(settings->lastVersion(), inherited);   // the rows serve what was written
 
         {
             Core core;   // the constructor is what decides to migrate
         }
 
         QCOMPARE(settings->lastVersion(), appVersion);
-        // Ctrl+J was dropped and print is back on its default
-        QVERIFY2(actionManager->actionForShortcut(QStringLiteral("Ctrl+J")).isEmpty(),
-                 "the migration left a stale custom binding in place");
-        QCOMPARE(actionManager->shortcutForAction(QStringLiteral("print")),
-                 InputMap::keyNameCtrl() + QStringLiteral("+P"));
-        // the wheel convention was swapped for a pre-1.0.1 config
-        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("WheelUp")), QStringLiteral("nextImage"));
-        QCOMPARE(actionManager->actionForShortcut(QStringLiteral("WheelDown")), QStringLiteral("prevImage"));
 
         // put the singleton back the way the rest of the suite expects it
         actionManager->removeAllShortcuts();

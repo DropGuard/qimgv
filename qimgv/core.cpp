@@ -293,15 +293,6 @@ void Core::loadTranslation() {
 void Core::onUpdate() {
     QVersionNumber lastVer = settings->lastVersion();
 
-    // the 0.9.2 print/openSettings reset is NOT repeated here: adjustFromVersion
-    // starts with exactly that pair. The copy above ran it twice per migration
-    // for as long as both existed; resetDefaults(action) is idempotent, so the
-    // double run was invisible - which is how a duplicate survives review.
-#ifdef USE_OPENCV
-    if(lastVer < QVersionNumber(0,9,0))
-        settings->setScalingFilter(QI_FILTER_CV_CUBIC);
-#endif
-
     actionManager->adjustFromVersion(lastVer);
 
     qDebug() << "Updated: " << settings->lastVersion().toString() << ">" << appVersion.toString();

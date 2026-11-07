@@ -155,43 +155,11 @@ void ActionManager::resetDefaults() {
     shortcuts = defaults;
 }
 //------------------------------------------------------------------------------
-void ActionManager::resetDefaults(const QString& action) {
-    removeAllShortcuts(action);
-    QMapIterator<QString, QString> i(defaults);
-    while(i.hasNext()) {
-        i.next();
-        if(i.value() == action) {
-            shortcuts.insert(i.key(), i.value());
-            qDebug() << "[ActionManager] new action " << i.value() << " - assigning as [" << i.key() << "]";
-        }
-    }
-}
 //------------------------------------------------------------------------------
 void ActionManager::adjustFromVersion(const QVersionNumber& lastVer) {
     // this member used to reach for the global actionManager pointer instead of
     // its own object; it has exactly one caller (Core::onUpdate) and operating
     // on `this` is what makes that call mean anything
-    // swap Ctrl-P & P
-    if(lastVer < QVersionNumber(0,9,2)) {
-        resetDefaults("print");
-        resetDefaults("openSettings");
-    }
-    // swap WheelUp/WheelDown. derp
-    if(lastVer < QVersionNumber(1,0,1)) {
-        qDebug() << "[actionManager]: swapping WheelUp/WheelDown";
-        QMapIterator<QString, QString> i(shortcuts);
-        QMap<QString, QString> swapped;
-        while(i.hasNext()) {
-            i.next();
-            QString key = i.key();
-            if(key.contains("WheelUp"))
-                key.replace("WheelUp", "WheelDown");
-            else if(key.contains("WheelDown"))
-                key.replace("WheelDown", "WheelUp");
-            swapped.insert(key, i.value());
-        }
-        shortcuts = swapped;
-    }
     // add new default actions
     QMapIterator<QString, QString> i(defaults);
     while(i.hasNext()) {
