@@ -1,4 +1,5 @@
 #include <QTest>
+#include <unistd.h>
 #include <QFile>
 #include <QDir>
 #include <QFileInfo>
@@ -142,6 +143,10 @@ void TestFileOps::copyFileToRejectsADirectoryCollision() {
 }
 
 void TestFileOps::copyFileToReportsAnUnwritableDestination() {
+    // act runs its container as root, and root ignores permission bits — "unwritable" is not
+    // expressible there. The pin needs a user account to exist.
+    if (geteuid() == 0)
+        QSKIP("running as root: permission bits cannot make a destination unwritable");
     resetFixture();
     QString src = makeFile(fixtureDir + "/a.txt", "x");
     QString destDir = fixtureDir + "/rodest";
@@ -177,6 +182,10 @@ void TestFileOps::moveFileToMovesContentAndRemovesTheSource() {
 }
 
 void TestFileOps::moveFileToRevertsWhenTheOriginalCannotBeRemoved() {
+    // act runs its container as root, and root ignores permission bits — "unwritable" is not
+    // expressible there. The pin needs a user account to exist.
+    if (geteuid() == 0)
+        QSKIP("running as root: permission bits cannot make a destination unwritable");
     resetFixture();
     QString srcDir = fixtureDir + "/mvsrc";
     QVERIFY(QDir().mkpath(srcDir));

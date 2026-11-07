@@ -1,4 +1,5 @@
 #include "engine_stack_fixture.h"
+#include <unistd.h>
 
 // FileOperations through the engine, the save path, and ImageLib's transforms
 class TestImageOps : public QObject, protected EngineStackFixture {
@@ -77,6 +78,10 @@ private slots:
     // write left there, which QFile::rename cannot do, that call being
     // RENAME_NOREPLACE — and consumes the backup, so the row never leaves.
     void rolledBackSaveRestoresTheRowInsteadOfRebuildingIt() {
+        // act runs its container as root, and root ignores permission bits — a save
+        // into a read-only file SUCCEEDS there. The pin needs a user account.
+        if (geteuid() == 0)
+            QSKIP("running as root: permission bits cannot make a destination unwritable");
         resetFixture();
         DirectoryManager dm{EngineBridge::instance()};
         QVERIFY(dm.setDirectory(fixtureDir));
