@@ -79,7 +79,9 @@ int main(int argc, char *argv[]) {
     QGuiApplication::setDesktopFileName(QCoreApplication::applicationName());
     QGuiApplication::setApplicationDisplayName("ImPulse");
 
-    qDebug() << "[rustcore] qimgv-engine version:" << qimgv_engine_version();
+    // the engine crate's version is frozen Cargo metadata and carries no
+    // information; the release version is the app's own
+    qDebug() << "[impulse] version:" << appVersion.toString();
 
     // needed for mpv
 #ifndef _MSC_VER
