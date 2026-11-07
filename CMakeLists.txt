@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)  # Qt 6.6 requires CMake 3.16
 project(impulse
     VERSION 0.1.0
-    HOMEPAGE_URL "https://github.com/DropGuard/qimgv"
+    HOMEPAGE_URL "https://github.com/DropGuard/ImPulse"
     LANGUAGES CXX)
 
 message(STATUS "Build configuration: " ${CMAKE_BUILD_TYPE})
