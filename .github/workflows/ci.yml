@@ -30,7 +30,7 @@ jobs:
           /opt/aqt-venv/bin/pip install -q aqtinstall
           /opt/aqt-venv/bin/aqt install-qt linux desktop 6.9.1 linux_gcc_64 -O /opt/qt
       - name: system deps
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libopencv-dev libexiv2-dev libgl1-mesa-dev python3-venv cmake libmpv-dev libxkbcommon-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libopencv-dev libexiv2-dev libgl1-mesa-dev python3-venv cmake file libmpv-dev libxkbcommon-dev
       - name: configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/opt/qt/6.9.1/gcc_64
       - name: build (warnings are contractual — the fatal families are -Werror)
@@ -54,7 +54,7 @@ jobs:
           /opt/aqt-venv/bin/pip install -q aqtinstall
           /opt/aqt-venv/bin/aqt install-qt linux desktop 6.9.1 linux_gcc_64 -O /opt/qt
       - name: system deps
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libopencv-dev libexiv2-dev libgl1-mesa-dev python3-venv cmake libmpv-dev libxkbcommon-dev
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libopencv-dev libexiv2-dev libgl1-mesa-dev python3-venv cmake file libmpv-dev libxkbcommon-dev
       - name: sanitizer tree (address,undefined — the ASan gate the local tree runs)
         run: |
           cmake -S . -B build-asan -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined -DCMAKE_PREFIX_PATH=/opt/qt/6.9.1/gcc_64
@@ -62,3 +62,89 @@ jobs:
           cd build-asan && QT_QPA_PLATFORM=offscreen ASAN_OPTIONS=detect_leaks=1 ctest --output-on-failure
       - name: miri over the pure layer (the armed race test must fail to pass)
         run: sh scripts/miri.sh
+
+  appimage:
+    # A self-contained Linux bundle: Qt 6.9, OpenCV, exiv2, libmpv and the
+    # engine are all inside, so the user's distribution does not matter. The
+    # 22.04 base is the glibc floor the bundle inherits (glibc is forward
+    # compatible only) — it covers Debian 12+ and Ubuntu 22.04+.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:22.04
+    steps:
+      - name: toolchain and build deps (the 22.04 image ships almost nothing)
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y git curl ca-certificates \
+            build-essential cmake ninja-build file python3 python3-venv python3-pip \
+            libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 libxcb1-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libopencv-dev libexiv2-dev libmpv-dev g++-12
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: qt 6.9.1 via aqtinstall
+        run: |
+          python3 -m venv /opt/aqt-venv
+          /opt/aqt-venv/bin/pip install -q aqtinstall
+          /opt/aqt-venv/bin/aqt install-qt linux desktop 6.9.1 linux_gcc_64 -O /opt/qt
+      - name: configure and build
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=/opt/qt/6.9.1/gcc_64
+          cmake --build build -j$(nproc)
+      - name: assemble the AppDir
+        run: |
+          VERSION=$(grep -oP 'appVersion\(\K[0-9,]+' qimgv/appversion.cpp | tr ',' '.')
+          APPDIR=AppDir
+          mkdir -p "$APPDIR/usr/bin/plugins" \
+                   "$APPDIR/usr/share/applications" \
+                   "$APPDIR/usr/share/metainfo" \
+                   "$APPDIR/usr/share/icons/hicolor/scalable/apps" \
+                   "$APPDIR/usr/share/impulse/translations"
+          cp build/qimgv/impulse "$APPDIR/usr/bin/"
+          cp build/plugins/player_mpv/player_mpv.so "$APPDIR/usr/bin/plugins/"
+          cp qimgv/distrib/impulse.desktop "$APPDIR/usr/share/applications/"
+          cp qimgv/distrib/impulse.appdata.xml "$APPDIR/usr/share/metainfo/"
+          cp qimgv/distrib/hicolor/scalable/apps/impulse.svg "$APPDIR/usr/share/icons/hicolor/scalable/apps/"
+          cp build/qimgv/translations/*.qm "$APPDIR/usr/share/impulse/translations/"
+      - name: linuxdeploy (gathers the shared-library closure, writes its own AppRun)
+        run: |
+          curl -L -o linuxdeploy.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L -o appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x linuxdeploy.AppImage appimagetool.AppImage
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./linuxdeploy.AppImage --appdir AppDir
+          # linuxdeploy's --exclude-library matches exact sonames only, so the
+          # system-provided libraries ride the closure and are deleted here:
+          # they exist on every desktop system, and bundling them drags a glibc
+          # floor the 22.04 base does not provide (libsystemd needed 2.36+)
+          rm -f AppDir/usr/lib/libsystemd.so* \
+                AppDir/usr/lib/libgcc_s.so* \
+                AppDir/usr/lib/libstdc++.so*
+      - name: Qt plugins via a qt.conf beside the binary, then pack
+        run: |
+          VERSION=$(grep -oP 'appVersion\(\K[0-9,]+' qimgv/appversion.cpp | tr ',' '.')
+          for d in platforms imageformats iconengines; do
+              cp -r "/opt/qt/6.9.1/gcc_64/plugins/$d" "AppDir/usr/bin/plugins/$d"
+          done
+          # QLibraryInfo resolves a qt.conf sitting next to the executable; the
+          # relative Plugins entry keeps the bundle relocatable with no AppRun
+          # script and no environment
+          printf '[Paths]\nPlugins=plugins\n' > AppDir/usr/bin/qt.conf
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          ./appimagetool.AppImage --appimage-extract-and-run AppDir "ImPulse-${VERSION}-x86_64.AppImage"
+      - name: smoke (the bundle must survive a headless start)
+        run: |
+          QT_QPA_PLATFORM=offscreen timeout 8 ./ImPulse-*-x86_64.AppImage --appimage-extract-and-run \
+            || [ $? -eq 124 ]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: ImPulse-*-x86_64.AppImage
