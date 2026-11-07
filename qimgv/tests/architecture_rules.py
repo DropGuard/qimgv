@@ -192,6 +192,28 @@ for name, sigs in sorted(signals_of.items()):
             failures.append(f"R6 signal re-declared: {name}::{sig}() also exists in {parent} — "
                             f"connections made through &{parent}::{sig} will never fire")
 
+# Rule 7: the mirror has exactly one writer family. fileEntryVec/dirEntryVec may
+# only be mutated inside the engine-apply functions; every other local write is
+# the forceInsert-shaped exception that retired this rule's subject. Deterministic
+# single-file scan (function attribution by definition regex) — not the rejected
+# line-level lock heuristic: no sampling, no green-means-sampled downgrade.
+MIRROR_WRITERS = {'applyArena', 'removeFileEntry', 'removeDirEntry'}
+MUT_RE = re.compile(r'(?:file|dir)EntryVec\.(push_back|insert|erase|clear|assign)')
+FN_RE = re.compile(r'^[a-zA-Z].*\bDirectoryManager::(\w+)')
+dm_path = os.path.join(SRC, 'components', 'directorymanager', 'directorymanager.cpp')
+if os.path.exists(dm_path):
+    scanned['R7'] = scanned.get('R7', 0) + 1
+    fn = '?'
+    for lineno, line in enumerate(text_of(dm_path).splitlines(), 1):
+        m = FN_RE.match(line)
+        if m:
+            fn = m.group(1)
+        if MUT_RE.search(line) and fn not in MIRROR_WRITERS:
+            failures.append(f"R7 mirror writer: directorymanager.cpp:{lineno} mutates the "
+                            f"listing inside {fn}() — only {sorted(MIRROR_WRITERS)} may")
+else:
+    failures.append("R7 cannot run: directorymanager.cpp missing — scanned 0 files is not a pass")
+
 if failures:
     print("architecture violations:")
     for f in failures:

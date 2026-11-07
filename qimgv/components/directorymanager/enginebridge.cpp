@@ -125,13 +125,6 @@ bool EngineBridge::traceEnabled() {
     return on;
 }
 
-bool EngineBridge::includePath(const QString &path) {
-    if (!engine)
-        return false;
-    const QByteArray utf8 = path.toUtf8();
-    return qimgv_engine_include_path(engine, utf8.constData()) == QIMGV_OK;
-}
-
 void EngineBridge::stopWatch() {
     if (engine)
         qimgv_engine_stop_watch(engine);

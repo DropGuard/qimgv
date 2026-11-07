@@ -76,7 +76,6 @@ public:
     // duplicated because a switch that has to be turned on twice is a switch
     // that gets turned on once.
     static bool traceEnabled();
-    bool includePath(const QString &path);
     void stopWatch();
 
     // thumbnail scheduling (viewport priority lives in the engine)

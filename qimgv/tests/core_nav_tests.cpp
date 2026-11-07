@@ -105,11 +105,11 @@ private slots:
         Core core;
         QVERIFY(core.loadPath(files.at(0)));
         QTRY_VERIFY_WITH_TIMEOUT(sawDir(listed, seq), 10000);
-        // NOTE: the very first preload after a cold open is a silent no-op —
-        // loadFileIndex() evaluates nextOf() while the listing is still in
-        // flight, gets an empty string, and nothing re-arms it once the
-        // listing lands. Documented gap, not asserted here; every flip below
-        // runs against a landed listing, which is the path that works.
+        // the cold-open load rides whenListed: by the time it fires, the
+        // listing has landed, so even the first preload sees a real neighbor
+        // (the pre-2026-11 form loaded against an in-flight listing and the
+        // first preload was a silent no-op — the gap closed with forceInsert)
+        QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(1)), 10000);
 
         // one flip forward: from b the forward neighbor c decodes
         emit actionManager->nextImage();
@@ -133,6 +133,32 @@ private slots:
         emit actionManager->prevImage();
         QTRY_COMPARE_WITH_TIMEOUT(core.currentFilePath(), files.at(2), 10000);
         QTRY_VERIFY_WITH_TIMEOUT(core.model->isLoaded(files.at(1)), 10000);
+    }
+
+    // 14a61f7a armed the cold open to the listing landing but left main's
+    // unconditional showGui in place: the window appeared empty first and the
+    // image arrived after. The reveal belongs to the first ready frame.
+    void coldOpenKeepsTheWindowHiddenUntilTheFirstFrame() {
+        QString dir = QDir(base).filePath("waitfirst");
+        QVERIFY(QDir().mkpath(dir));
+        QStringList files;
+        for(const char *n : {"one", "two"})
+            files << QDir(dir).filePath(QString(n) + ".png");
+        for(const QString &f : files)
+            writeImage(f);
+
+        Core core;
+        QVERIFY(!core.mw->isVisible());
+        QVERIFY(core.loadPath(files.at(0)));
+        QVERIFY(core.firstFramePending());
+        // main's tail, faithfully: show only when nothing is pending
+        if(!core.firstFramePending())
+            core.showGui();
+        QVERIFY(!core.mw->isVisible());
+
+        QTRY_VERIFY_WITH_TIMEOUT(!core.firstFramePending(), 10000);
+        QVERIFY(core.mw->isVisible());
+        QCOMPARE(core.currentFilePath(), files.at(0));
     }
 
     void gotoAdjacentAtFolderEndEntersNextFolder() {

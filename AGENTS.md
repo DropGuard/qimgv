@@ -1,131 +1,123 @@
-# qimgv fork — agent 操作手册
+# qimgv fork — agent operating manual
 
-本文件存在的理由:凡是"需要记住"的规则都是隐性状态,而记忆是最差的存储。
-这里的每一条都对应一次真实事故。改动本文件前先读完。
+Why this file exists: every rule here maps to a real incident, and memory is
+the worst place to store rules. Read it before editing it.
 
-## 这是什么仓库
+## What this repo is
 
-qimgv 的 fork(KDE/Qt6 优先,GPL),`rustcore` 分支是集成主干:Rust 引擎
-(`engine/qimgv-engine*`)是目录与解码调度的唯一写者,C++ 侧是只读镜像与
-Qt 渲染。mirror 的内容与顺序都由引擎决定:mutation 事件携带引擎自序索引与
-watcher 已 stat 的数据,C++ 只做机械拼接与替换(收敛契约 =
-`mirrorStaysAFaithfulProjectionOfTheEngineListing`)。已知的两个本地例外,
-均有注释说明理由:forceInsert 的同步 push_back(Core 打开路径需要 index
-立即可用),与 setSubdirsSync 的旁路扫描。架构规则由
-`qimgv/tests/architecture_rules.py` 执行(R1 gui 隔离、R2 FFI 说话者白名单、
-R3 rust 封印、R4 settings 解引用、R5 ABI 钉、R6 信号重声明)——**结构规则
-不靠记忆,靠这 5 个测试套件**。
+A qimgv fork (KDE/Qt6-first, GPL). `rustcore` is the integration trunk: the
+Rust engine (`engine/qimgv-engine`) is the sole writer of directory and
+decode scheduling; the C++ side is a read-only mirror plus Qt rendering.
+Mirror content and order are decided by the engine — mutation events carry
+engine-side indices and watcher-statted data, C++ only splices (contract:
+`mirrorStaysAFaithfulProjectionOfTheEngineListing`), and the contract is
+absolute: the only listing writers are `applyArena` and the two event-apply
+helpers, mechanically enforced (R7). The former local exception
+`forceInsertFileEntry` was retired 2026-11 — membership is the listing's
+decision alone, no mime-sniff rescue for extension-less files. Architecture
+rules are enforced by
+`qimgv/tests/architecture_rules.py` (R1 gui isolation, R2 FFI speaker
+whitelist, R3 rust seal, R4 settings deref, R5 ABI pin, R6 signal
+redeclaration, R7 mirror-writer monopoly) — **structural rules live in the test suites, not in prose**.
 
-## 常用命令
+## Everyday commands
 
 ```bash
-# 构建(警告即合同:-Wall -Wextra -Wpedantic 零警告是常态)
+# build (warnings are contractual: -Wall -Wextra -Wpedantic, zero is normal)
 cmake --build build -j$(nproc)
 
-# 全部测试(5 套件;ARCH_RULES 是架构合同,失败先读它输出)
+# all tests (5 suites; ARCH_RULES is the architecture contract — read its output first on failure)
 cd build && ctest
 
-# 静态分析门禁(计数只许缩;新族即失败;降数须与修复同提交)
+# static-analysis gate (counts may only shrink; a new family fails; a reduction ships with its fix)
 python3 scripts/lint.py build --gate
 
-# clazy 独立构建树(build-clazy 已配置,clazy 1.17 + level0/level1/detaching)
+# clazy, separate configured tree (clazy 1.17 + level0/level1/detaching)
 CLAZY_CHECKS="level0,level1,detaching" cmake --build build-clazy -j$(nproc)
 
-# 行覆盖率(逻辑层/GUI 层分开报;只为排序测试优先级,不是门禁)
+# line coverage (logic/GUI layers reported separately; ranks test work only, not a gate)
 python3 scripts/coverage.py
 
-# 开发绊线:任何 qWarning 当场 abort + 栈。静默腐烂类 bug(@Variant 死序列化
-# 就是现行犯)第一次接触就暴露。启动期警告现已进会话日志(handler 装在任何
-# 配置读取之前)
+# dev tripwire: any qWarning aborts with a stack. Silent-rot bugs (the Qt6-dead
+# @Variant serialization was a live one) surface on first contact. Startup
+# warnings now reach the session log (handler installs before any config read).
 QT_FATAL_WARNINGS=1 build/qimgv/qimgv <path>
 
-# 消毒树(独立目录,默认构建不变):ASan+UBSan 抓堆错误/泄漏/UB。
-# 注意:断言全过时套件仍可能因 LSan 退出泄漏而红——证据在
-# Testing/Temporary/LastTest.log,不在 ctest 输出里
+# sanitizer tree (separate dir; default build untouched). Note: suites can go red
+# on LSan exit leaks even with all asserts passing — evidence is in
+# Testing/Temporary/LastTest.log, not ctest output.
 cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DQIMGV_SANITIZERS=address,undefined
 cmake --build build-asan -j$(nproc) && cd build-asan && ASAN_OPTIONS=detect_leaks=1 ctest
 ```
 
-pre-commit hook 自动跑增量构建 + 5 套件(实测 ~10-30s)。hook 是**CMake 自
-组装的**:每次 configure 都会设置 `core.hooksPath` 指向 `scripts/hooks`——
-克隆 → configure → build 这条必经之路本身就是安装步骤,不依赖任何散文记忆。
-lint --gate 实测 2m20s,留在 push 前手动跑。`--no-verify` 逃生门存在,但红门禁
-进历史就是 f8e8b216 六处回归无人看见的成因。
+The pre-commit hook runs incremental build + 5 suites (~10-30 s) and is
+**CMake self-installing**: every configure points `core.hooksPath` at
+`scripts/hooks` — clone → configure → build is itself the install step.
+`lint --gate` takes ~2m20s; run it manually before pushing. The `--no-verify`
+escape hatch exists, but a red gate entering history is how f8e8b216's six
+silent regressions went unseen.
 
-## 纪律(每条对应一次事故)
+## Discipline (each maps to an incident)
 
-机器能吸收的纪律立即被机器吸收(hook、架构规则、门禁、基线);这张清单上
-留下的,只是机器管不了、需要人判断的那部分。
+Whatever a machine can absorb, a machine absorbed (hooks, arch rules, gates,
+baselines). What remains here is the part needing judgment.
 
-1. **bash 每条命令以 `cd /home/dropguard/try/qimgv` 开头。** cwd 跨调用持久;
-   在 build/ 里跑下一条命令,相对路径全部碎裂。曾在一天内失败十余次。
-2. **提交只落在 rustcore**(集成主干);特性工作开分支,完工合回。
-   push 只在用户明说时执行。
-3. **修复与钉住它的测试必须同一提交。** 检测延迟是学费的大头。
-4. **不引入隐式上下文**:cwd 依赖、单例顺序依赖、未初始化成员、靠调用顺序
-   才成立的协议——已在 CacheItem/settings/lint.py 各修过一次,别再新增。
-5. **签名类修复必须带着函数体走。** f8e8b216 只改签名行就宣称"纯改名无行为
-   变化",实际制造了六处行为回归(含 FSEntry 静默丢数据)。改参数名/局部名时
-   `git show` 完整 diff 逐行自查函数体引用;shadow 清零不等于行为不变——家族
-   之间会互相制造(修 shadow 造出 unused-parameter)。凡行为可能变的修复,按
-   纪律 3 钉住。
-6. **只修能编译的路径;事实平台只有 Linux。** 引擎 watcher 是 inotify(整条
-   `cfg(target_os = "linux")`),非 Linux 时事件通道是 `never()`,C++ 的后备
-   `QFileSystemWatcher` 已随迁移删除(全仓零命中),`inotify`/`libc` 还是无条件
-   依赖——别的平台过不了构建。README 的 `## Windows`/`## BSD`、19 个带
-   `Q_OS_WIN`/`_WIN32` 的文件和 `supportsWatching()`(定义有、调用者无)都是上游
-   继承的痕迹,不是本分支的承诺;曾有 agent 给一条 `cfg(windows)` 分支"顺手补了缺失的 import"并
-   写进提交信息,而那段代码在 crate 层面就够不着。要动别的平台先拿事实:
-   `rustup target add x86_64-pc-windows-gnu` + `cargo check --target ...`
-   (check 不链接,编译验证在这里做得到,做不到的只有运行时)。
-7. **state 的锁不得跨等待持有。** guard 活到所在块结束,不是分号;轮询循环
-   里抱着读锁 sleep,std 的 RwLock 无写者优先,引擎写者被饿死整个 deadline
-   (b583e1aa 的验收测试就是这么红的,trace 加了时间戳才照出来)。正确参照:
-   同文件里 wait_for 的写法。
-8. **统计式测量("跑 N 遍数失败")只是诊断桥,不是交付物。** 它回答"多频
-   繁",不回答"为什么";必须尽快收尾成确定性产物:proptest 收缩出的种子、
-   注入式复现(applyArena/arenaFor 这道缝就是为此拆的——喂 mirror 一份引擎
-   不持有的 listing,不赌文件系统时机),或 R7 式结构规则。失败必须留名:
-   1/200 那次连失败者是谁都没留下,留不下名字的测量等于没测。
+1. **Start every bash command with `cd /home/dropguard/try/qimgv`.** cwd
+   persists across calls; one command in build/ shatters the next. Failed a
+   dozen times in a single day.
+2. **Commits land on rustcore only**; feature work branches and merges back.
+   Push only when the user says so.
+3. **A fix and the test pinning it ship in the same commit.** Detection delay
+   is the tuition.
+4. **No implicit context**: cwd dependencies, singleton ordering, uninitialized
+   members, protocols that only work in a call order — each already cost one
+   fix (CacheItem/settings/lint.py).
+5. **Signature-class fixes carry the function body.** f8e8b216 renamed
+   signatures, claimed "no behavior change", shipped six regressions. When in
+   doubt, read the full `git show` diff line by line; style families breed each
+   other (fixing shadow created unused-parameter). Anything behavior-adjacent:
+   pin it per rule 3.
+6. **Fix only paths that compile; the only fact platform is Linux.** The
+   engine watcher is inotify (`cfg(target_os = "linux")`), the event channel is
+   `never()` elsewhere, the C++ fallback watcher was deleted — other platforms
+   do not build. README Windows/BSD sections are marked upstream text, and
+   `supportsWatching()` has no callers; an agent once "fixed a missing import"
+   in a `cfg(windows)` branch unreachable at crate level. To touch another
+   platform, get facts first: `rustup target add x86_64-pc-windows-gnu` +
+   `cargo check --target ...` (check compiles; only runtime stays unverifiable).
+7. **State locks never span waits.** Guards live to block end, not semicolon;
+   sleeping under a read lock starves the engine writer (std RwLock has no
+   writer preference) — b583e1aa's acceptance test failed exactly this way.
+   Reference pattern: `wait_for` in the same file.
+8. **Statistical measurement is a diagnostic bridge, never the deliverable.**
+   N-run batches answer "how often", not "why"; close them into a proptest
+   seed, an injected repro (applyArena/arenaFor was split for this), or a
+   structural rule. Failures must leave a name — an unattributed 1/200 is
+   unmeasured.
 
-## 已知债务(有基线,只许缩)
+## Known debt (baselined, shrink-only)
 
-- `scripts/lint-baseline.txt`:静态分析计数,`--gate` 强制只缩不涨。
-- suggest-override / old-style-cast / shadow:已清零;unused-parameter 已升格
-  `-Werror`(CMakeLists)。风格族不再主动扫荡:只缩不涨 + 新族即失败自动守门。
+- `scripts/lint-baseline.txt`: static-analysis counts, `--gate` enforces
+  shrink-only. suggest-override / old-style-cast / shadow: zeroed;
+  unused-parameter promoted to `-Werror`. No active style sweeps — new-family
+  detection plus shrink-only does the policing.
 
-## 挂起决议(动了要说理由)
+## Standing decisions (change them and say why)
 
-- 镜像读取路径:批量 arena 按性能账**保留**,arena 即存储(选项二)挂起,
-  触发条件 = 百万级目录实测或 profile 打进 parseListing。
-- `--gen-thumbs` 已砍;wallpaper 为 KDE 专属是**有意为之**(注释在
-  Core::setWallpaper)。
-- pimpl 不用:应用不是库,白盒可测性优先于隐藏。
-- 反模式燃烧阶段已于 2026-11 关闭:不再主动全库扫风格族。策略冻结族
-  (conversion/float-conversion/duplInheritedMember)已退役出扫描,理由留在
-  lint-baseline.txt 头部。passedByValue 曾与它们同批冻结,2026-11-05 因
-  机制纠错重开并清零——“隐式共享让按值免费”是民间传说:拷贝/析构各付一次
-  锁式原子 RMW,无条件;实测对 const 引用 6.4-10.7x。重启条件:无——新族
-  即失败与只缩不涨已经自动守门。
-- state 锁的机器化守卫(行级启发式 R7)于 2026-11-05 否决:启发式扫描把
-  规则文件的 green 从"验证过"降级成"抽样过",其余六条的承诺因此被稀释。
-  根治路径是 with_state 闭包(guard 不可逃逸,"持锁睡觉"必须显式写进闭包
-  体),待测试面下次变动时评估;在那之前靠纪律 7 的散文与 wait_for 参照。
-- 所有权战役于 2026-11-05 关闭:**可变者唯一所有,共享者只读,依赖者具名,
-  跨界者带数据**。最后一块(R4 DEBT:thumbnailerrunnable/documentinfo/
-  imagestatic/video 的 off-thread settings 读取)已搬进 LoadPolicy 与请求
-  参数,DEBT 清零,R4 成为纯断言。重启条件:新事故。
-- #16(镜像与引擎列表的残余发散)于 2026-11-05 结构性修复后进入观察期:
-  200 轮全套件 1 次未归因失败,随后一次目击的 signature = engine 持有已删除
-  文件 + mirror 缺失新建文件(两侧各丢不同事件)。QIMGV_ENGINE_TRACE=1 +
-  时间戳已武装,目击即取 /tmp 时间线归因。挂起直到零目击窗口足够长。
-- 2026-11-05 push 事故:`git add -A` 把未入疫苗的新构建目录(build-asan/
-  build-cov,各含 70-151MB 插桩二进制)扫进了历史,远端 pre-receive 拒收。
-  filter-branch 重写 12 个提交 + .gitignore 补 `/build*/` 后修复。教训:
-  `git add -A` 之前先 `git status` 看新增目录;新构建树的目录名当天入疫苗。
-- 消毒树首轮(2026-11-05)收获已修:CentralWidget::mode 与
-  OverlayWidget::position 未初始化枚举读、qApp 错误下转型(测试跑的是
-  QGuiApplication)、Cache 无析构泄漏全部条目。挂账:测试退出仍有 ~58KB
-  对象图泄漏(9 Scaler + 6 DirectoryModel + 连接分配,fixture 环/所有权
-  嫌疑);TSan 树未建(Rust 需 -Zsanitizer 才有完整覆盖,且不能与 ASan
-  同树)。
+Decision history lives in commit messages — R7 rejection (319bb606), ownership
+campaign / R4 (ee06b1e2), passedByValue (6bfbc58f), gen-thumbs (e91f4653), push
+incident + gitignore vaccine (814f040b), mirror read path (3488601b). What is
+kept here is only what past tense cannot hold: live states and reopen triggers.
+
+- #16 (residual mirror/engine divergence): under observation since the
+  structural fix — one unattributed failure in 200 rounds, one sighting with
+  signature = engine holding deleted files + mirror missing created ones (each
+  side drops a different event). QIMGV_ENGINE_TRACE=1 with timestamps armed;
+  parked until the zero-sighting window is long enough.
+- Sanitizer open items: ~58 KB object-graph leak at test exit (fixture cycles
+  suspected); TSan tree not built (Rust needs -Zsanitizer, can't share a tree
+  with ASan).
+- Arena-as-storage parked; reopen trigger: million-entry measurement or a
+  profile landing in parseListing.
+- with_state closure is the real fix for discipline 7; reopen trigger: the next
+  change to the FFI/test surface.

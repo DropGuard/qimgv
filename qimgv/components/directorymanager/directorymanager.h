@@ -108,10 +108,6 @@ public:
     QString dirPathAt(int index) const;
     QString dirNameAt(int index) const;
 
-    bool forceInsertFileEntry(const QString &filePath);
-
-    //bool forceInsertDirEntry(const QString &dirPath);
-    //void updateDirEntry(const QString &dirPath);
 
 
 

@@ -23,11 +23,9 @@
 
 struct State {
     bool hasActiveImage = false;
+    // the GUI is waiting for the first ready frame: main defers showGui while
+    // set, and onModelItemReady raises the window with the image already in it
     bool delayModel = false;
-    // the 40ms deferred listing hop is armed after delayModel has already been
-    // cleared, so it is the one window where nothing is in flight yet and every
-    // other idle flag reads idle — isSettled() would be false-green without it
-    bool delayLoadArmed = false;
     // armed via DirectoryManager::whenListed: which image to show on a
     // folder-boundary transition is only knowable when the listing lands
     qint64 pendingListedToken = 0;
@@ -48,6 +46,7 @@ public:
     void showGui();
     // the file on screen; the state Core owns and every navigation decision reads
     QString currentFilePath() const;
+    bool firstFramePending() const;
     // Nothing asked of the model is outstanding and no deferred hop is armed.
     // Exists so a caller can wait instead of sleeping; it answers no question
     // about what the listing contains, so it cannot substitute for an assert.
@@ -195,5 +194,4 @@ private slots:
     void prevDirectory(bool selectLast);
     void prevDirectory();
     void print();
-    void modelDelayLoad();
 };

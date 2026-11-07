@@ -150,25 +150,6 @@ private slots:
         QCOMPARE(dm.fileCount(), 3UL);
     }
 
-    void forceInsertSurvivesResortViaInclude() {
-        resetFixture();
-        DirectoryManager dm{EngineBridge::instance()};
-        QVERIFY(dm.setDirectory(fixtureDir));
-        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 3UL, 10000);
-
-        // mime-valid file the extension filter excludes: forceInsert must
-        // reach the engine (Include) so later mirrors keep it
-        makeFile("mime-ok.xyz");
-        QVERIFY(dm.forceInsertFileEntry(fixtureDir + "/mime-ok.xyz"));
-        QTRY_COMPARE_WITH_TIMEOUT(dm.fileCount(), 4UL, 10000);
-
-        dm.setSortingMode(SORT_NAME_DESC);
-        QTRY_COMPARE_WITH_TIMEOUT(dm.sortingMode() == SORT_NAME_DESC, true, 10000);
-        QTRY_VERIFY_WITH_TIMEOUT(dm.isSettled(), 10000); // allow any (wrongly) converging mirror to land
-        QCOMPARE(dm.fileCount(), 4UL);
-        QCOMPARE(dm.containsFile(fixtureDir + "/mime-ok.xyz"), true);
-    }
-
     // "Decide when the listing lands" used to be a hand-rolled flag in Core
     // with three clear/consume sites; whenListed() centralizes the lifecycle,
     // and these tests pin it.

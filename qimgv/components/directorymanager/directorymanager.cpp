@@ -296,28 +296,6 @@ bool DirectoryManager::isSettled() const {
 
 // Entry management
 
-// skips filename regex check
-bool DirectoryManager::forceInsertFileEntry(const QString &filePath) {
-    if(!this->isFile(filePath) || containsFile(filePath))
-        return false;
-    std::filesystem::directory_entry stdEntry(toStdString(filePath));
-    QString fileName = QString::fromStdString(stdEntry.path().filename().generic_string()); // isn't it beautiful
-    FSEntry FSEntry(filePath, fileName, stdEntry.file_size(), stdEntry.last_write_time(), stdEntry.is_directory());
-    // The mirror makes no order decision here: the entry lands at the end and
-    // the includePath round trip re-delivers the listing in the engine's own
-    // order within milliseconds. Core's open path needs the entry present
-    // synchronously (indexOfFile right after this call), which is the only
-    // reason this local insert exists at all.
-    fileEntryVec.push_back(std::move(FSEntry));
-    if(!directoryPath().isEmpty()) {
-        qCDebug(lcWatchPerf) << "fileIns" << filePath << directoryPath();
-        emit fileAdded(filePath);
-        // keep the engine listing in sync (the filter doesn't match this file)
-        mBridge.includePath(filePath);
-    }
-    return true;
-}
-
 void DirectoryManager::removeFileEntry(const QString &filePath) {
     if(!containsFile(filePath))
         return;
@@ -621,8 +599,7 @@ bool DirectoryManager::applyArena(const QString &dirPath, const QByteArray &list
     // stat-based keep that used to live here repaired missed events silently
     // and made divergence unmeasurable; missed events now surface through the
     // convergence contract instead. Local mutations no longer run ahead of the
-    // engine — forceInsert's includePath lands in the same export that would
-    // otherwise be compared against it.
+    // engine.
 
     const bool isNewDir = (mMirroredDir != dirPath);
     QElapsedTimer rebuildTimer2;

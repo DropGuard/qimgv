@@ -111,10 +111,6 @@ QDateTime DirectoryModel::lastModified(const QString &filePath) const {
 
 // -----------------------------------------------------------------------------
 
-bool DirectoryModel::forceInsert(const QString &filePath) {
-    return dirManager.forceInsertFileEntry(filePath);
-}
-
 void DirectoryModel::setSortingMode(SortingMode mode) {
     dirManager.setSortingMode(mode);
 }

@@ -1247,33 +1247,44 @@ bool Core::loadPath(QString path) {
         state.directoryPath = QDir(path).absolutePath();
     } else if(fileInfo.isFile()) {
         state.directoryPath = fileInfo.absolutePath();
-        if(model->directoryPath() != state.directoryPath)
-            state.delayModel = true;
+        // delayModel now means exactly one thing: the GUI is still hidden and
+        // the first ready item must raise it. It no longer defers the listing
+        // — the open path below arms to the landing instead of racing it
+        state.delayModel = (model->directoryPath() != state.directoryPath);
     } else {
         mw->showError(tr("Could not open path: ") + path);
         qDebug() << "Could not open path: " << path;
         return false;
     }
-    if(!state.delayModel && !setDirectory(state.directoryPath))
+    if(!setDirectory(state.directoryPath))
         return false;
 
     // load file / folderview
     if(fileInfo.isFile()) {
-        int index = model->indexOfFile(fileInfo.absoluteFilePath());
-        // DirectoryManager only checks file extensions via regex (performance reasons)
-        // But in this case we force check mimetype
-        if(index == -1) {
-            QStringList types = settings->supportedMimeTypes();
-            QMimeDatabase db;
-            QMimeType type = db.mimeTypeForFile(fileInfo.absoluteFilePath());
-            if(types.contains(type.name())) {
-                if(model->forceInsert(fileInfo.absoluteFilePath())) {
-                    index = model->indexOfFile(fileInfo.absoluteFilePath());
-                }
-            }
-        }
+        // membership is the listing's decision alone: a file the engine's
+        // filter does not admit is not openable, no mime-sniff rescue, no
+        // local insert (forceInsert retired 2026-11 — the mirror has no
+        // writers besides the apply path)
         mw->enableDocumentView();
-        return loadFileIndex(index, false, settings->usePreloader());
+        int index = model->indexOfFile(fileInfo.absoluteFilePath());
+        if(index != -1)
+            return loadFileIndex(index, false, settings->usePreloader());
+        // cold open: this directory's listing has not landed yet (or has not
+        // started). Start the scan and arm the open to its landing — the same
+        // whenListed primitive the folder-boundary loads ride on. The old
+        // code bootstrapped this moment through forceInsert's local write;
+        // that exception is what hid the fact that the open path had no
+        // landing-driven form at all.
+        const QString filePath = fileInfo.absoluteFilePath();
+        state.pendingListedToken = model->whenListed(state.directoryPath, [this, filePath] {
+            state.pendingListedToken = 0;
+            int idx = model->indexOfFile(filePath);
+            if(idx != -1)
+                loadFileIndex(idx, false, settings->usePreloader());
+            else
+                mw->showError(tr("Not in this folder's listing: ") + filePath);
+        });
+        return true;
     } else {
         mw->enableFolderView();
         return true;
@@ -1296,9 +1307,12 @@ QString Core::currentFilePath() const {
     return state.currentFilePath;
 }
 
+bool Core::firstFramePending() const {
+    return state.delayModel;
+}
+
 bool Core::isSettled() const {
-    return !state.delayLoadArmed
-        && model
+    return model
         && model->listingSettled()
         && !model->loaderBusy();
 }
@@ -1497,8 +1511,6 @@ void Core::onModelItemReady(std::shared_ptr<Image> img, const QString &path, boo
         if(state.delayModel) {
             this->showGui();
             state.delayModel = false;
-            state.delayLoadArmed = true;
-            QTimer::singleShot(40, this, SLOT(modelDelayLoad()));
         }
         model->unloadExcept(state.currentFilePath, settings->usePreloader());
         // two-tier: a scaled image on screen schedules the full-res upgrade.
@@ -1506,14 +1518,6 @@ void Core::onModelItemReady(std::shared_ptr<Image> img, const QString &path, boo
         if(scaled)
             model->upgradeToFull(path);
     }
-}
-
-void Core::modelDelayLoad() {
-    state.delayLoadArmed = false;
-    model->setDirectory(state.directoryPath);
-    mw->setDirectoryPath(state.directoryPath);
-    model->updateImage(state.currentFilePath, state.currentImg);
-    updateInfoString();
 }
 
 void Core::onModelItemUpdated(const QString &filePath) {

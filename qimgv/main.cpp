@@ -147,6 +147,9 @@ int main(int argc, char *argv[]) {
     // this avoids white background flicker on windows (or not?)
     qApp->processEvents();
 
-    core.showGui();
+    // a cold open armed to the listing landing owns the reveal: showing here
+    // would flash an empty window before the first frame exists
+    if(!core.firstFramePending())
+        core.showGui();
     return a.exec();
 }
