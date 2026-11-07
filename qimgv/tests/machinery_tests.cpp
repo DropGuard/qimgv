@@ -8,6 +8,7 @@
 #include "components/loader/loader.h"
 
 #include <QCoreApplication>
+#include <QSet>
 #include <QDateTime>
 #include <QElapsedTimer>
 #include <QFile>
@@ -884,6 +885,43 @@ private slots:
         // so assert a lower bound, not an exact count)
         thumb.getThumbnailAsync(fixtureDir + "/img1.jpg", 64, false, false);
         QTRY_VERIFY_WITH_TIMEOUT(ready.count() >= 3, 10000);
+        thumb.waitForDone();
+    }
+
+    // The presenter-level shape of the shared instance, pinned at the unit the
+    // presenters share: one wave's clearTasks kills the other wave's
+    // still-pending requests (the engine's pending queue is process-wide,
+    // which predates the shared instance), and the recovery is the next wave
+    // re-requesting the same files. This pins the recovery: every file of a
+    // killed batch arrives after the re-request, whichever fate its first job
+    // met — dispatched and delivered, canceled before its checkpoint and
+    // re-requested fresh, or canceled inside generate and delivered by the
+    // survivor. Narrowing the kill window needs engine batch ids; while this
+    // recovery holds, that protocol change buys nothing worth its pin tax.
+    void aClearedBatchIsRecoveredByTheNextWave() {
+        resetFixture();
+        WorkerPool pool(2);
+        Thumbnailer thumb(pool, EngineBridge::instance());
+        QSet<QString> ready;
+        QObject::connect(&thumb, &Thumbnailer::thumbnailReady, &thumb,
+                         [&ready](std::shared_ptr<Thumbnail>, const QString &path) {
+                             ready.insert(path);
+                         });
+        const QStringList batch = {
+            fixtureDir + "/img1.jpg",
+            fixtureDir + "/img2.jpg",
+            fixtureDir + "/img10.jpg",
+        };
+        for(const QString &path : batch)
+            thumb.getThumbnailAsync(path, 32, false, false);
+        // three requests, two in flight: the clear provably kills a pending
+        // request and marks jobs that may be inside generate()
+        thumb.clearTasks();
+
+        // the next wave re-requests the same files, and the batch recovers
+        for(const QString &path : batch)
+            thumb.getThumbnailAsync(path, 32, false, false);
+        QTRY_COMPARE_WITH_TIMEOUT(ready.count(), batch.count(), 10000);
         thumb.waitForDone();
     }
 };
