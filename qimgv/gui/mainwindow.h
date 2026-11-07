@@ -11,6 +11,7 @@
 #include <QWindow>
 
 #include "gui/customwidgets/floatingwidgetcontainer.h"
+#include "gui/iuserinteractions.h"
 #include "gui/viewers/viewerwidget.h"
 #include "gui/overlays/controlsoverlay.h"
 #include "gui/overlays/fullscreeninfooverlayproxy.h"
@@ -57,7 +58,7 @@ enum ActiveSidePanel {
     SIDEPANEL_NONE
 };
 
-class MW : public FloatingWidgetContainer
+class MW : public FloatingWidgetContainer, public IUserInteractions
 {
     Q_OBJECT
 public:
@@ -76,8 +77,8 @@ public:
 
     ViewMode currentViewMode();
 
-    bool showConfirmation(const QString& title, const QString& msg);
-    DialogResult fileReplaceDialog(const QString &source, const QString &target, FileReplaceMode mode, bool multiple);
+    bool showConfirmation(const QString& title, const QString& msg) override;
+    DialogResult fileReplaceDialog(const QString &source, const QString &target, FileReplaceMode mode, bool multiple) override;
 
 private:
     // the parent tree owns every widget; these observe. See the rule comment

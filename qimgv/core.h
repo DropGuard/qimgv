@@ -11,6 +11,7 @@
 #include "appversion.h"
 #include "settings.h"
 #include "components/workerpool/workerpool.h"
+#include "gui/iuserinteractions.h"
 #include "components/directorymodel.h"
 #include "components/directorypresenter.h"
 #include "components/scriptmanager/scriptmanager.h"
@@ -77,6 +78,11 @@ private:
     // only place the workers are joined — happens after each of them has
     // drained and waited
     WorkerPool pool_;
+
+    // the dialog answers, through the interface MW implements; tests inject a
+    // scripted fake here to drive the interactive command machines. Non-owning:
+    // it points at mw in production and is set in initGui
+    IUserInteractions *ui_ = nullptr;
 
     State state;
     FolderEndAction folderEndAction;

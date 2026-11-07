@@ -36,6 +36,9 @@ Core::Core()
 {
     loadTranslation();
     initGui();
+    // the main window owns the dialogs, so it is the production provider of the
+    // interaction interface; tests replace this pointer with a scripted fake
+    ui_ = mw;
     initComponents();
     connectComponents();
     initActions();
@@ -395,7 +398,7 @@ void Core::removePermanent() {
             msg = tr("Delete ") + QString::number(paths.count()) + tr(" items permanently?");
         else
             msg = tr("Delete item permanently?");
-        if(!mw->showConfirmation(tr("Delete permanently"), msg))
+        if(!ui_->showConfirmation(tr("Delete permanently"), msg))
             return;
     }
     FileOpResult result;
@@ -429,7 +432,7 @@ void Core::moveToTrash() {
             msg = tr("Move ") + QString::number(paths.count()) + tr(" items to trash?");
         else
             msg = tr("Move item to trash?");
-        if(!mw->showConfirmation(tr("Move to trash"), msg))
+        if(!ui_->showConfirmation(tr("Move to trash"), msg))
             return;
     }
     FileOpResult result;
@@ -681,7 +684,7 @@ void Core::renameCurrentSelection(const QString &newName) {
     if(result == FileOpResult::DESTINATION_DIR_EXISTS) {
         mw->toggleRenameOverlay(newName);
     } else if(result == FileOpResult::DESTINATION_FILE_EXISTS) {
-        if(mw->showConfirmation(tr("File exists"), tr("Overwrite file?"))) {
+        if(ui_->showConfirmation(tr("File exists"), tr("Overwrite file?"))) {
             model->renameEntry(selectedPath(), newName, true, result);
         } else {
             // show rename dialog again
@@ -815,7 +818,7 @@ void Core::doInteractiveCopy(const QString &path, const QString &destDirectory, 
         if(result == FileOpResult::DESTINATION_FILE_EXISTS) {
             if(overwriteFiles.all) // skipping all
                 return;
-            overwriteFiles = mw->fileReplaceDialog(srcFi.absoluteFilePath(), destDirectory + "/" + srcFi.fileName(), FILE_TO_FILE, true);
+            overwriteFiles = ui_->fileReplaceDialog(srcFi.absoluteFilePath(), destDirectory + "/" + srcFi.fileName(), FILE_TO_FILE, true);
             if(!overwriteFiles || overwriteFiles.cancel)
                 return;
             FileOperations::copyFileTo(path, destDirectory, true, result);
@@ -834,7 +837,7 @@ void Core::doInteractiveCopy(const QString &path, const QString &destDirectory, 
     QDir dstDir(dstFi.absoluteFilePath());
     if(dstFi.exists() && !dstFi.isDir()) { // overwriting file with a folder
         if(!overwriteFiles && !overwriteFiles.all) {
-            overwriteFiles = mw->fileReplaceDialog(srcFi.absoluteFilePath(), dstFi.absoluteFilePath(), DIR_TO_FILE, true);
+            overwriteFiles = ui_->fileReplaceDialog(srcFi.absoluteFilePath(), dstFi.absoluteFilePath(), DIR_TO_FILE, true);
             if(!overwriteFiles || overwriteFiles.cancel)
                 return;
             if(!overwriteFiles.all) // reset temp flag right away
@@ -883,7 +886,7 @@ void Core::doInteractiveMove(const QString &path, const QString &destDirectory, 
         if(result == FileOpResult::DESTINATION_FILE_EXISTS) {
             if(overwriteFiles.all) // skipping all
                 return;
-            overwriteFiles = mw->fileReplaceDialog(srcFi.absoluteFilePath(), destDirectory + "/" + srcFi.fileName(), FILE_TO_FILE, true);
+            overwriteFiles = ui_->fileReplaceDialog(srcFi.absoluteFilePath(), destDirectory + "/" + srcFi.fileName(), FILE_TO_FILE, true);
             if(!overwriteFiles || overwriteFiles.cancel)
                 return;
             model->moveFileTo(path, destDirectory, true, result);
@@ -902,7 +905,7 @@ void Core::doInteractiveMove(const QString &path, const QString &destDirectory, 
     QDir dstDir(dstFi.absoluteFilePath());
     if(dstFi.exists() && !dstFi.isDir()) { // overwriting file with a folder
         if(!overwriteFiles && !overwriteFiles.all) {
-            overwriteFiles = mw->fileReplaceDialog(srcFi.absoluteFilePath(), dstFi.absoluteFilePath(), DIR_TO_FILE, true);
+            overwriteFiles = ui_->fileReplaceDialog(srcFi.absoluteFilePath(), dstFi.absoluteFilePath(), DIR_TO_FILE, true);
             if(!overwriteFiles || overwriteFiles.cancel)
                 return;
             if(!overwriteFiles.all) // reset temp flag right away
@@ -955,7 +958,7 @@ void Core::moveCurrentFile(const QString &destDirectory) {
     if(result == FileOpResult::SUCCESS) {
         mw->showMessageSuccess(tr("File moved."));
     } else if(result == FileOpResult::DESTINATION_FILE_EXISTS) {
-        if(mw->showConfirmation(tr("File exists"), tr("Destination file exists. Overwrite?")))
+        if(ui_->showConfirmation(tr("File exists"), tr("Destination file exists. Overwrite?")))
             model->moveFileTo(selectedPath(), destDirectory, true, result);
     }
     if(result != FileOpResult::SUCCESS) {
@@ -976,7 +979,7 @@ void Core::copyCurrentFile(const QString &destDirectory) {
     if(result == FileOpResult::SUCCESS) {
         mw->showMessageSuccess(tr("File copied."));
     } else if(result == FileOpResult::DESTINATION_FILE_EXISTS) {
-        if(mw->showConfirmation(tr("File exists"), tr("Destination file exists. Overwrite?")))
+        if(ui_->showConfirmation(tr("File exists"), tr("Destination file exists. Overwrite?")))
             model->copyFileTo(selectedPath(), destDirectory, true, result);
     }
     if(result != FileOpResult::SUCCESS && result != FileOpResult::DESTINATION_FILE_EXISTS)
@@ -1021,7 +1024,7 @@ template<typename... Args>
 void Core::edit_template(bool save, const QString &action, const std::function<std::unique_ptr<const QImage>(std::shared_ptr<const QImage>, Args...)>& editFunc, Args&&... as) {
     if(model->isEmpty())
         return;
-    if(save && !mw->showConfirmation(action, tr("Perform action \"") + action + "\"? \n\n" + tr("Changes will be saved immediately.")))
+    if(save && !ui_->showConfirmation(action, tr("Perform action \"") + action + "\"? \n\n" + tr("Changes will be saved immediately.")))
         return;
     for(const auto &path : currentSelection()) {
         auto img = getEditableImage(path);
