@@ -33,6 +33,13 @@ clazy qcolor-from-literal 50
 # moved: compile_commands.json regenerates as CMake flag/entry state evolves, and a
 # fresh-configure scan of the SAME content reads 13-14. The four sites were an
 # artifact of the older flag set, recorded here twice-verified gone.
+instrument 13c13a73392739c9
+
+# The fingerprint is the scanned (file, command) set from compile_commands.json:
+# the baseline counts are only meaningful for the instrument that measured them.
+# A local act run re-configures the build dir in its container and moves the
+# instrument — the gate then names it instead of letting count drift ride in
+# silently. Re-record deliberately after re-verifying the counts.
 clazy range-loop-detach 14
 #   connect-3arg-lambda — retired at zero on 2026-11-06: every lambda
 #   connect now names a context object, so the connection dies with the
